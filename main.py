@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-
+logging.info(f"Using OpenAI version: {openai.__version__}")
 # Setup CORS
 app.add_middleware(
     CORSMiddleware,
