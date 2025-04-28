@@ -50,4 +50,4 @@ async def chat_endpoint(msg: Message):
 
     except Exception as e:
         print(f"❌ ERROR during OpenAI API call: {e}")
-        return {"reply": "Sorry, something went wrong."}
+        return {"reply": "Sorry, something went wrong Sajjad."}
