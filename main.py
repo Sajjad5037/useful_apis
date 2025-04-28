@@ -1,18 +1,12 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import openai
 import os
 import sys
-import logging
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
+# — FastAPI Init —
 app = FastAPI()
-
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -24,55 +18,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Request Model
+# — Request Model —
 class Message(BaseModel):
     message: str
 
-# OpenAI Key & Client
+# — OpenAI Key & Client —
 openai_api_key = os.getenv("OPENAI_API_KEY")
 if not openai_api_key:
-    raise Exception("OPENAI_API_KEY not set.")
+    sys.exit(1)
 
+# instantiate the new v1+ client
 client = openai.OpenAI(api_key=openai_api_key)
 
-# Interaction counter dictionary (you could use a more persistent method for production)
-user_interactions = {}
-
 @app.post("/api/chatRK")
-async def chat_endpoint(msg: Message, user_id: int):
-    logger.info(f"Received request from user {user_id} with message: {msg.message}")
-    
-    # Initialize user interaction counter if not already set
-    if user_id not in user_interactions:
-        user_interactions[user_id] = 0
-        logger.info(f"Initializing interaction count for user {user_id}")
-
-    # Check if user has reached the interaction limit
-    if user_interactions[user_id] >= 10:
-        logger.warning(f"User {user_id} has reached the interaction limit of 10.")
-        raise HTTPException(status_code=403, detail="Interaction limit reached. No more queries are allowed.")
-
+async def chat_endpoint(msg: Message):
     try:
-        # Increment user interaction count
-        user_interactions[user_id] += 1
-        logger.info(f"Incremented interaction count for user {user_id}: {user_interactions[user_id]}")
-
         # new v1+ call path
-        logger.info("Sending request to OpenAI API.")
         resp = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are an assistant for Rafis Kitchen, which is located at 800 Wayne Street, Olean, NY 14760. The owner is Amir. Do not answer questions based on your prior knowledge."},
-                {"role": "user", "content": msg.message},
+                {"role": "system", "content": "you are an assitant to rafis kitchen which is located at 800 Wayne street Olean NY 14760. the owner is Amir. do not answer questions based on your prior knowledge. "},
+                {"role": "user",   "content": msg.message},
             ],
         )
-
         # access the reply
         reply = resp.choices[0].message.content.strip()
-        logger.info(f"Received reply from OpenAI: {reply}")
-
         return {"reply": reply}
 
     except Exception as e:
-        logger.error(f"Error occurred: {e}")
         return {"reply": "Sorry, something went wrong."}
