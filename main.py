@@ -5,7 +5,6 @@ import openai
 import os
 import sys
 
-# — FastAPI Init —
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -18,29 +17,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# — Request Model —
+# Request Model
 class Message(BaseModel):
     message: str
 
-# — OpenAI Key & Client —
+# OpenAI Key & Client
 openai_api_key = os.getenv("OPENAI_API_KEY")
 if not openai_api_key:
-    sys.exit(1)
+    raise Exception("OPENAI_API_KEY not set.")
 
-# instantiate the new v1+ client
 client = openai.OpenAI(api_key=openai_api_key)
 
+# Interaction counter dictionary (you could use a more persistent method for production)
+user_interactions = {}
+
 @app.post("/api/chatRK")
-async def chat_endpoint(msg: Message):
+async def chat_endpoint(msg: Message, user_id: int):
+    # Initialize user interaction counter if not already set
+    if user_id not in user_interactions:
+        user_interactions[user_id] = 0
+
+    # Check if user has reached the interaction limit
+    if user_interactions[user_id] >= 10:
+        raise HTTPException(status_code=403, detail="Interaction limit reached. No more queries are allowed.")
+
     try:
+        # Increment user interaction count
+        user_interactions[user_id] += 1
+
         # new v1+ call path
         resp = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "you are an assitant to rafis kitchen which is located at 800 Wayne street Olean NY 14760."},
-                {"role": "user",   "content": msg.message},
+                {"role": "system", "content": "You are an assistant for Rafis Kitchen, which is located at 800 Wayne Street, Olean, NY 14760. The owner is Amir. Do not answer questions based on your prior knowledge."},
+                {"role": "user", "content": msg.message},
             ],
         )
+
         # access the reply
         reply = resp.choices[0].message.content.strip()
         return {"reply": reply}
