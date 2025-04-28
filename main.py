@@ -1,50 +1,53 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import openai
-import logging
 import os
+import logging
+import sys
 
-# Initialize FastAPI app
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# CORS — allow both prod and local dev origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://rafis-kitchen.vercel.app",
+        "http://localhost:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Log OpenAI version
-logging.info(f"Using OpenAI version: {openai.__version__}")
-
-# Pydantic model for request
 class Message(BaseModel):
     message: str
 
-# Load OpenAI API key
+# Validate API key
 openai_api_key = os.getenv("OPENAI_API_KEY")
 if not openai_api_key:
-    logging.error("❌ OPENAI_API_KEY environment variable not found.")
-    raise SystemExit(1)
-
+    logger.error("❌ OPENAI_API_KEY not set.")
+    sys.exit(1)
 openai.api_key = openai_api_key
+logger.info(f"Using OpenAI version: {openai.__version__}")
 
 @app.post("/api/chatRK")
 async def chat_endpoint(msg: Message):
+    logger.info(f"📥 Received message: {msg.message}")
     try:
-        logging.info(f"📥 Received message from frontend: {msg.message}")
-        
-        # Make OpenAI API call using ChatCompletion
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # or "gpt-4" if you have access
+        resp = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": msg.message}
-            ]
+                {"role": "user", "content": msg.message},
+            ],
         )
-
-        logging.info("✅ OpenAI API responded successfully.")
-        
-        reply = response['choices'][0]['message']['content'].strip()
-        logging.info(f"📤 Sending reply to frontend: {reply}")
-        
+        reply = resp.choices[0].message.content.strip()
+        logger.info(f"📤 Reply: {reply}")
         return {"reply": reply}
     except Exception as e:
-        logging.error(f"❌ ERROR during OpenAI API call: {e}")
+        logger.error(f"❌ OpenAI error: {e}")
         return {"reply": "Sorry, something went wrong."}
