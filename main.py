@@ -6,17 +6,12 @@ import os
 import logging
 import sys
 
+# — Logging Setup —
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-logging.info(f"Imported `openai` from: {openai.__file__}")
-logging.info(f"`openai` version: {getattr(openai, '__version__', 'no __version__ attr')}")
-logging.info(f"`openai` contents: {dir(openai)}")
-
-
+# — FastAPI Init —
 app = FastAPI()
-
-# CORS — allow both prod and local dev origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -28,31 +23,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# — Request Model —
 class Message(BaseModel):
     message: str
 
-# Validate API key
+# — OpenAI Key & Client —
 openai_api_key = os.getenv("OPENAI_API_KEY")
 if not openai_api_key:
     logger.error("❌ OPENAI_API_KEY not set.")
     sys.exit(1)
-openai.api_key = openai_api_key
-logger.info(f"Using OpenAI version: {openai.__version__}")
+
+# instantiate the new v1+ client
+client = openai.OpenAI(api_key=openai_api_key)
+logger.info(f"Using OpenAI client version: {openai.__version__}")
 
 @app.post("/api/chatRK")
 async def chat_endpoint(msg: Message):
     logger.info(f"📥 Received message: {msg.message}")
     try:
-        resp = openai.ChatCompletion.create(
+        # new v1+ call path
+        resp = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": msg.message},
+                {"role": "user",   "content": msg.message},
             ],
         )
+        # access the reply
         reply = resp.choices[0].message.content.strip()
         logger.info(f"📤 Reply: {reply}")
         return {"reply": reply}
+
     except Exception as e:
         logger.error(f"❌ OpenAI error: {e}")
         return {"reply": "Sorry, something went wrong."}
