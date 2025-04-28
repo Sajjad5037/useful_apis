@@ -11,6 +11,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://rafis-kitchen.vercel.app",
+        "https://sajjadalinoor.vercel.app",
         "http://localhost:3000",
     ],
     allow_credentials=True,
