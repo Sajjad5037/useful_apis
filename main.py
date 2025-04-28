@@ -33,23 +33,16 @@ client = openai.OpenAI(api_key=openai_api_key)
 @app.post("/api/chatRK")
 async def chat_endpoint(msg: Message):
     try:
-        content = (
-            "You are an assistant for Rafis Kitchen, a restaurant located at 800 Wayne Street, Olean, NY 14760. "
-            "Your purpose is to provide specific information related to the restaurant and its operations. "
-            "Do not engage in irrelevant topics or provide unrelated information such as recipes, jokes, or general knowledge. "
-            "Only respond to queries regarding the restaurant, its menu, hours of operation, and related topics. "
-            "Stay focused and professional, and avoid straying into unnecessary or off-topic conversations."
-        )
         # new v1+ call path
         resp = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": content},
-                {"role": "user", "content": msg.message},
+                {"role": "system", "content": "you are an assitant to rafis kitchen which is located at 800 Wayne street Olean NY 14760."},
+                {"role": "user",   "content": msg.message},
             ],
         )
         # access the reply
-        reply = resp['choices'][0]['message']['content'].strip()  # Correct access pattern for the reply
+        reply = resp.choices[0].message.content.strip()
         return {"reply": reply}
 
     except Exception as e:
