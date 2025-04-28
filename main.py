@@ -1,11 +1,18 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import openai
 import os
 import sys
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -33,19 +40,25 @@ user_interactions = {}
 
 @app.post("/api/chatRK")
 async def chat_endpoint(msg: Message, user_id: int):
+    logger.info(f"Received request from user {user_id} with message: {msg.message}")
+    
     # Initialize user interaction counter if not already set
     if user_id not in user_interactions:
         user_interactions[user_id] = 0
+        logger.info(f"Initializing interaction count for user {user_id}")
 
     # Check if user has reached the interaction limit
     if user_interactions[user_id] >= 10:
+        logger.warning(f"User {user_id} has reached the interaction limit of 10.")
         raise HTTPException(status_code=403, detail="Interaction limit reached. No more queries are allowed.")
 
     try:
         # Increment user interaction count
         user_interactions[user_id] += 1
+        logger.info(f"Incremented interaction count for user {user_id}: {user_interactions[user_id]}")
 
         # new v1+ call path
+        logger.info("Sending request to OpenAI API.")
         resp = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -56,7 +69,10 @@ async def chat_endpoint(msg: Message, user_id: int):
 
         # access the reply
         reply = resp.choices[0].message.content.strip()
+        logger.info(f"Received reply from OpenAI: {reply}")
+
         return {"reply": reply}
 
     except Exception as e:
+        logger.error(f"Error occurred: {e}")
         return {"reply": "Sorry, something went wrong."}
