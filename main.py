@@ -47,3 +47,22 @@ async def chat_endpoint(msg: Message):
 
     except Exception as e:
         return {"reply": "Sorry, something went wrong."}
+
+@app.post("/api/chatQuran")
+async def chat_quran_endpoint(msg: Message):
+    try:
+        # new v1+ call path for Quran-related queries
+        resp = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an assistant providing information based on the Quran and Islamic teachings. Please only respond to questions regarding the Quran, its interpretation, or Islamic principles. Do not answer questions based on your prior knowledge."},
+                {"role": "user", "content": msg.message},
+            ],
+        )
+        
+        # access the reply
+        reply = resp.choices[0].message.content.strip()
+        return {"reply": reply}
+
+    except Exception as e:
+        return {"reply": "Sorry, something went wrong."}
