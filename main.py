@@ -9,6 +9,11 @@ import sys
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+logging.info(f"Imported `openai` from: {openai.__file__}")
+logging.info(f"`openai` version: {getattr(openai, '__version__', 'no __version__ attr')}")
+logging.info(f"`openai` contents: {dir(openai)}")
+
+
 app = FastAPI()
 
 # CORS — allow both prod and local dev origins
