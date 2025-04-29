@@ -47,7 +47,7 @@ class MenuItem(Base):
     name = Column(String, index=True)
     description = Column(String)
     price = Column(Integer)
-    image_url = Column(String)
+    image = Column(String)
 
 Base.metadata.create_all(bind=engine)
 
@@ -78,18 +78,36 @@ openai.api_key = openai_api_key
 
 # — Menu Endpoints —
 @app.post("/create-menu-item/")
-async def create_menu_item(menu_item: MenuItemRequest, db: Session = Depends(get_db)):
-    logging.debug(f"Received menu item data: {menu_item!r}")
-    if not menu_item.image_url:
-        raise HTTPException(status_code=400, detail="Image URL is required")
+async def create_menu_item(
+    name: List[str] = Form(...), 
+    description: List[str] = Form(...), 
+    price: List[float] = Form(...), 
+    image: List[File] = File(None),
+    db: Session = Depends(get_db)
+):
+    # Log what is being received
+    logging.debug(f"Received menu item data: {name}, {description}, {price}, {image}")
 
-    item = MenuItem(**menu_item.dict())
-    db.add(item)
+    if len(name) != len(description) or len(name) != len(price):
+        raise HTTPException(status_code=400, detail="Mismatch in menu item counts")
+
+    menu_items = []
+    for i in range(len(name)):
+        # You can either handle image processing here or store a placeholder URL if needed
+        image_url = image[i].filename if image else None
+        item = MenuItem(
+            name=name[i],
+            description=description[i],
+            price=price[i],
+            image_url=image_url
+        )
+        db.add(item)
+        menu_items.append(item)
+
     db.commit()
-    db.refresh(item)
-    logging.debug(f"Created menu item with ID: {item.id}")
-    return {"message": "Menu item created successfully", "id": item.id, "image_url": item.image_url}
-
+    db.refresh(menu_items)
+    
+    return {"message": "Menu items created successfully", "ids": [item.id for item in menu_items]}
 @app.get("/menu/")
 async def get_menu_items(db: Session = Depends(get_db)):
     return db.query(MenuItem).all()
