@@ -32,7 +32,8 @@ POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD')
 PGHOST = os.getenv('PGHOST')
 PGDATABASE = os.getenv('PGDATABASE')
 
-DATABASE_URL = f"postgresql://{PGUSER}:{POSTGRES_PASSWORD}@{PGHOST}:5432/{PGDATABASE}"
+DATABASE_URL = f"postgresql://{PGUSER}:{POSTGRES_PASSWORD}@switchback.proxy.rlwy.net:24756/{PGDATABASE}"
+
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
