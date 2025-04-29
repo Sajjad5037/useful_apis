@@ -29,10 +29,10 @@ app.add_middleware(
 # Database Setup (SQLAlchemy)
 PGUSER = os.getenv('PGUSER')
 POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD')
-PGHOST = os.getenv('PGHOST')
 PGDATABASE = os.getenv('PGDATABASE')
 
-DATABASE_URL = f"postgresql://{PGUSER}:{POSTGRES_PASSWORD}@switchback.proxy.rlwy.net:24756/{PGDATABASE}"
+DATABASE_URL = f"postgresql://{PGUSER}:{POSTGRES_PASSWORD}@postgres.railway.internal:24756/{PGDATABASE}"
+
 # Define the engine
 engine = create_engine(DATABASE_URL)
 
