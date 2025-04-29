@@ -3,3 +3,4 @@ uvicorn==0.22.0
 sqlalchemy>=1.4
 openai>=1.0.0
 python-multipart  # Needed if you're handling file uploads
+psycopg2-binary
