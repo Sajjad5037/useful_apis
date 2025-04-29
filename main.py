@@ -105,7 +105,7 @@ async def create_menu_items(
         "message": "Menu items created successfully",
         "ids": created_ids
     }
-@app.get("/menu/")
+@app.get("/get-menu-items/")
 async def get_menu_items(db: Session = Depends(get_db)):
     return db.query(MenuItem).all()
 
