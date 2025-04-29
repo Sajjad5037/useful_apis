@@ -27,12 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 # Database Setup (SQLAlchemy)
-PGUSER = os.getenv('PGUSER')
-POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD')
-PGDATABASE = os.getenv('PGDATABASE')
-
-DATABASE_URL = "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@postgres.railway.internal:24756/railway"
-
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Define the engine
 engine = create_engine(DATABASE_URL)
