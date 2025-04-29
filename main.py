@@ -20,7 +20,7 @@ app.add_middleware(
         "https://rafis-kitchen.vercel.app",
         "https://sajjadalinoor.vercel.app",
         "http://localhost:3000",
-        "https://clinic-management-system-27d11.web.app/",  # New origin added
+        "https://clinic-management-system-27d11.web.app",  # New origin added
     ],
     allow_credentials=True,
     allow_methods=["*"],
