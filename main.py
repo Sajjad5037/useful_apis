@@ -3,7 +3,7 @@ import sys
 import logging
 from typing import Optional,List
 
-from fastapi import FastAPI, HTTPException, Depends,Form
+from fastapi import FastAPI, HTTPException, Depends,Form,File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
