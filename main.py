@@ -2,8 +2,7 @@ import os
 import sys
 import logging
 from typing import Optional,List
-from models import MenuItem as MenuItemModel  # SQLAlchemy model
-from schemas import MenuItemUpdate            # Pydantic model
+
 
 from fastapi import FastAPI, HTTPException, Depends,Form,File
 from fastapi.middleware.cors import CORSMiddleware
