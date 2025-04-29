@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 
-from openai import OpenAI
+import openai  # classic client
 
 # — Logging —
 logging.basicConfig(level=logging.DEBUG)
@@ -68,15 +68,15 @@ class MenuItemRequest(BaseModel):
 class Message(BaseModel):
     message: str
 
-# — OpenAI Client (v1+) —
+# — OpenAI Setup (v0.27-style) —
 openai_api_key = os.getenv("OPENAI_API_KEY")
 if not openai_api_key:
     logging.error("OPENAI_API_KEY not set")
     sys.exit(1)
 
-client = OpenAI(api_key=openai_api_key)
+openai.api_key = openai_api_key
 
-# — Menu Endpoints — 
+# — Menu Endpoints —
 @app.post("/create-menu-item/")
 async def create_menu_item(menu_item: MenuItemRequest, db: Session = Depends(get_db)):
     logging.debug(f"Received menu item data: {menu_item!r}")
@@ -136,11 +136,11 @@ async def update_menu_item(
     db.refresh(item)
     return {"message": "Menu item updated successfully", "item": item}
 
-# — OpenAI Chat Endpoints — 
+# — OpenAI Chat Endpoints —
 @app.post("/api/chatRK")
 async def chat_rk(msg: Message):
     try:
-        resp = client.chat.completions.create(
+        resp = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": (
@@ -158,7 +158,7 @@ async def chat_rk(msg: Message):
 @app.post("/api/chatQuran")
 async def chat_quran(msg: Message):
     try:
-        resp = client.chat.completions.create(
+        resp = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": (
