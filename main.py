@@ -2,6 +2,8 @@ import os
 import sys
 import logging
 from typing import Optional,List
+from models import MenuItem as MenuItemModel  # SQLAlchemy model
+from schemas import MenuItemUpdate            # Pydantic model
 
 from fastapi import FastAPI, HTTPException, Depends,Form,File
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,7 +50,11 @@ class MenuItem(Base):
     description = Column(String)
     price = Column(Integer)
     image_url = Column(String)
-
+class MenuItemUpdate(BaseModel):
+    name: str
+    description: str
+    price: float
+    image_url: Optional[str] = ""
 Base.metadata.create_all(bind=engine)
 
 def get_db():
@@ -150,14 +156,20 @@ async def update_menu_item(
     db.commit()
     db.refresh(item)
     return {"message": "Menu item updated successfully", "item": item}
-@app.put("/update-menu-item/{item_id}/")
-def update_menu_item(item_id: int, updated_item: MenuItem):
-    for index, item in enumerate(menu_items):
-        if item["id"] == item_id:
-            menu_items[index].update(updated_item.dict())
-            return {"message": "Item updated successfully", "item": menu_items[index]}
-    raise HTTPException(status_code=404, detail="Menu item not found")
+    
+@app.put("/update-menu-item/{item_id}/", response_model=dict)
+def update_menu_item(item_id: int, item: MenuItemUpdate, db: Session = Depends(get_db)):
+    db_item = db.query(MenuItemModel).filter(MenuItemModel.id == item_id).first()
+    if not db_item:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    
+    for key, value in item.dict().items():
+        setattr(db_item, key, value)
 
+    db.commit()
+    db.refresh(db_item)
+    return {"message": "Menu item updated", "item": item}
+    
 # — OpenAI Chat Endpoints —
 @app.post("/api/chatRK")
 async def chat_rk(msg: Message):
