@@ -76,12 +76,12 @@ class Message(BaseModel):
 # instantiate the new v1+ client
 #client = openai.OpenAI(api_key=openai_api_key)
 
-@app.post("/create-menu-item/")
 async def create_menu_item(menu_item: MenuItemRequest, db: Session = Depends(get_db)):
+    logging.debug(f"Received menu item data: {menu_item.dict()}")  # Log the request payload
+
     if not menu_item.image_url:
         raise HTTPException(status_code=400, detail="Image URL is required")
 
-    # Create a new menu item and add it to the database
     db_menu_item = MenuItem(
         name=menu_item.name,
         description=menu_item.description,
@@ -92,8 +92,9 @@ async def create_menu_item(menu_item: MenuItemRequest, db: Session = Depends(get
     db.commit()
     db.refresh(db_menu_item)
 
-    return {"message": "Menu item created successfully", "id": db_menu_item.id, "image_url": db_menu_item.image_url}
+    logging.debug(f"Created menu item with ID: {db_menu_item.id}")
 
+    return {"message": "Menu item created successfully", "id": db_menu_item.id, "image_url": db_menu_item.image_url}
 # 2. Endpoint to get all menu items
 @app.get("/menu/")
 async def get_menu_items(db: Session = Depends(get_db)):
