@@ -1,12 +1,22 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
+
+from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy.orm import sessionmaker, declarative_base
 from pydantic import BaseModel
-import openai
 import os
-import sys
+from typing import Optional  
+from fastapi import Depends
+from fastapi.staticfiles import StaticFiles
+
+from pathlib import Path
 
 # — FastAPI Init —
 app = FastAPI()
+
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -19,51 +29,108 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# — Request Model —
-class Message(BaseModel):
-    message: str
+# — Database Setup (SQLAlchemy) —
+DATABASE_URL = os.getenv("DATABASE_URL") # Replace with your actual database URL
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
 
-# — OpenAI Key & Client —
-openai_api_key = os.getenv("OPENAI_API_KEY")
-if not openai_api_key:
-    sys.exit(1)
+# — MenuItem Model —
+class MenuItem(Base):
+    __tablename__ = "menu_items"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    description = Column(String)
+    price = Column(Integer)
+    image_path = Column(String)
 
-# instantiate the new v1+ client
-client = openai.OpenAI(api_key=openai_api_key)
+# Create the database tables
+Base.metadata.create_all(bind=engine)
 
-@app.post("/api/chatRK")
-async def chat_endpoint(msg: Message):
+# — FastAPI Request Model —
+class MenuItem(BaseModel):
+    name: str
+    description: str
+    price: int
+    image_url: Optional[str] = None  # image URL instead of file upload
+
+
+# — Database session dependency —
+def get_db():
+    db = SessionLocal()
     try:
-        # new v1+ call path
-        resp = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "you are an assitant to rafis kitchen which is located at 800 Wayne street Olean NY 14760. the owner is Amir. do not answer questions based on your prior knowledge. "},
-                {"role": "user",   "content": msg.message},
-            ],
-        )
-        # access the reply
-        reply = resp.choices[0].message.content.strip()
-        return {"reply": reply}
+        yield db
+    finally:
+        db.close()
 
-    except Exception as e:
-        return {"reply": "Sorry, something went wrong."}
+# — API Endpoints —
 
-@app.post("/api/chatQuran")
-async def chat_quran_endpoint(msg: Message):
-    try:
-        # new v1+ call path for Quran-related queries
-        resp = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are an assistant providing information based on the Quran and Islamic teachings. Please only respond to questions regarding the Quran, its interpretation, or Islamic principles. Do not answer questions based on your prior knowledge."},
-                {"role": "user", "content": msg.message},
-            ],
-        )
-        
-        # access the reply
-        reply = resp.choices[0].message.content.strip()
-        return {"reply": reply}
+# 1. Endpoint to add a new menu item (with image)
+@app.post("/create-menu-item/")
+async def create_menu_item(menu_item: MenuItem, db: Session = Depends(get_db)):
+    if not menu_item.image_url:
+        raise HTTPException(status_code=400, detail="Image URL is required")
 
-    except Exception as e:
-        return {"reply": "Sorry, something went wrong."}
+    # Create a new menu item and add it to the database
+    db_menu_item = MenuItem(name=menu_item.name, description=menu_item.description, price=menu_item.price, image_url=menu_item.image_url)
+    db.add(db_menu_item)
+    db.commit()
+    db.refresh(db_menu_item)
+
+    return {"message": "Menu item created successfully", "id": db_menu_item.id, "image_url": db_menu_item.image_url}
+
+# 2. Endpoint to get all menu items
+@app.get("/menu/")
+async def get_menu_items(db: Session = Depends(get_db)):
+    menu_items = db.query(MenuItem).all()
+    return menu_items
+
+# 3. Endpoint to get a single menu item by ID
+@app.get("/menu/{item_id}")
+async def get_menu_item(item_id: int, db: Session = Depends(get_db)):
+    menu_item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    if not menu_item:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    return menu_item
+
+# 4. Endpoint to delete a menu item by ID
+@app.delete("/menu/{item_id}")
+async def delete_menu_item(item_id: int, db: Session = Depends(get_db)):
+    menu_item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    if not menu_item:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    
+    db.delete(menu_item)
+    db.commit()
+    return {"message": "Menu item deleted successfully"}
+
+# 5. Endpoint to update a menu item by ID
+@app.put("/menu/{item_id}")
+async def update_menu_item(
+    item_id: int,
+    name: str = None,
+    description: str = None,
+    price: int = None,
+    image: UploadFile = None,
+    db: Session = Depends(get_db)
+):
+    menu_item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    if not menu_item:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    
+    if name:
+        menu_item.name = name
+    if description:
+        menu_item.description = description
+    if price is not None:
+        menu_item.price = price
+    if image:
+        file_path = save_image(image)
+        menu_item.image_path = file_path
+    
+    db.commit()
+    db.refresh(menu_item)
+    
+    return {"message": "Menu item updated successfully", "item": menu_item}
+
