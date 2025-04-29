@@ -27,7 +27,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 # Database Setup (SQLAlchemy)
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL").strip()
+
 
 # Define the engine
 engine = create_engine(DATABASE_URL)
