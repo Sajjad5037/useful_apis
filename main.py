@@ -31,7 +31,8 @@ PGUSER = os.getenv('PGUSER')
 POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD')
 PGDATABASE = os.getenv('PGDATABASE')
 
-DATABASE_URL = f"postgresql://{PGUSER}:{POSTGRES_PASSWORD}@postgres.railway.internal:24756/{PGDATABASE}"
+DATABASE_URL = "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@postgres.railway.internal:24756/railway"
+
 
 # Define the engine
 engine = create_engine(DATABASE_URL)
