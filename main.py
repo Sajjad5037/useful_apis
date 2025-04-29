@@ -11,6 +11,11 @@ import random
 from sqlalchemy import create_engine,Column,Integer,String
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
+import logging
+
+# Set logging level to DEBUG
+logging.basicConfig(level=logging.DEBUG)
+
 
 # — FastAPI Init —
 app = FastAPI()
