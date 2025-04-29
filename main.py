@@ -1,7 +1,7 @@
 
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import sessionmaker, Session
-import openai
+#import openai
 import os
 import sys
 from fastapi import FastAPI, HTTPException, Depends
@@ -69,12 +69,12 @@ class Message(BaseModel):
     message: str
 
 # — OpenAI Key & Client —
-openai_api_key = os.getenv("OPENAI_API_KEY")
-if not openai_api_key:
-    sys.exit(1)
+#openai_api_key = os.getenv("OPENAI_API_KEY")
+#if not openai_api_key:
+ #   sys.exit(1)
 
 # instantiate the new v1+ client
-client = openai.OpenAI(api_key=openai_api_key)
+#client = openai.OpenAI(api_key=openai_api_key)
 
 @app.post("/create-menu-item/")
 async def create_menu_item(menu_item: MenuItemRequest, db: Session = Depends(get_db)):
