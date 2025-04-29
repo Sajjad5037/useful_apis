@@ -130,31 +130,6 @@ async def delete_menu_item(item_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Menu item deleted successfully"}
 
-@app.put("/menu/{item_id}")
-async def update_menu_item(
-    item_id: int,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
-    price: Optional[int] = None,
-    image_url: Optional[str] = None,
-    db: Session = Depends(get_db)
-):
-    item = db.query(MenuItem).get(item_id)
-    if not item:
-        raise HTTPException(404, "Menu item not found")
-
-    if name is not None:
-        item.name = name
-    if description is not None:
-        item.description = description
-    if price is not None:
-        item.price = price
-    if image_url is not None:
-        item.image_url = image_url
-
-    db.commit()
-    db.refresh(item)
-    return {"message": "Menu item updated successfully", "item": item}
     
 @app.put("/update-menu-item/{item_id}/", response_model=dict)
 def update_menu_item(item_id: int, item: MenuItemUpdate, db: Session = Depends(get_db)):
