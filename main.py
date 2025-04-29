@@ -75,7 +75,7 @@ class Message(BaseModel):
 
 # instantiate the new v1+ client
 #client = openai.OpenAI(api_key=openai_api_key)
-
+@app.post("/create-menu-item/")
 async def create_menu_item(menu_item: MenuItemRequest, db: Session = Depends(get_db)):
     logging.debug(f"Received menu item data: {menu_item.dict()}")  # Log the request payload
 
