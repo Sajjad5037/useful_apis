@@ -1,23 +1,22 @@
-
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import sessionmaker, Session
-import openai
 import os
 import sys
-from fastapi import FastAPI, HTTPException, Depends
-from pydantic import BaseModel
-from typing import Optional
-import random
-from sqlalchemy import create_engine,Column,Integer,String
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
 import logging
+from typing import Optional
 
-# Set logging level to DEBUG
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
+
+from openai import OpenAI
+
+# — Logging —
 logging.basicConfig(level=logging.DEBUG)
 
-
-# — FastAPI Init —
+# — FastAPI Init & CORS —
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -25,42 +24,33 @@ app.add_middleware(
         "https://rafis-kitchen.vercel.app",
         "https://sajjadalinoor.vercel.app",
         "http://localhost:3000",
-        "https://clinic-management-system-27d11.web.app",  # New origin added
+        "https://clinic-management-system-27d11.web.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# Database Setup (SQLAlchemy)
-DATABASE_URL = os.getenv("DATABASE_URL").strip()
 
+# — Database Setup (SQLAlchemy) —
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+if not DATABASE_URL:
+    logging.error("DATABASE_URL not set")
+    sys.exit(1)
 
-# Define the engine
 engine = create_engine(DATABASE_URL)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
 class MenuItem(Base):
     __tablename__ = "menu_items"
-
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     description = Column(String)
     price = Column(Integer)
     image_url = Column(String)
 
-# Create the database tables
 Base.metadata.create_all(bind=engine)
 
-# FastAPI Request Model
-class MenuItemRequest(BaseModel):
-    name: str
-    description: str
-    price: int
-    image_url: Optional[str] = None  # Image URL provided by user
-
-# Database session dependency
 def get_db():
     db = SessionLocal()
     try:
@@ -68,124 +58,117 @@ def get_db():
     finally:
         db.close()
 
+# — Request Models —
+class MenuItemRequest(BaseModel):
+    name: str
+    description: str
+    price: int
+    image_url: Optional[str] = None
 
-# — Request Model —
 class Message(BaseModel):
     message: str
 
-# — OpenAI Key & Client —
+# — OpenAI Client (v1+) —
 openai_api_key = os.getenv("OPENAI_API_KEY")
 if not openai_api_key:
+    logging.error("OPENAI_API_KEY not set")
     sys.exit(1)
 
-# instantiate the new v1+ client
-client = openai.OpenAI(api_key=openai_api_key)
+client = OpenAI(api_key=openai_api_key)
+
+# — Menu Endpoints — 
 @app.post("/create-menu-item/")
 async def create_menu_item(menu_item: MenuItemRequest, db: Session = Depends(get_db)):
-    logging.debug(f"Received menu item data: {menu_item.dict()}")  # Log the request payload
-
+    logging.debug(f"Received menu item data: {menu_item!r}")
     if not menu_item.image_url:
         raise HTTPException(status_code=400, detail="Image URL is required")
 
-    db_menu_item = MenuItem(
-        name=menu_item.name,
-        description=menu_item.description,
-        price=menu_item.price,
-        image_url=menu_item.image_url,
-    )
-    db.add(db_menu_item)
+    item = MenuItem(**menu_item.dict())
+    db.add(item)
     db.commit()
-    db.refresh(db_menu_item)
+    db.refresh(item)
+    logging.debug(f"Created menu item with ID: {item.id}")
+    return {"message": "Menu item created successfully", "id": item.id, "image_url": item.image_url}
 
-    logging.debug(f"Created menu item with ID: {db_menu_item.id}")
-
-    return {"message": "Menu item created successfully", "id": db_menu_item.id, "image_url": db_menu_item.image_url}
-# 2. Endpoint to get all menu items
 @app.get("/menu/")
 async def get_menu_items(db: Session = Depends(get_db)):
-    menu_items = db.query(MenuItem).all()
-    return menu_items
+    return db.query(MenuItem).all()
 
-# 3. Endpoint to get a single menu item by ID
 @app.get("/menu/{item_id}")
 async def get_menu_item(item_id: int, db: Session = Depends(get_db)):
-    menu_item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
-    if not menu_item:
-        raise HTTPException(status_code=404, detail="Menu item not found")
-    return menu_item
+    item = db.query(MenuItem).get(item_id)
+    if not item:
+        raise HTTPException(404, "Menu item not found")
+    return item
 
-# 4. Endpoint to delete a menu item by ID
 @app.delete("/menu/{item_id}")
 async def delete_menu_item(item_id: int, db: Session = Depends(get_db)):
-    menu_item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
-    if not menu_item:
-        raise HTTPException(status_code=404, detail="Menu item not found")
-
-    db.delete(menu_item)
+    item = db.query(MenuItem).get(item_id)
+    if not item:
+        raise HTTPException(404, "Menu item not found")
+    db.delete(item)
     db.commit()
     return {"message": "Menu item deleted successfully"}
 
-# 5. Endpoint to update a menu item by ID
 @app.put("/menu/{item_id}")
 async def update_menu_item(
     item_id: int,
-    name: str = None,
-    description: str = None,
-    price: int = None,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    price: Optional[int] = None,
     image_url: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    menu_item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
-    if not menu_item:
-        raise HTTPException(status_code=404, detail="Menu item not found")
+    item = db.query(MenuItem).get(item_id)
+    if not item:
+        raise HTTPException(404, "Menu item not found")
 
-    if name:
-        menu_item.name = name
-    if description:
-        menu_item.description = description
+    if name is not None:
+        item.name = name
+    if description is not None:
+        item.description = description
     if price is not None:
-        menu_item.price = price
-    if image_url:
-        menu_item.image_url = image_url
+        item.price = price
+    if image_url is not None:
+        item.image_url = image_url
 
     db.commit()
-    db.refresh(menu_item)
+    db.refresh(item)
+    return {"message": "Menu item updated successfully", "item": item}
 
-    return {"message": "Menu item updated successfully", "item": menu_item}
-
+# — OpenAI Chat Endpoints — 
 @app.post("/api/chatRK")
-async def chat_endpoint(msg: Message):
+async def chat_rk(msg: Message):
     try:
-        # new v1+ call path
         resp = client.chat.completions.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "you are an assitant to rafis kitchen which is located at 800 Wayne street Olean NY 14760. the owner is Amir. do not answer questions based on your prior knowledge. "},
-                {"role": "user",   "content": msg.message},
-            ],
-        )
-        # access the reply
-        reply = resp.choices[0].message.content.strip()
-        return {"reply": reply}
-
-    except Exception as e:
-        return {"reply": "Sorry, something went wrong."}
-
-@app.post("/api/chatQuran")
-async def chat_quran_endpoint(msg: Message):
-    try:
-        # new v1+ call path for Quran-related queries
-        resp = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are an assistant providing information based on the Quran and Islamic teachings. Please only respond to questions regarding the Quran, its interpretation, or Islamic principles. Do not answer questions based on your prior knowledge."},
+                {"role": "system", "content": (
+                    "You are an assistant to Rafis Kitchen at 800 Wayne Street, Olean, NY 14760. "
+                    "The owner is Amir. Do not answer questions based on prior knowledge."
+                )},
                 {"role": "user", "content": msg.message},
             ],
         )
-        
-        # access the reply
-        reply = resp.choices[0].message.content.strip()
-        return {"reply": reply}
-
+        return {"reply": resp.choices[0].message.content.strip()}
     except Exception as e:
-        return {"reply": "Sorry, something went wrong."}
+        logging.error(f"chatRK error: {e}")
+        raise HTTPException(500, "Sorry, something went wrong.")
+
+@app.post("/api/chatQuran")
+async def chat_quran(msg: Message):
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": (
+                    "You are an assistant providing information based on the Quran and Islamic teachings. "
+                    "Only answer questions about the Quran, its interpretation, or Islamic principles."
+                )},
+                {"role": "user", "content": msg.message},
+            ],
+        )
+        return {"reply": resp.choices[0].message.content.strip()}
+    except Exception as e:
+        logging.error(f"chatQuran error: {e}")
+        raise HTTPException(500, "Sorry, something went wrong.")
