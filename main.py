@@ -94,7 +94,7 @@ async def create_menu_items(
             name=itm.name,
             description=itm.description,
             price=itm.price,
-            image_url=itm.image_url
+            image= itm.image_url 
         )
         db.add(db_item)
         db.commit()
