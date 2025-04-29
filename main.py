@@ -158,7 +158,7 @@ async def update_menu_item(
     
 @app.put("/update-menu-item/{item_id}/", response_model=dict)
 def update_menu_item(item_id: int, item: MenuItemUpdate, db: Session = Depends(get_db)):
-    db_item = db.query(MenuItemModel).filter(MenuItemModel.id == item_id).first()
+    db_item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
     if not db_item:
         raise HTTPException(status_code=404, detail="Menu item not found")
     
