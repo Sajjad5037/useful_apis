@@ -2,16 +2,12 @@ import os
 import sys
 import logging
 from typing import Optional,List
-
-
 from fastapi import FastAPI, HTTPException, Depends,Form,File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
-
 import openai  # classic client
 
 # — Logging —
@@ -39,8 +35,6 @@ if not DATABASE_URL:
     sys.exit(1)
 
 engine = create_engine(DATABASE_URL)
-
-
 #creating a local session
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
