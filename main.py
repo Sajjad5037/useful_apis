@@ -48,6 +48,8 @@ class MenuItemUpdate(BaseModel):
 
 # — Database Setup (SQLAlchemy) —
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+#DATABASE_URL = "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
+
 if not DATABASE_URL:
     logging.error("DATABASE_URL not set")
     sys.exit(1)
@@ -77,6 +79,7 @@ class Message(BaseModel):
 
 # — OpenAI Setup (v0.27-style) —
 openai_api_key = os.getenv("OPENAI_API_KEY")
+
 if not openai_api_key:
     logging.error("OPENAI_API_KEY not set")
     sys.exit(1)
@@ -113,24 +116,37 @@ async def create_menu_items(
         "message": "Menu items created successfully",
         "ids": created_ids
     }
+
+
 @app.get("/get-menu-items/")
 def get_menu_items(
     restaurant_name: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
-    print("Received request to /get-menu-items/")
-    if restaurant_name:
-        print(f"Filtering menu items for restaurant: {restaurant_name}")
-    else:
-        print("No restaurant_name provided. Fetching all menu items.")
+    print(f"Received request to /get-menu-items/ with restaurant_name = {restaurant_name}")
 
     q = db.query(MenuItem)
-    if restaurant_name:
-        q = q.filter(MenuItem.restaurant_name == restaurant_name)
 
-    items = q.all()
-    print(f"Number of items retrieved: {len(items)}")
-    return items
+    if restaurant_name:
+        print(f"Filtering items where restaurant_name == '{restaurant_name}'")
+        q = q.filter(MenuItem.restaurant_name == restaurant_name)
+    else:
+        print("No restaurant_name provided. Returning all menu items.")
+    
+    results = q.all()
+    print(f"Number of items found: {len(results)}")
+
+    if not results:
+        print("No menu items found for the given restaurant_name.")
+        raise HTTPException(status_code=404, detail="No menu items found.")
+    
+    # Print the content of the results
+    print("Results content:")
+    for item in results:
+        print(f"ID: {item.id}, Name: {item.name}, Description: {item.description}, Price: {item.price}, Restaurant: {item.restaurant_name}")
+
+    return results
+
 
 @app.get("/menu/{item_id}")
 async def get_menu_item(item_id: int, db: Session = Depends(get_db)):
@@ -219,3 +235,7 @@ async def chat_quran(msg: Message):
     except Exception as e:
         logging.error(f"chatQuran error: {e}")
         raise HTTPException(500, "Sorry, something went wrong.")
+    
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)    
