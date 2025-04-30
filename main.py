@@ -118,10 +118,19 @@ def get_menu_items(
     restaurant_name: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
+    print("Received request to /get-menu-items/")
+    if restaurant_name:
+        print(f"Filtering menu items for restaurant: {restaurant_name}")
+    else:
+        print("No restaurant_name provided. Fetching all menu items.")
+
     q = db.query(MenuItem)
     if restaurant_name:
         q = q.filter(MenuItem.restaurant_name == restaurant_name)
-    return q.all()
+
+    items = q.all()
+    print(f"Number of items retrieved: {len(items)}")
+    return items
 
 @app.get("/menu/{item_id}")
 async def get_menu_item(item_id: int, db: Session = Depends(get_db)):
