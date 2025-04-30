@@ -68,9 +68,10 @@ def get_db():
 class MenuItemRequest(BaseModel):
     name: str
     description: str
-    price: int
-    image_url: Optional[str] = None
-
+    price: float  # Changed to float to allow decimal prices
+    image_url: Optional[str] = None  # Optional URL for the image
+    restaurant_name: str  # Added restaurant_name as required field
+    
 class Message(BaseModel):
     message: str
 
