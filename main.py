@@ -111,9 +111,15 @@ async def create_menu_items(
         "message": "Menu items created successfully",
         "ids": created_ids
     }
-@app.get("/get-menu-items/")
-async def get_menu_items(db: Session = Depends(get_db)):
-    return db.query(MenuItem).all()
+@router.get("/get-menu-items/")
+def get_menu_items(
+    restaurant_name: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    q = db.query(MenuItem)
+    if restaurant_name:
+        q = q.filter(MenuItem.restaurant_name == restaurant_name)
+    return q.all()
 
 @app.get("/menu/{item_id}")
 async def get_menu_item(item_id: int, db: Session = Depends(get_db)):
@@ -144,19 +150,28 @@ async def delete_menu_item(item_id: int, db: Session = Depends(get_db)):
     return {"message": f"Menu item with ID {item_id} deleted successfully"}
 
     
-@app.put("/update-menu-item/{item_id}/", response_model=dict)
-def update_menu_item(item_id: int, item: MenuItemUpdate, db: Session = Depends(get_db)):
-    db_item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
-    if not db_item:
-        raise HTTPException(status_code=404, detail="Menu item not found")
-    
-    for key, value in item.dict().items():
-        setattr(db_item, key, value)
+@router.put("/update-menu-item/{item_id}/")
+def update_menu_item(
+    item_id: int,
+    updated: MenuItemUpdate,
+    db: Session = Depends(get_db),
+    restaurant_name: Optional[str] = Query(None),
+):
+    # first load, ensuring restaurant_name matches:
+    item = (
+        db.query(MenuItem)
+          .filter(MenuItem.id == item_id)
+          .filter(MenuItem.restaurant_name == restaurant_name)
+          .first()
+    )
+    if not item:
+        raise HTTPException(404, "Menu item not found")
 
+    for field, value in updated.dict().items():
+        setattr(item, field, value)
     db.commit()
-    db.refresh(db_item)
-    return {"message": "Menu item updated", "item": item}
-    
+    db.refresh(item)
+    return item
 # — OpenAI Chat Endpoints —
 @app.post("/api/chatRK")
 async def chat_rk(msg: Message):
