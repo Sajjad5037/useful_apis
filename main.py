@@ -40,8 +40,7 @@ if not DATABASE_URL:
 
 engine = create_engine(DATABASE_URL)
 
-# Drop the existing table (menu_items)
-Base.metadata.drop_all(bind=engine, tables=[Base.metadata.tables['menu_items']])
+
 #creating a local session
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
