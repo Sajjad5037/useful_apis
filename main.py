@@ -28,17 +28,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# — Database Setup (SQLAlchemy) —
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-if not DATABASE_URL:
-    logging.error("DATABASE_URL not set")
-    sys.exit(1)
-
-engine = create_engine(DATABASE_URL)
-#creating a local session
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
-Base.metadata.create_all(bind=engine)
 class MenuItem(Base):
     __tablename__ = "menu_items"
     id = Column(Integer, primary_key=True, index=True)
@@ -54,6 +44,17 @@ class MenuItemUpdate(BaseModel):
     image_url: Optional[str] = ""
     restaurant_name: str  # <-- New field added
 
+
+# — Database Setup (SQLAlchemy) —
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+if not DATABASE_URL:
+    logging.error("DATABASE_URL not set")
+    sys.exit(1)
+
+engine = create_engine(DATABASE_URL)
+#creating a local session
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+Base.metadata.create_all(bind=engine)
 
 def get_db():
     db = SessionLocal()
