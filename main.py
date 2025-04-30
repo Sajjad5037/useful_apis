@@ -111,7 +111,7 @@ async def create_menu_items(
         "message": "Menu items created successfully",
         "ids": created_ids
     }
-@router.get("/get-menu-items/")
+@app.get("/get-menu-items/")
 def get_menu_items(
     restaurant_name: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -150,7 +150,7 @@ async def delete_menu_item(item_id: int, db: Session = Depends(get_db)):
     return {"message": f"Menu item with ID {item_id} deleted successfully"}
 
     
-@router.put("/update-menu-item/{item_id}/")
+@app.put("/update-menu-item/{item_id}/")
 def update_menu_item(
     item_id: int,
     updated: MenuItemUpdate,
