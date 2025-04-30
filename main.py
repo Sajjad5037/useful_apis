@@ -130,6 +130,18 @@ async def delete_menu_item(item_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Menu item deleted successfully"}
 
+@app.delete("/delete-menu-item/{item_id}/")
+async def delete_menu_item(item_id: int, db: Session = Depends(get_db)):
+    db_item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+
+    if not db_item:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+
+    db.delete(db_item)
+    db.commit()
+
+    return {"message": f"Menu item with ID {item_id} deleted successfully"}
+
     
 @app.put("/update-menu-item/{item_id}/", response_model=dict)
 def update_menu_item(item_id: int, item: MenuItemUpdate, db: Session = Depends(get_db)):
