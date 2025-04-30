@@ -236,6 +236,3 @@ async def chat_quran(msg: Message):
         logging.error(f"chatQuran error: {e}")
         raise HTTPException(500, "Sorry, something went wrong.")
     
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)    
