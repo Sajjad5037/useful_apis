@@ -39,9 +39,13 @@ if not DATABASE_URL:
     sys.exit(1)
 
 engine = create_engine(DATABASE_URL)
+
+# Drop the existing table (menu_items)
+Base.metadata.drop_all(bind=engine, tables=[Base.metadata.tables['menu_items']])
+#creating a local session
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
-
+Base.metadata.create_all(bind=engine)
 class MenuItem(Base):
     __tablename__ = "menu_items"
     id = Column(Integer, primary_key=True, index=True)
@@ -49,12 +53,14 @@ class MenuItem(Base):
     description = Column(String)
     price = Column(Integer)
     image_url = Column(String)
+    restaurant_name = Column(String, index=True)  # <-- New field added
 class MenuItemUpdate(BaseModel):
     name: str
     description: str
     price: float
     image_url: Optional[str] = ""
-Base.metadata.create_all(bind=engine)
+    restaurant_name: str  # <-- New field added
+
 
 def get_db():
     db = SessionLocal()
