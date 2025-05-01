@@ -5,11 +5,19 @@ from typing import Optional,List
 from fastapi import FastAPI, HTTPException, Depends,Form,File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy import create_engine, Column, Integer, String,Float,DateTime,ForeignKey,desc
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session,relationship,joinedload
 import openai  # classic client
 from fastapi import Query
+import datetime
+from datetime import datetime
+import uvicorn
+import uuid  # Add this import at the top of your file
+import random
+# Now you can generate a unique order ID
+ # Use uuid.uuid4() to generate a unique ID
+
 
 # — Logging —
 logging.basicConfig(level=logging.DEBUG)
@@ -45,10 +53,72 @@ class MenuItemUpdate(BaseModel):
     image_url: Optional[str] = ""
     restaurant_name: str  # <-- New field added
 
+class OrderItem(BaseModel):
+    name: str
+    price: float
+    description: str = None
+    image_url: str = None
+    restaurant_name: str = None
+    quantity:int
 
+    class Config:
+        orm_mode = True
+class OrderItemResponse(BaseModel):
+    id: int
+    name: str
+    price: float
+    description: str
+    image_url: str
+    restaurant_name: str
+    quantity:int
+
+    class Config:
+        orm_mode = True
+class OrderResponse(BaseModel):
+    id: int
+    order_id: int
+    total: float
+    timestamp: datetime
+    restaurant_name: str
+    items: List[OrderItemResponse]
+    
+
+    class Config:
+        orm_mode = True
+
+class Order(BaseModel):
+    items: List[OrderItem]
+    total: float
+    timestamp: str
+    restaurant_name: str  # ✅ Added field
+    
+
+class OrderModel(Base):
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, unique=True, index=True)  # Must exist
+    total = Column(Float)
+    timestamp = Column(DateTime)
+    restaurant_name = Column(String)  # Must exist
+    
+    
+
+    items = relationship("OrderItemModel", back_populates="order")
+class OrderItemModel(Base):
+    __tablename__ = "order_items"
+    id = Column(Integer, primary_key=True, index=True)
+    # ← reference the PK on orders
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+    name = Column(String)
+    price = Column(Float)
+    description = Column(String)
+    image_url = Column(String)
+    restaurant_name = Column(String)
+    quantity = Column(Integer)
+    order = relationship("OrderModel", back_populates="items")
 # — Database Setup (SQLAlchemy) —
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-#DATABASE_URL = "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
 
 if not DATABASE_URL:
     logging.error("DATABASE_URL not set")
@@ -199,6 +269,73 @@ def update_menu_item(
     db.commit()
     db.refresh(item)
     return item
+
+
+@app.get("/orders", response_model=List[OrderResponse])
+def get_orders(restaurant_name: Optional[str] = Query(None), db: Session = Depends(get_db)):
+    query = db.query(OrderModel).options(joinedload(OrderModel.items))
+    
+    # Filter by restaurant_name if provided
+    if restaurant_name:
+        query = query.filter(OrderModel.restaurant_name == restaurant_name)
+
+    # Execute the query and fetch all orders
+    orders = query.all()
+
+    return orders
+@app.post("/place-order")
+def place_order(order: Order, db: Session = Depends(get_db)):
+    # Get the latest order_id from the database
+    last_order = db.query(OrderModel).order_by(desc(OrderModel.order_id)).first()
+    if last_order and last_order.order_id:
+        new_order_id = last_order.order_id + 1
+    else:
+        new_order_id = 1  # Starting order_id if table is empty
+
+    # Create the main order record in the database
+    db_order = OrderModel(
+        order_id=new_order_id, 
+        total=order.total,
+        timestamp=order.timestamp,
+        restaurant_name=order.restaurant_name,
+        
+    )
+    db.add(db_order)
+    db.commit()
+    db.refresh(db_order)
+
+    # Add each order item related to this order
+    for item in order.items:
+        db_item = OrderItemModel(
+            order_id=db_order.id,  # Foreign key to OrderModel.id
+            name=item.name,
+            price=item.price,
+            description=item.description,
+            image_url=item.image_url,
+            restaurant_name=item.restaurant_name,
+            quantity=item.quantity
+        )
+        db.add(db_item)
+
+    db.commit()
+
+    return {"message": "Order received", "order_id": db_order.order_id}
+
+
+@app.delete("/delete-orders/{order_id}")
+def delete_order(order_id: int, db: Session = Depends(get_db)):
+    order = db.query(OrderModel).filter(OrderModel.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    # Delete order items first
+    db.query(OrderItemModel).filter(OrderItemModel.order_id == order.id).delete()
+
+    # Then delete the order
+    db.delete(order)
+    db.commit()
+
+    return {"message": f"Order {order_id} deleted successfully"}
 # — OpenAI Chat Endpoints —
 @app.post("/api/chatRK")
 async def chat_rk(msg: Message):
@@ -235,4 +372,7 @@ async def chat_quran(msg: Message):
     except Exception as e:
         logging.error(f"chatQuran error: {e}")
         raise HTTPException(500, "Sorry, something went wrong.")
+    
+if __name__ == "__main__":
+    uvicorn.run(app, host="127.0.0.1", port=8000)
     
