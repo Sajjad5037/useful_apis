@@ -334,7 +334,7 @@ def create_table(data: CreateTableRequest, db: Session = Depends(get_db)):
     try:
         # Create a new Table instance
         new_table = Table(
-            table_number=data.tableNumber,
+            table_number=data.table_number,
             capacity=data.capacity,
             restaurant_name=data.restaurant_name,
             
