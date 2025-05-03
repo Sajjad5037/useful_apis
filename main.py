@@ -5,7 +5,7 @@ from typing import Optional,List
 from fastapi import FastAPI, HTTPException, Depends,Form,File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String,Float,DateTime,ForeignKey,desc
+from sqlalchemy import create_engine, Column, Integer, String,Float,DateTime,ForeignKey,desc,Boolean,Date
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session,relationship,joinedload
 import openai  # classic client
@@ -38,6 +38,12 @@ app.add_middleware(
 )
 
 Base = declarative_base()
+
+class CreateTableRequest(BaseModel):
+    tableNumber: str
+    capacity: int
+    restaurant_id: int
+
 class MenuItem(Base):
     __tablename__ = "menu_items"
     id = Column(Integer, primary_key=True, index=True)
@@ -46,6 +52,45 @@ class MenuItem(Base):
     price = Column(Integer)
     image_url = Column(String)
     restaurant_name = Column(String, index=True)  # <-- New field added
+
+class Restaurant(Base):
+    __tablename__ = "restaurants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    owner_id = Column(Integer, index=True)  # assuming you link this to a user system
+    total_tables = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    tables = relationship("Table", back_populates="restaurant")
+
+class Table(Base):
+    __tablename__ = "tables"
+
+    id = Column(Integer, primary_key=True, index=True)
+    restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False)
+    table_number = Column(String, nullable=False)
+    capacity = Column(Integer, nullable=False)
+    
+
+    restaurant = relationship("Restaurant", back_populates="tables")
+    reservations = relationship("Reservation", back_populates="table")
+
+
+
+class Reservation(Base):
+    __tablename__ = "reservations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    table_id = Column(Integer, ForeignKey("tables.id"), nullable=False)
+    customer_name = Column(String, nullable=False)
+    customer_contact = Column(String, nullable=False)
+    date = Column(Date, nullable=False)  # Use proper Date type
+    time_slot = Column(String, nullable=False)  # You can keep this or change to Time if precise slot is needed
+    status = Column(String, default="booked")
+
+    table = relationship("Table", back_populates="reservations")
+
 class MenuItemUpdate(BaseModel):
     name: str
     description: str
@@ -283,6 +328,33 @@ def get_orders(restaurant_name: Optional[str] = Query(None), db: Session = Depen
     orders = query.all()
 
     return orders
+
+@app.post("/create_tables")
+def create_table(data: CreateTableRequest, db: Session = Depends(get_db)):
+    try:
+        # Create a new Table instance
+        new_table = Table(
+            table_number=data.tableNumber,
+            capacity=data.capacity,
+            restaurant_id=data.restaurant_id,
+            
+        )
+
+        db.add(new_table)
+        db.commit()
+        db.refresh(new_table)
+
+        return {
+            "message": "Table created successfully",
+            "table_id": new_table.id,
+            "table_number": new_table.table_number
+        }
+
+    except Exception as e:
+        print("Error creating table:", e)
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to create table")
+
 @app.post("/place-order")
 def place_order(order: Order, db: Session = Depends(get_db)):
     # Get the latest order_id from the database
@@ -376,3 +448,6 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
+
+
