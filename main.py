@@ -42,7 +42,7 @@ Base = declarative_base()
 class CreateTableRequest(BaseModel):
     tableNumber: str
     capacity: int
-    restaurant_id: int
+    restaurant_name: str
 
 class MenuItem(Base):
     __tablename__ = "menu_items"
@@ -68,7 +68,7 @@ class Table(Base):
     __tablename__ = "tables"
 
     id = Column(Integer, primary_key=True, index=True)
-    restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False)
+    restaurant_name = Column(String, nullable=False)
     table_number = Column(String, nullable=False)
     capacity = Column(Integer, nullable=False)
     
@@ -336,7 +336,7 @@ def create_table(data: CreateTableRequest, db: Session = Depends(get_db)):
         new_table = Table(
             table_number=data.tableNumber,
             capacity=data.capacity,
-            restaurant_id=data.restaurant_id,
+            restaurant_name=data.restaurant_name,
             
         )
 
