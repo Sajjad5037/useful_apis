@@ -38,130 +38,101 @@ app.add_middleware(
 )
 
 Base = declarative_base()
-"""
-class CreateTableRequest(BaseModel):
-    table_number: str
-    capacity: int
-    restaurant_name: str
-"""
+
 class MenuItem(Base):
-    __tablename__ = "menu_items"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
-    description = Column(String)
-    price = Column(Integer)
-    image_url = Column(String)
-    restaurant_name = Column(String, index=True)  # <-- New field added
-"""
-class Restaurant(Base):
-    __tablename__ = "restaurants"
+        __tablename__ = "menu_items"
+        id = Column(Integer, primary_key=True, index=True)
+        name = Column(String, index=True)
+        description = Column(String)
+        price = Column(Integer)
+        image_url = Column(String)
+        restaurant_name = Column(String, index=True)  # <-- New field added
+        
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    owner_id = Column(Integer, index=True)  # assuming you link this to a user system
-    total_tables = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    tables = relationship("Table", back_populates="restaurant")
-
-class Table(Base):
-    __tablename__ = "tables"
-
-    id = Column(Integer, primary_key=True, index=True)
-    restaurant_name = Column(String, nullable=False)
-    table_number = Column(String, nullable=False)
-    capacity = Column(Integer, nullable=False)
-    
-
-    restaurant = relationship("Restaurant", back_populates="tables")
-    reservations = relationship("Reservation", back_populates="table")
-
-
-
-class Reservation(Base):
-    __tablename__ = "reservations"
-
-    id = Column(Integer, primary_key=True, index=True)
-    table_id = Column(Integer, ForeignKey("tables.id"), nullable=False)
-    customer_name = Column(String, nullable=False)
-    customer_contact = Column(String, nullable=False)
-    date = Column(Date, nullable=False)  # Use proper Date type
-    time_slot = Column(String, nullable=False)  # You can keep this or change to Time if precise slot is needed
-    status = Column(String, default="booked")
-
-    table = relationship("Table", back_populates="reservations")
-"""
 class MenuItemUpdate(BaseModel):
-    name: str
-    description: str
-    price: float
-    image_url: Optional[str] = ""
-    restaurant_name: str  # <-- New field added
-
+        name: str
+        description: str
+        price: float
+        image_url: Optional[str] = ""
+        restaurant_name: str  # <-- New field added
+    
 class OrderItem(BaseModel):
-    name: str
-    price: float
-    description: str = None
-    image_url: str = None
-    restaurant_name: str = None
-    quantity:int
-
-    class Config:
-        orm_mode = True
+        name: str
+        price: float
+        description: str = None
+        image_url: str = None
+        restaurant_name: str = None
+        quantity:int
+    
+        class Config:
+            orm_mode = True    
 class OrderItemResponse(BaseModel):
-    id: int
-    name: str
-    price: float
-    description: str
-    image_url: str
-    restaurant_name: str
-    quantity:int
+        id: int
+        name: str
+        price: float
+        description: str
+        image_url: str
+        restaurant_name: str
+        quantity:int
 
-    class Config:
-        orm_mode = True
+        class Config:
+            orm_mode = True    
 class OrderResponse(BaseModel):
-    id: int
-    order_id: int
-    total: float
-    timestamp: datetime
-    restaurant_name: str
-    items: List[OrderItemResponse]
+        id: int
+        order_id: int
+        total: float
+        timestamp: datetime
+        restaurant_name: str
+        items: List[OrderItemResponse]
+        
+
+        class Config:
+            orm_mode = True
     
-
-    class Config:
-        orm_mode = True
-
 class Order(BaseModel):
-    items: List[OrderItem]
-    total: float
-    timestamp: str
-    restaurant_name: str  # ✅ Added field
-    
+        items: List[OrderItem]
+        total: float
+        timestamp: str
+        restaurant_name: str  # ✅ Added field
+        
 
 class OrderModel(Base):
-    __tablename__ = "orders"
+        __tablename__ = "orders"
 
-    id = Column(Integer, primary_key=True, index=True)
-    order_id = Column(Integer, unique=True, index=True)  # Must exist
-    total = Column(Float)
-    timestamp = Column(DateTime)
-    restaurant_name = Column(String)  # Must exist
+        id = Column(Integer, primary_key=True, index=True)
+        order_id = Column(Integer, unique=True, index=True)  # Must exist
+        total = Column(Float)
+        timestamp = Column(DateTime)
+        restaurant_name = Column(String)  # Must exist
+        
+        
     
-    
-
-    items = relationship("OrderItemModel", back_populates="order")
+        items = relationship("OrderItemModel", back_populates="order")
 class OrderItemModel(Base):
-    __tablename__ = "order_items"
-    id = Column(Integer, primary_key=True, index=True)
-    # ← reference the PK on orders
-    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
-    name = Column(String)
-    price = Column(Float)
-    description = Column(String)
-    image_url = Column(String)
-    restaurant_name = Column(String)
-    quantity = Column(Integer)
-    order = relationship("OrderModel", back_populates="items")
+        __tablename__ = "order_items"
+        id = Column(Integer, primary_key=True, index=True)
+        # ← reference the PK on orders
+        order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+        name = Column(String)
+        price = Column(Float)
+        description = Column(String)
+        image_url = Column(String)
+        restaurant_name = Column(String)
+        quantity = Column(Integer)
+        order = relationship("OrderModel", back_populates="items")        
+
+# — Request Models —
+class MenuItemRequest(BaseModel):
+    name: str
+    description: str
+    price: float  # Changed to float to allow decimal prices
+    image_url: Optional[str] = None  # Optional URL for the image
+    restaurant_name: str  # Added restaurant_name as required field
+    
+class Message(BaseModel):
+    message: str
+
+
 # — Database Setup (SQLAlchemy) —
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
@@ -182,16 +153,6 @@ def get_db():
     finally:
         db.close()
 
-# — Request Models —
-class MenuItemRequest(BaseModel):
-    name: str
-    description: str
-    price: float  # Changed to float to allow decimal prices
-    image_url: Optional[str] = None  # Optional URL for the image
-    restaurant_name: str  # Added restaurant_name as required field
-    
-class Message(BaseModel):
-    message: str
 
 # — OpenAI Setup (v0.27-style) —
 #openai_api_key = os.getenv("OPENAI_API_KEY")
