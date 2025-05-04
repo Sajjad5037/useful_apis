@@ -38,12 +38,12 @@ app.add_middleware(
 )
 
 Base = declarative_base()
-
+"""
 class CreateTableRequest(BaseModel):
-    tableNumber: str
+    table_number: str
     capacity: int
     restaurant_name: str
-
+"""
 class MenuItem(Base):
     __tablename__ = "menu_items"
     id = Column(Integer, primary_key=True, index=True)
@@ -52,7 +52,7 @@ class MenuItem(Base):
     price = Column(Integer)
     image_url = Column(String)
     restaurant_name = Column(String, index=True)  # <-- New field added
-
+"""
 class Restaurant(Base):
     __tablename__ = "restaurants"
 
@@ -90,7 +90,7 @@ class Reservation(Base):
     status = Column(String, default="booked")
 
     table = relationship("Table", back_populates="reservations")
-
+"""
 class MenuItemUpdate(BaseModel):
     name: str
     description: str
@@ -164,6 +164,7 @@ class OrderItemModel(Base):
     order = relationship("OrderModel", back_populates="items")
 # — Database Setup (SQLAlchemy) —
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
 
 if not DATABASE_URL:
     logging.error("DATABASE_URL not set")
@@ -193,7 +194,8 @@ class Message(BaseModel):
     message: str
 
 # — OpenAI Setup (v0.27-style) —
-openai_api_key = os.getenv("OPENAI_API_KEY")
+#openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_api_key = 123
 
 if not openai_api_key:
     logging.error("OPENAI_API_KEY not set")
@@ -328,7 +330,7 @@ def get_orders(restaurant_name: Optional[str] = Query(None), db: Session = Depen
     orders = query.all()
 
     return orders
-
+"""
 @app.post("/create_tables")
 def create_table(data: CreateTableRequest, db: Session = Depends(get_db)):
     try:
@@ -354,7 +356,7 @@ def create_table(data: CreateTableRequest, db: Session = Depends(get_db)):
         print("Error creating table:", e)
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to create table")
-
+"""
 @app.post("/place-order")
 def place_order(order: Order, db: Session = Depends(get_db)):
     # Get the latest order_id from the database
