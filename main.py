@@ -135,7 +135,7 @@ class Message(BaseModel):
 
 # — Database Setup (SQLAlchemy) —
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
+#DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
 
 if not DATABASE_URL:
     logging.error("DATABASE_URL not set")
@@ -155,8 +155,8 @@ def get_db():
 
 
 # — OpenAI Setup (v0.27-style) —
-#openai_api_key = os.getenv("OPENAI_API_KEY")
-openai_api_key = 123
+openai_api_key = os.getenv("OPENAI_API_KEY")
+#openai_api_key = 123
 
 if not openai_api_key:
     logging.error("OPENAI_API_KEY not set")
@@ -327,7 +327,7 @@ def place_order(order: Order, db: Session = Depends(get_db)):
     else:
         new_order_id = 1  # Starting order_id if table is empty
 
-    # Create the main order record in the database
+    # Create the main order record in the database(Order Model is for "orders" table )
     db_order = OrderModel(
         order_id=new_order_id, 
         total=order.total,
@@ -339,7 +339,7 @@ def place_order(order: Order, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_order)
 
-    # Add each order item related to this order
+    # Add each order item related to this order (OrderItemModel is for order_items table)
     for item in order.items:
         db_item = OrderItemModel(
             order_id=db_order.id,  # Foreign key to OrderModel.id
@@ -354,7 +354,7 @@ def place_order(order: Order, db: Session = Depends(get_db)):
 
     db.commit()
 
-    return {"message": "Order received", "order_id": db_order.order_id}
+    return {"message": "Order received", "order_id": db_order.id}
 
 
 @app.delete("/delete-orders/{order_id}")
