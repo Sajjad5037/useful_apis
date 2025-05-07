@@ -15,7 +15,7 @@ from datetime import datetime
 import uvicorn
 import uuid  # Add this import at the top of your file
 import random
-from flask import Flask, request, jsonify
+
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
