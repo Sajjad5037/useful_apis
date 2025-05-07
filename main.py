@@ -149,8 +149,8 @@ class Reservation(BaseModel):
     partySize: int
 
 # — Database Setup (SQLAlchemy) —
-#DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+#DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
 
 if not DATABASE_URL:
     logging.error("DATABASE_URL not set")
@@ -170,8 +170,8 @@ def get_db():
 
 
 # — OpenAI Setup (v0.27-style) —
-#openai_api_key = os.getenv("OPENAI_API_KEY")
-openai_api_key = 123
+openai_api_key = os.getenv("OPENAI_API_KEY")
+#openai_api_key = 123
 
 if not openai_api_key:
     logging.error("OPENAI_API_KEY not set")
