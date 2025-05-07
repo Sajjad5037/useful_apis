@@ -91,7 +91,7 @@ class OrderResponse(BaseModel):
         timestamp: datetime
         restaurant_name: str
         items: List[OrderItemResponse]
-        
+        phone: str 
 
         class Config:
             orm_mode = True
@@ -439,7 +439,7 @@ def place_order(order: Order, db: Session = Depends(get_db)):
             description=item.description,
             image_url=item.image_url,
             restaurant_name=item.restaurant_name,
-            quantity=item.quantity
+            quantity=item.quantity,
             phone=order.phone
         )
         db.add(db_item)
