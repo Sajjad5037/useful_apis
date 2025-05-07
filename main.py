@@ -101,6 +101,7 @@ class Order(BaseModel):
         total: float
         timestamp: str
         restaurant_name: str  # ✅ Added field
+        phone: str     # new field
         
 
 class OrderModel(Base):
@@ -111,7 +112,7 @@ class OrderModel(Base):
         total = Column(Float)
         timestamp = Column(DateTime)
         restaurant_name = Column(String)  # Must exist
-        
+        phone= Column(String, nullable=False)
         
     
         items = relationship("OrderItemModel", back_populates="order")
@@ -421,6 +422,7 @@ def place_order(order: Order, db: Session = Depends(get_db)):
         total=order.total,
         timestamp=order.timestamp,
         restaurant_name=order.restaurant_name,
+        phone=order.phone,
         
     )
     db.add(db_order)
