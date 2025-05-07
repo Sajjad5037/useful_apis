@@ -20,6 +20,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import json
+from email.message import EmailMessage
 # Now you can generate a unique order ID
  # Use uuid.uuid4() to generate a unique ID
 
@@ -31,12 +32,13 @@ logging.basicConfig(level=logging.DEBUG)
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://rafis-kitchen.vercel.app",
-        "https://sajjadalinoor.vercel.app",
-        "http://localhost:3000",
-        "https://clinic-management-system-27d11.web.app",
-    ],
+    allow_origins = [
+    "http://127.0.0.1:3000",           # Local React dev server (127.0.0.1)
+    "http://localhost:3000",           # Local React dev server (localhost)
+    "https://rafis-kitchen.vercel.app",
+    "https://sajjadalinoor.vercel.app",
+    "https://clinic-management-system-27d11.web.app",
+],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -184,6 +186,37 @@ SMTP_USER       = 'proactive1.san@gmail.com'      # from_email
 SMTP_PASS       = 'vsjv dmem twvz avhf'           # from_password
 MANAGEMENT_EMAIL = 'proactive1@live.com'     # where we send reservations
 
+@app.post("/api/send-email-rafis-kitchen")
+async def send_email(
+    name: str = Form(...),
+    email: str = Form(...),
+    message: str = Form(...)
+):
+    try:
+        msg = EmailMessage()
+        msg['Subject'] = 'New Contact Form Submission'
+        msg['From'] = SMTP_USER
+        msg['To'] = MANAGEMENT_EMAIL
+        msg.set_content(f"""
+        New message from contact form:
+
+        Name: {name}
+        Email: {email}
+
+        Message:
+        {message}
+        """)
+
+        # Send the email using TLS
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+
+        return {"success": True, "message": "Email sent successfully."}
+    except Exception as e:
+        return {"success": False, "message": f"Failed to send email: {str(e)}"}
+    
 @app.post("/api/reservationRafisKitchen")
 async def make_reservation(reservation: Reservation):
     try:
