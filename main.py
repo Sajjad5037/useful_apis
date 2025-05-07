@@ -15,6 +15,11 @@ from datetime import datetime
 import uvicorn
 import uuid  # Add this import at the top of your file
 import random
+from flask import Flask, request, jsonify
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import json
 # Now you can generate a unique order ID
  # Use uuid.uuid4() to generate a unique ID
 
@@ -131,7 +136,13 @@ class MenuItemRequest(BaseModel):
     
 class Message(BaseModel):
     message: str
-
+# Reservation Data Model
+class Reservation(BaseModel):
+    name: str
+    phone: str
+    date: str
+    time: str
+    partySize: int
 
 # — Database Setup (SQLAlchemy) —
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -164,6 +175,50 @@ if not openai_api_key:
 
 openai.api_key = openai_api_key
 #create menu end point
+
+
+# SMTP configuration (from your scheduling script)
+SMTP_HOST       = 'smtp.gmail.com'
+SMTP_PORT       = 587
+SMTP_USER       = 'proactive1.san@gmail.com'      # from_email
+SMTP_PASS       = 'vsjv dmem twvz avhf'           # from_password
+MANAGEMENT_EMAIL = 'proactive1@live.com'     # where we send reservations
+
+@app.post("/api/reservationRafisKitchen")
+async def make_reservation(reservation: Reservation):
+    try:
+        # Email content
+        subject = "New Reservation Request - Rafi's Kitchen"
+        body = f"""
+        <h2>New Reservation Details</h2>
+        <ul>
+            <li><strong>Name:</strong> {reservation.name}</li>
+            <li><strong>Phone:</strong> {reservation.phone}</li>
+            <li><strong>Date:</strong> {reservation.date}</li>
+            <li><strong>Time:</strong> {reservation.time}</li>
+            <li><strong>Party Size:</strong> {reservation.partySize}</li>
+        </ul>
+        """
+
+        # Prepare email message
+        msg = MIMEMultipart()
+        msg['From'] = SMTP_USER
+        msg['To'] = MANAGEMENT_EMAIL
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'html'))
+
+        # Send the email
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+
+        return { "message": "Reservation email sent successfully." }
+
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        return { "error": "Failed to send reservation email." }
+
 @app.post("/create-menu-items/")
 async def create_menu_items(
     items: List[MenuItemRequest],
@@ -389,29 +444,6 @@ async def chat_rk(msg: Message):
     except Exception as e:
         logging.error(f"chatRK error: {e}")
         raise HTTPException(500, "Sorry, something went wrong.")
-
-@app.post("/api/chatwebsite")
-async def chat_rk(msg: Message):
-    try:
-        resp = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": (
-                    "You are my virtual assistant, trained to assist clients with any questions or tasks they may have. "
-                    "I have expertise in Python, having studied Automate the Boring Stuff with Python and Master Python for Data Science. "
-                    "When interacting with clients, provide insightful responses that highlight my skills and experience."
-                    " Only accept projects that align with my expertise, ensuring that I can deliver high-quality results."
-                    " If the client wishes to communicate further, provide my email address: proactive1.san@gmail.com."
-                    " Your goal is to help attract relevant projects that match my background in Python programming and data science."
-                )},
-                {"role": "user", "content": msg.message},
-            ],
-        )
-        return {"reply": resp.choices[0].message.content.strip()}
-    except Exception as e:
-        logging.error(f"chatRK error: {e}")
-        raise HTTPException(500, "Sorry, something went wrong.")
-
 
 @app.post("/api/chatQuran")
 async def chat_quran(msg: Message):
