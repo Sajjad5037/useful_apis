@@ -168,6 +168,24 @@ def get_db():
     finally:
         db.close()
 
+def is_relevant_to_programming(message: str) -> bool:
+    programming_keywords = [
+        "python", "odoo", "data", "automation", "excel", "backend", "frontend",
+        "web scraping", "api", "openai", "fastapi", "react", "database", "freelance",
+        "deployment", "clinic", "management system", "project", "code", "script"
+    ]
+    message_lower = message.lower()
+    return any(keyword in message_lower for keyword in programming_keywords)
+
+def is_relevant_to_rafis_kitchen(message: str) -> bool:
+    keywords = [
+        "rafi", "rafis kitchen", "restaurant", "olean", "wayne street", "800 wayne", "location", "address",
+        "contact", "phone", "call", "opening hours", "timing", "open", "close", "menu", "food", "cuisine",
+        "order", "takeout", "delivery", "pickup", "reservation", "book", "dish", "meal", "special", "chef",
+        "owner", "amir", "drinks", "vegetarian", "non-veg", "halal", "dessert", "starter", "appetizer",
+        "lunch", "dinner", "breakfast", "cost", "price", "payment", "card", "cash", "service", "facilities"
+    ]
+    return any(word.lower() in message.lower() for word in keywords)
 
 # — OpenAI Setup (v0.27-style) —
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -467,36 +485,61 @@ def delete_order(order_id: int, db: Session = Depends(get_db)):
 @app.post("/api/chatRK")
 async def chat_rk(msg: Message):
     try:
-        resp = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": (
-                    "You are an assistant to Rafis Kitchen at 800 Wayne Street, Olean, NY 14760. "
-                    "The owner is Amir. Do not answer questions based on prior knowledge."
-                )},
-                {"role": "user", "content": msg.message},
-            ],
-        )
-        return {"reply": resp.choices[0].message.content.strip()}
-    except Exception as e:
-        logging.error(f"chatRK error: {e}")
-        raise HTTPException(500, "Sorry, something went wrong.")
+        # Optional: You can implement a relevance check if needed for restaurant-related queries
+        if not is_relevant_to_rafis_kitchen(msg.message):
+            return {
+                "reply": (
+                    "I'm sorry, but I can only assist with questions related to Rafi's Kitchen at 800 Wayne Street, Olean, NY, "
+                    "including menu, location, and services provided by Amir, the owner."
+                )
+            }
 
-@app.post("/api/chatwebsite")
-async def chat_website(msg: Message):
-    try:
         response = openai.ChatCompletion.create(
             model="gpt-4",
+            temperature=0.2,
             messages=[
                 {
                     "role": "system",
                     "content": (
-                        "You are my virtual assistant, trained to assist clients with any questions or tasks they may have. "
-                        "I have expertise in Python, having studied Automate the Boring Stuff with Python and Master Python for Data Science. "
-                        "When interacting with clients, provide insightful responses that highlight my skills and experience. "
-                        "Only accept projects that align with my expertise, ensuring that I can deliver high-quality results. "
-                        "If the client wishes to communicate further, provide my email address: proactive1.san@gmail.com. "
-                        "Your goal is to help attract relevant projects that match my background in Python programming and data science."
+                        "You are an assistant for Rafi's Kitchen, a restaurant located at 800 Wayne Street, Olean, NY 14760. "
+                        "The owner is Amir. Answer questions only related to the restaurant—its menu, hours, services, or location. "
+                        "Do not answer questions based on prior knowledge or general topics outside Rafi's Kitchen."
+                    )
+                },
+                {"role": "user", "content": msg.message},
+            ]
+        )
+        return {"reply": response.choices[0].message.content.strip()}
+    except Exception as e:
+        logging.error(f"chatRK error: {e}")
+        raise HTTPException(status_code=500, detail="Sorry, something went wrong.")
+    
+@app.post("/api/chatwebsite")
+async def chat_website(msg: Message):
+    try:
+        if not is_relevant_to_programming(msg.message):
+            return {
+                "reply": (
+                    "I'm sorry, but I can only assist with programming-related questions or information about Sajjad's skills "
+                    "in Python, Odoo, automation, and backend development."
+                )
+            }
+
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            temperature=0.2,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are my virtual assistant, designed to professionally interact with potential clients on my behalf. "
+                        "I am Sajjad Ali Noor, a full stack developer with a strong command of Python and Odoo, including custom module development and deployment. "
+                        "I have studied books like *Automate the Boring Stuff with Python* and worked extensively on real-world projects involving Excel automation, web scraping, and backend development. "
+                        "I have also developed a scalable clinic management system and integrated chatbot features for doctor-patient interaction. "
+                        "When responding to clients, highlight my expertise in Python, Odoo, automation, and data handling. "
+                        "Only accept projects that align with my skill set to ensure I can deliver excellent results. "
+                        "If the client wishes to continue the conversation or hire me, kindly provide my email address: proactive1.san@gmail.com. "
+                        "Your goal is to help attract meaningful freelance or contract opportunities that suit my background in software development and AI integration."
                     )
                 },
                 {"role": "user", "content": msg.message},
