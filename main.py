@@ -47,14 +47,15 @@ app.add_middleware(
 Base = declarative_base()
 
 class MenuItem(Base):
-        __tablename__ = "menu_items"
-        id = Column(Integer, primary_key=True, index=True)
-        name = Column(String, index=True)
-        description = Column(String)
-        price = Column(Integer)
-        image_url = Column(String)
-        restaurant_name = Column(String, index=True)  # <-- New field added
-        
+    __tablename__ = "menu_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    description = Column(String)
+    price = Column(Integer)
+    image_url = Column(String)
+    restaurant_name = Column(String, index=True)
+    dish_type = Column(String, index=True)  # ✅ Clean and clear        
 
 class MenuItemUpdate(BaseModel):
         name: str
@@ -137,6 +138,8 @@ class MenuItemRequest(BaseModel):
     price: float  # Changed to float to allow decimal prices
     image_url: Optional[str] = None  # Optional URL for the image
     restaurant_name: str  # Added restaurant_name as required field
+    dish_type: str
+
     
 class Message(BaseModel):
     message: str
@@ -291,7 +294,8 @@ async def create_menu_items(
             description=itm.description,
             price=itm.price,
             image_url=itm.image_url,
-            restaurant_name=itm.restaurant_name
+            restaurant_name=itm.restaurant_name,
+            dish_type=itm.dish_type
         )
         db.add(db_item)
         db.commit()
