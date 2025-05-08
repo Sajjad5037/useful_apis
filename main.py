@@ -58,12 +58,12 @@ class MenuItem(Base):
     dish_type = Column(String, index=True)  # ✅ Clean and clear        
 
 class MenuItemUpdate(BaseModel):
-        name: str
-        description: str
-        price: float
-        image_url: Optional[str] = ""
-        restaurant_name: str  # <-- New field added
-    
+    name: str
+    description: str
+    price: float
+    image_url: Optional[str] = ""
+    restaurant_name: str
+    dish_type: str    
 class OrderItem(BaseModel):
         name: str
         price: float
