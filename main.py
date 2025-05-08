@@ -482,6 +482,31 @@ async def chat_rk(msg: Message):
         logging.error(f"chatRK error: {e}")
         raise HTTPException(500, "Sorry, something went wrong.")
 
+@app.post("/api/chatwebsite")
+async def chat_website(msg: Message):
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are my virtual assistant, trained to assist clients with any questions or tasks they may have. "
+                        "I have expertise in Python, having studied Automate the Boring Stuff with Python and Master Python for Data Science. "
+                        "When interacting with clients, provide insightful responses that highlight my skills and experience. "
+                        "Only accept projects that align with my expertise, ensuring that I can deliver high-quality results. "
+                        "If the client wishes to communicate further, provide my email address: proactive1.san@gmail.com. "
+                        "Your goal is to help attract relevant projects that match my background in Python programming and data science."
+                    )
+                },
+                {"role": "user", "content": msg.message},
+            ]
+        )
+        return {"reply": response.choices[0].message.content.strip()}
+    except Exception as e:
+        logging.error(f"chatwebsite error: {e}")
+        raise HTTPException(status_code=500, detail="Sorry, something went wrong.")
+
 @app.post("/api/chatQuran")
 async def chat_quran(msg: Message):
     try:
