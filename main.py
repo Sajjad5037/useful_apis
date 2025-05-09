@@ -97,7 +97,18 @@ class OrderItemResponse(BaseModel):
         quantity:int
 
         class Config:
-            orm_mode = True    
+            orm_mode = True   
+class ItemPizzapoint(BaseModel):
+    name: str
+    quantity: int
+    price: float
+class OrderDataPizzaPoint(BaseModel):
+    items: List[ItemPizzapoint]
+    total: float
+    timestamp: str
+    restaurant_name: str
+    phone: str
+
 class OrderResponse(BaseModel):
         id: int
         order_id: int
@@ -168,10 +179,14 @@ class Reservation(BaseModel):
 #for railway deployment
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 account_sid = os.getenv("account_sid") 
-auth_token = os.getenv("auth_token")
-hajvery_number = os.getenv("hajvery_number")  # Corrected: Just the variable name, not the phone number
-twilio_number = os.getenv("twilio_number") 
+auth_token= os.getenv("auth_token")
+hajvery_number=os.getenv("whatsapp:+923004112884")
+twilio_number=os.getenv("whatsapp:+14155238886")
 
+#for local deploymnet
+#DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
+# Twilio credentials (use environment variables in production)
+pizzapoint_number="whatsapp:+923004112884"
 # Initialize Twilio client
 client = Client(account_sid, auth_token)
 
@@ -211,8 +226,8 @@ def is_relevant_to_rafis_kitchen(message: str) -> bool:
     return any(word.lower() in message.lower() for word in keywords)
 
 # — OpenAI Setup (v0.27-style) —
-#openai_api_key = os.getenv("OPENAI_API_KEY")
-openai_api_key = 123
+openai_api_key = os.getenv("OPENAI_API_KEY")
+#openai_api_key = 123
 
 if not openai_api_key:
     logging.error("OPENAI_API_KEY not set")
@@ -326,7 +341,41 @@ async def create_menu_items(
         "message": "Menu items created successfully",
         "ids": created_ids
     }
+@app.post("/api/sendorder_pizzapoint")
+async def send_order_pizzapoint(order: OrderDataPizzaPoint):
+    try:
+        # Build WhatsApp message
+        lines = [
+            "*🍕 New Pizza Point Order*",
+            f"🏬 Restaurant: {order.restaurant_name}",
+            f"📞 Customer Phone: {order.phone}",
+            f"🕒 Timestamp: {order.timestamp}",
+            "",
+            "*🛒 Order Items:*"
+        ]
 
+        for item in order.items:
+            lines.append(
+                f"- {item.name} — {item.quantity} × Rs.{item.price:.0f} = Rs.{item.quantity * item.price:.0f}"
+            )
+
+        lines.append("")
+        lines.append(f"*💰 Total: Rs.{order.total:.0f}*")
+
+        message_body = "\n".join(lines)
+
+        # Send the WhatsApp message
+        message = client.messages.create(
+            body=message_body,
+            from_=twilio_number,
+            to=pizzapoint_number
+        )
+
+        return {"success": True, "message": "Order sent via WhatsApp", "sid": message.sid}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send WhatsApp message: {str(e)}")
+    
 @app.post("/api/sendorder_hajvery")
 async def send_order_hajvery(order: OrderDataHajvery):
     try:
@@ -339,10 +388,10 @@ async def send_order_hajvery(order: OrderDataHajvery):
         ]
 
         for item in order.cart:
-            lines.append(f"- {item.name} — {item.quantity} × ${item.price:.2f} = ${(item.quantity * item.price):.2f}")
+            lines.append(f"- {item.name} — {item.quantity} × {item.price:.2f} = {(item.quantity * item.price):.2f}")
 
         lines.append("")
-        lines.append(f"*💰 Total: ${order.totalAmount:.2f}*")
+        lines.append(f"*💰 Total: {order.totalAmount:.2f}*")
 
         message_body = "\n".join(lines)
 
@@ -357,7 +406,7 @@ async def send_order_hajvery(order: OrderDataHajvery):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send WhatsApp message: {str(e)}")
-    
+        
 @app.get("/get-menu-items/")
 def get_menu_items(
     restaurant_name: Optional[str] = Query(None),
