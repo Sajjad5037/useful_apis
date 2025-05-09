@@ -180,13 +180,13 @@ class Reservation(BaseModel):
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 account_sid = os.getenv("account_sid") 
 auth_token= os.getenv("auth_token")
-hajvery_number=os.getenv("whatsapp:+923004112884")
-twilio_number=os.getenv("whatsapp:+14155238886")
+twilio_number=os.getenv("twilio_number")
 
 #for local deploymnet
 #DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
 # Twilio credentials (use environment variables in production)
 pizzapoint_number="whatsapp:+923004112884"
+hajvery_number="whatsapp:+923004112884"
 # Initialize Twilio client
 client = Client(account_sid, auth_token)
 
