@@ -15,6 +15,8 @@ from datetime import datetime
 import uvicorn
 import uuid  # Add this import at the top of your file
 import random
+import requests
+from twilio.rest import Client
 
 import smtplib
 from email.mime.text import MIMEText
@@ -45,6 +47,17 @@ app.add_middleware(
 )
 
 Base = declarative_base()
+
+class OrderItemHajvery(BaseModel):
+    id: str
+    name: str
+    quantity: float
+    price: float
+    
+class OrderDataHajvery(BaseModel):
+    customerInfo: str
+    cart: List[OrderItemHajvery]
+    totalAmount: float
 
 class MenuItem(Base):
     __tablename__ = "menu_items"
@@ -152,8 +165,15 @@ class Reservation(BaseModel):
     partySize: int
 
 # — Database Setup (SQLAlchemy) —
+#for railway deployment
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-#DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
+account_sid = os.getenv("account_sid") 
+auth_token= os.getenv("auth_token")
+hajvery_number=os.getenv("whatsapp:+923004112884")
+twilio_number=os.getenv("whatsapp:+14155238886")
+
+# Initialize Twilio client
+client = Client(account_sid, auth_token)
 
 if not DATABASE_URL:
     logging.error("DATABASE_URL not set")
@@ -191,8 +211,8 @@ def is_relevant_to_rafis_kitchen(message: str) -> bool:
     return any(word.lower() in message.lower() for word in keywords)
 
 # — OpenAI Setup (v0.27-style) —
-openai_api_key = os.getenv("OPENAI_API_KEY")
-#openai_api_key = 123
+#openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_api_key = 123
 
 if not openai_api_key:
     logging.error("OPENAI_API_KEY not set")
@@ -307,7 +327,37 @@ async def create_menu_items(
         "ids": created_ids
     }
 
+@app.post("/api/sendorder_hajvery")
+async def send_order_hajvery(order: OrderDataHajvery):
+    try:
+        # Build the WhatsApp message content
+        lines = [
+            "*📦 New Hajvery Milk Shop Order*",
+            f"🏠 Address / Vehicle: {order.customerInfo}",
+            "",
+            "*🛒 Cart Items:*"
+        ]
 
+        for item in order.cart:
+            lines.append(f"- {item.name} — {item.quantity} × ${item.price:.2f} = ${(item.quantity * item.price):.2f}")
+
+        lines.append("")
+        lines.append(f"*💰 Total: ${order.totalAmount:.2f}*")
+
+        message_body = "\n".join(lines)
+
+        # Send the message
+        message = client.messages.create(
+            body=message_body,
+            from_=twilio_number,
+            to=hajvery_number
+        )
+
+        return {"success": True, "message": "Order sent via WhatsApp", "sid": message.sid}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send WhatsApp message: {str(e)}")
+    
 @app.get("/get-menu-items/")
 def get_menu_items(
     restaurant_name: Optional[str] = Query(None),
