@@ -168,9 +168,9 @@ class Reservation(BaseModel):
 #for railway deployment
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 account_sid = os.getenv("account_sid") 
-auth_token= os.getenv("auth_token")
-hajvery_number=os.getenv("whatsapp:+923004112884")
-twilio_number=os.getenv("whatsapp:+14155238886")
+auth_token = os.getenv("auth_token")
+hajvery_number = os.getenv("hajvery_number")  # Corrected: Just the variable name, not the phone number
+twilio_number = os.getenv("twilio_number") 
 
 # Initialize Twilio client
 client = Client(account_sid, auth_token)
