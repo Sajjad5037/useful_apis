@@ -217,12 +217,18 @@ def is_relevant_to_programming(message: str) -> bool:
 
 def is_relevant_to_rafis_kitchen(message: str) -> bool:
     keywords = [
-        "rafi", "rafis kitchen", "restaurant", "olean", "wayne street", "800 wayne", "location", "address",
-        "contact", "phone", "call", "opening hours", "timing", "open", "close", "menu", "food", "cuisine",
-        "order", "takeout", "delivery", "pickup", "reservation", "book", "dish", "meal", "special", "chef",
-        "owner", "amir", "drinks", "vegetarian", "non-veg", "halal", "dessert", "starter", "appetizer",
-        "lunch", "dinner", "breakfast", "cost", "price", "payment", "card", "cash", "service", "facilities"
+    "rafi", "rafis kitchen", "restaurant", "olean", "wayne street", "800 wayne", "location", "address",
+    "contact", "phone", "call", "hours", "timing", "open", "close", "weekends", "seasonal", "may to december",
+    "menu", "full menu", "appetizers", "soups", "salads", "pita", "kids menu", "kids meals", "lunch", "dinner",
+    "entrees", "pastas", "specials", "popular dishes", "chicken curry", "beef tikka", "lobster mac and cheese",
+    "cuisine", "mediterranean", "italian", "lebanese", "pakistani", "food", "dish", "meal",
+    "vegetarian", "vegan", "gluten free", "halal", "kosher", "nut free", "dairy free", "customized dishes",
+    "takeout", "pickup", "order", "reservation", "book", "table", "private event", "group reservation",
+    "parking", "free parking", "family friendly", "pet", "service dogs", "outdoor seating", "covered patio",
+    "deck", "wheelchair accessible", "wifi", "drinks", "cocktails", "beer", "wine", "price", "cost", "payment",
+    "cash", "card", "casual dining", "dress code", "chef", "amir"
     ]
+
     return any(word.lower() in message.lower() for word in keywords)
 
 # — OpenAI Setup (v0.27-style) —
@@ -600,17 +606,49 @@ async def chat_rk(msg: Message):
         response = openai.ChatCompletion.create(
             model="gpt-4",
             temperature=0.2,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an assistant for Rafi's Kitchen, a restaurant located at 800 Wayne Street, Olean, NY 14760. "
-                        "The owner is Amir. Answer questions only related to the restaurant—its menu, hours, services, or location. "
-                        "Do not answer questions based on prior knowledge or general topics outside Rafi's Kitchen."
-                    )
-                },
-                {"role": "user", "content": msg.message},
-            ]
+            messages = [
+    {
+        "role": "system",
+        "content": (
+            "You are an assistant for Rafi's Kitchen, a seasonal, family-friendly restaurant located at 800 Wayne Street, Olean, NY 14760. "
+            "The owner is Amir. The restaurant is open from May to December.\n\n"
+            "Operating Hours:\n"
+            "- Monday–Thursday: 11:00 AM – 8:00 PM\n"
+            "- Friday: 11:00 AM – 9:00 PM\n"
+            "- Saturday: 12:00 PM – 9:00 PM\n"
+            "- Sunday: Closed\n"
+            "The restaurant is open on weekends.\n\n"
+            "Key Amenities:\n"
+            "- Free parking available\n"
+            "- Family-friendly\n"
+            "- Service dogs permitted on outdoor upper patio only\n"
+            "- Wheelchair accessible\n"
+            "- No guest Wi-Fi\n"
+            "- Casual dining dress code\n\n"
+            "Dining Experience:\n"
+            "- Indoor seating and the area’s largest covered outdoor patio (seating for up to 100 people)\n"
+            "- Reservations helpful but not required\n"
+            "- For reservations or large groups, call (716) 790-8100\n"
+            "- Recommend reserving 24–48 hours in advance for weekends\n\n"
+            "Menu Highlights:\n"
+            "- Cuisine: Mediterranean, Italian, Lebanese, Pakistani\n"
+            "- Popular dishes: Chicken Curry, Vegetable Tikka, Beef Tikka Masala, Lobster Mac and Cheese\n"
+            "- Vegetarian/Vegan options: Vegetable Curry, Vegetable Tikka, Vegetable Samosas, Vegetable Pakora, Mediterranean & Beet Salads\n"
+            "- Gluten-free options: Vegetable Pakora (chickpea flour), curries, kabobs, salmon, grouper, and various salads\n"
+            "- Halal/Kosher options: Chicken and lamb dishes\n"
+            "- Allergy customization: Nut-free and dairy-free options available on request\n"
+            "- Kids Menu includes Chicken Tenders, Mac & Cheese, Pita Pizza, Chicken & Rice, Cavatappi with Marinara\n"
+            "- Specialty beers, wines, and cocktails available\n\n"
+            "Respond only to questions specifically related to Rafi's Kitchen—its menu, services, hours, policies, or location. "
+            "Do not answer questions about general topics or unrelated businesses. If a question is unrelated, politely inform the user that you can only help with inquiries about Rafi's Kitchen."
+        )
+    },
+    {
+        "role": "user",
+        "content": msg.message
+    }
+]
+
         )
         return {"reply": response.choices[0].message.content.strip()}
     except Exception as e:
@@ -674,6 +712,5 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
-
 
 
