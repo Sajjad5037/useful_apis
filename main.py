@@ -215,21 +215,28 @@ def is_relevant_to_programming(message: str) -> bool:
     message_lower = message.lower()
     return any(keyword in message_lower for keyword in programming_keywords)
 
-def is_relevant_to_rafis_kitchen(message: str) -> bool:
-    keywords = [
-    "rafi", "rafis kitchen", "restaurant", "olean", "wayne street", "800 wayne", "location", "address",
-    "contact", "phone", "call", "hours", "timing", "open", "close", "weekends", "seasonal", "may to december",
-    "menu", "full menu", "appetizers", "soups", "salads", "pita", "kids menu", "kids meals", "lunch", "dinner",
-    "entrees", "pastas", "specials", "popular dishes", "chicken curry", "beef tikka", "lobster mac and cheese",
-    "cuisine", "mediterranean", "italian", "lebanese", "pakistani", "food", "dish", "meal",
-    "vegetarian", "vegan", "gluten free", "halal", "kosher", "nut free", "dairy free", "customized dishes",
-    "takeout", "pickup", "order", "reservation", "book", "table", "private event", "group reservation",
-    "parking", "free parking", "family friendly", "pet", "service dogs", "outdoor seating", "covered patio",
-    "deck", "wheelchair accessible", "wifi", "drinks", "cocktails", "beer", "wine", "price", "cost", "payment",
-    "cash", "card", "casual dining", "dress code", "chef", "amir"
-    ]
+import re
 
-    return any(word.lower() in message.lower() for word in keywords)
+def is_relevant_to_rafis_kitchen(message: str) -> bool:
+    # List of keywords and phrases (multi-word strings for better matching)
+    keywords = [
+        "rafi", "rafis kitchen", "restaurant", "olean", "wayne street", "800 wayne", "location", "address",
+        "contact", "phone", "call", "hours", "timing", "open", "close", "weekends", "seasonal", "may to december",
+        "menu", "full menu", "appetizers", "soups", "salads", "pita", "kids menu", "kids meals", "lunch", "dinner",
+        "entrees", "pastas", "specials", "popular dishes", "chicken curry", "beef tikka", "lobster mac and cheese",
+        "cuisine", "mediterranean", "italian", "lebanese", "pakistani", "food", "dish", "meal",
+        "vegetarian", "vegan", "gluten free", "halal", "kosher", "nut free", "dairy free", "customized dishes",
+        "takeout", "pickup", "order", "reservation", "book", "table", "private event", "group reservation",
+        "parking", "free parking", "family friendly", "pet", "service dogs", "outdoor seating", "covered patio",
+        "deck", "wheelchair accessible", "wifi", "drinks", "cocktails", "beer", "wine", "price", "cost", "payment",
+        "cash", "card", "casual dining", "dress code", "chef", "amir"
+    ]
+    
+    # Constructing a regular expression pattern that matches any of the keywords
+    pattern = r'\b(?:' + '|'.join(map(re.escape, keywords)) + r')\b'
+    
+    # Searching for any of the keywords in the message (case-insensitive)
+    return bool(re.search(pattern, message, re.IGNORECASE))
 
 # — OpenAI Setup (v0.27-style) —
 openai_api_key = os.getenv("OPENAI_API_KEY")
