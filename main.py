@@ -596,6 +596,7 @@ def delete_order(order_id: int, db: Session = Depends(get_db)):
 async def chat_rk(msg: Message):
     try:
         # Optional: You can implement a relevance check if needed for restaurant-related queries
+        """
         if not is_relevant_to_rafis_kitchen(msg.message):
             return {
                 "reply": (
@@ -603,6 +604,7 @@ async def chat_rk(msg: Message):
                     "including menu, location, and services provided by Amir, the owner."
                 )
             }
+        """
 
         response = openai.ChatCompletion.create(
             model="gpt-4",
