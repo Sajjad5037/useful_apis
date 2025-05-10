@@ -226,9 +226,8 @@ def is_relevant_to_rafis_kitchen(message: str) -> bool:
     "takeout", "pickup", "order", "reservation", "book", "table", "private event", "group reservation",
     "parking", "free parking", "family friendly", "pet", "service dogs", "outdoor seating", "covered patio",
     "deck", "wheelchair accessible", "wifi", "drinks", "cocktails", "beer", "wine", "price", "cost", "payment",
-    "cash", "card", "casual dining", "dress code", "chef", "amir", "call", "hours of operation", "weekend reservations"
-]
-
+    "cash", "card", "casual dining", "dress code", "chef", "amir"
+    ]
 
     return any(word.lower() in message.lower() for word in keywords)
 
