@@ -58,7 +58,7 @@ class OrderDataHajvery(BaseModel):
     customerInfo: str
     cart: List[OrderItemHajvery]
     totalAmount: float
-
+    vendorName: str  # ✅ Added this to match the payload
 class MenuItem(Base):
     __tablename__ = "menu_items"
 
@@ -190,6 +190,9 @@ account_sid = os.getenv("account_sid")
 auth_token= os.getenv("auth_token")
 twilio_number=os.getenv("twilio_number")
 
+#for local deploymnet
+#DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
+# Twilio credentials (use environment variables in production)
 hajvery_number = "whatsapp:+923004112884"        # customer's number
 pizzapoint_number="whatsapp:+923004112884"
 hajvery_number="whatsapp:+923004112884"
@@ -348,9 +351,12 @@ async def create_menu_items(
         "ids": created_ids
     }
 @app.post("/api/sendorder_pizzapoint")
-async def send_order_pizzapoint(order: OrderDataPizzaPoint):
+async def send_order_pizzapoint(
+    order: OrderDataPizzaPoint,
+    db: Session = Depends(get_db),
+):
+    # --- 1) Build and send WhatsApp message ---
     try:
-        # Build WhatsApp message
         lines = [
             "*🍕 New Pizza Point Order*",
             f"🏬 Restaurant: {order.restaurant_name}",
@@ -359,32 +365,56 @@ async def send_order_pizzapoint(order: OrderDataPizzaPoint):
             "",
             "*🛒 Order Items:*"
         ]
-
         for item in order.items:
             lines.append(
                 f"- {item.name} — {item.quantity} × Rs.{item.price:.0f} = Rs.{item.quantity * item.price:.0f}"
             )
-
         lines.append("")
         lines.append(f"*💰 Total: Rs.{order.total:.0f}*")
-
         message_body = "\n".join(lines)
 
-        # Send the WhatsApp message
         message = client.messages.create(
             body=message_body,
             from_=twilio_number,
             to=pizzapoint_number
         )
-
-        return {"success": True, "message": "Order sent via WhatsApp", "sid": message.sid}
-
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to send WhatsApp message: {str(e)}")
-    
+        raise HTTPException(status_code=500, detail=f"WhatsApp send failed: {e}")
 
+    # --- 2) Log usage in railway_usage ---
+    today = date.today()
+    vendor = order.restaurant_name  # assuming OrderDataPizzaPoint has vendorName
 
-@app.post("/api/sendorder_hajvery")
+    usage = (
+        db.query(RailwayUsage)
+          .filter(RailwayUsage.date == today, RailwayUsage.vendor_name == vendor)
+          .first()
+    )
+    if usage:
+        usage.api_calls += 1
+    else:
+        usage = RailwayUsage(
+            date=today,
+            vendor_name=vendor,
+            api_calls=1
+        )
+        db.add(usage)
+
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Order sent via WhatsApp",
+        "sid": message.sid,
+        "usage": {
+            "date": today.isoformat(),
+            "vendor_name": vendor,
+            "api_calls": usage.api_calls
+        }
+    }    
+
+#this end point is for orders that is given by using the items selected through multilistbox(hajvery milk)
+@app.post("/api/sendorderText")
 async def send_order_hajvery(
     order: OrderDataHajvery,
     db: Session = Depends(get_db),
@@ -416,7 +446,7 @@ async def send_order_hajvery(
 
     # --- 2) Log usage in railway_usage ---
     today = date.today()
-    vendor = "Hajvery"
+    vendor = order.vendorName
 
     # Try to find existing record for today & this vendor
     usage = (
