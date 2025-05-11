@@ -25,7 +25,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import json
 from email.message import EmailMessage
-from openai import OpenAI
+
 # Now you can generate a unique order ID
  # Use uuid.uuid4() to generate a unique ID
 
@@ -213,7 +213,7 @@ Base.metadata.create_all(bind=engine)
 # — OpenAI Setup (v0.27-style) —
 #openai_api_key = os.getenv("OPENAI_API_KEY")
 openai_api_key = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=openai_api_key)
+
 
 if not openai_api_key:
     logging.error("OPENAI_API_KEY not set")
@@ -677,7 +677,7 @@ async def chat_rk(msg: Message):
                 )
             }
 
-        response = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-4",
             temperature=0.2,
             messages=[
