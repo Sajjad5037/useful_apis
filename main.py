@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker, Session,relationship,joinedload
 import openai  # classic client
 from fastapi import Query
 import datetime
-from datetime import datetime
+from datetime import datetime,date
 import uvicorn
 import uuid  # Add this import at the top of your file
 import random
@@ -382,14 +382,7 @@ async def send_order_pizzapoint(order: OrderDataPizzaPoint):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send WhatsApp message: {str(e)}")
     
-from datetime import date
-from fastapi import HTTPException, Depends
-from sqlalchemy.orm import Session
 
-from .models import RailwayUsage  # your SQLAlchemy model
-from .database import get_db
-from .schemas import OrderDataHajvery
-from .twilio_client import client, twilio_number, hajvery_number
 
 @app.post("/api/sendorder_hajvery")
 async def send_order_hajvery(
