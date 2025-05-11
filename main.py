@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import logging
 from typing import Optional,List
 from fastapi import FastAPI, HTTPException, Depends,Form,File
@@ -16,22 +17,25 @@ import uvicorn
 import uuid  # Add this import at the top of your file
 import random
 import requests
+from dotenv import load_dotenv
 from twilio.rest import Client
-
+import traceback
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import json
 from email.message import EmailMessage
+from openai import OpenAI
 # Now you can generate a unique order ID
  # Use uuid.uuid4() to generate a unique ID
 
 
 # — Logging —
 logging.basicConfig(level=logging.DEBUG)
-
+load_dotenv()
 # — FastAPI Init & CORS —
 app = FastAPI()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins = [
@@ -192,7 +196,6 @@ twilio_number=os.getenv("twilio_number")
 
 #for local deploymnet
 #DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
-# Twilio credentials (use environment variables in production)
 hajvery_number = "whatsapp:+923004112884"        # customer's number
 pizzapoint_number="whatsapp:+923004112884"
 hajvery_number="whatsapp:+923004112884"
@@ -207,7 +210,16 @@ engine = create_engine(DATABASE_URL)
 #creating a local session
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base.metadata.create_all(bind=engine)
+# — OpenAI Setup (v0.27-style) —
+#openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=openai_api_key)
 
+if not openai_api_key:
+    logging.error("OPENAI_API_KEY not set")
+    sys.exit(1)
+
+openai.api_key = openai_api_key
 def get_db():
     db = SessionLocal()
     try:
@@ -232,17 +244,16 @@ def is_relevant_to_rafis_kitchen(message: str) -> bool:
         "owner", "amir", "drinks", "vegetarian", "non-veg", "halal", "dessert", "starter", "appetizer",
         "lunch", "dinner", "breakfast", "cost", "price", "payment", "card", "cash", "service", "facilities"
     ]
-    return any(word.lower() in message.lower() for word in keywords)
 
-# — OpenAI Setup (v0.27-style) —
-openai_api_key = os.getenv("OPENAI_API_KEY")
-#openai_api_key = 123
+    message = message.lower()
+    message = re.sub(r"[^\w\s]", " ", message)  # remove punctuation
 
-if not openai_api_key:
-    logging.error("OPENAI_API_KEY not set")
-    sys.exit(1)
+    for kw in keywords:
+        pattern = r"\b" + re.escape(kw) + r"\b"
+        if re.search(pattern, message):
+            return True
+    return False
 
-openai.api_key = openai_api_key
 #create menu end point
 
 
@@ -658,7 +669,6 @@ def delete_order(order_id: int, db: Session = Depends(get_db)):
 @app.post("/api/chatRK")
 async def chat_rk(msg: Message):
     try:
-        # Optional: You can implement a relevance check if needed for restaurant-related queries
         if not is_relevant_to_rafis_kitchen(msg.message):
             return {
                 "reply": (
@@ -667,26 +677,32 @@ async def chat_rk(msg: Message):
                 )
             }
 
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
             temperature=0.2,
             messages=[
                 {
                     "role": "system",
                     "content": (
-                        "You are an assistant for Rafi's Kitchen, a restaurant located at 800 Wayne Street, Olean, NY 14760. "
-                        "The owner is Amir. Answer questions only related to the restaurant—its menu, hours, services, or location. "
-                        "Do not answer questions based on prior knowledge or general topics outside Rafi's Kitchen."
+                        "You are an assistant for Rafi's Kitchen, a family-friendly seasonal restaurant located at 800 Wayne Street, Olean, NY 14760. "
+                        "Rafi's Kitchen offers Mediterranean, Italian, Lebanese, and Pakistani cuisine, and is open from May to December. "
+                        "The restaurant is owned by Amir. Your role is to answer questions strictly related to Rafi's Kitchen — including its menu, hours, services, amenities, and location. "
+                        "Do not respond to questions unrelated to the restaurant or based on general knowledge outside of Rafi's Kitchen. "
+                        "Answer accurately based on the restaurant’s official information. If the question is outside your scope, politely inform the user that you can only answer questions about Rafi's Kitchen."
                     )
                 },
-                {"role": "user", "content": msg.message},
+                {
+                    "role": "user",
+                    "content": msg.message
+                }
             ]
         )
         return {"reply": response.choices[0].message.content.strip()}
+
     except Exception as e:
         logging.error(f"chatRK error: {e}")
         raise HTTPException(status_code=500, detail="Sorry, something went wrong.")
-    
+        
 @app.post("/api/chatwebsite")
 async def chat_website(msg: Message):
     try:
