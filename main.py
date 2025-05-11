@@ -68,7 +68,15 @@ class MenuItem(Base):
     price = Column(Integer)
     image_url = Column(String)
     restaurant_name = Column(String, index=True)
-    dish_type = Column(String, index=True)  # ✅ Clean and clear        
+    dish_type = Column(String, index=True)  # ✅ Clean and clear    
+        
+class RailwayUsage(Base):
+    __tablename__ = "railway_usage"
+
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(Date, index=True)               # Date of usage
+    vendor_name = Column(String, index=True)      # Name of the vendor
+    api_calls = Column(Integer)                   # Number of API calls
 
 class MenuItemUpdate(BaseModel):
     name: str
@@ -182,9 +190,7 @@ account_sid = os.getenv("account_sid")
 auth_token= os.getenv("auth_token")
 twilio_number=os.getenv("twilio_number")
 
-#for local deploymnet
-#DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
-# Twilio credentials (use environment variables in production)
+hajvery_number = "whatsapp:+923004112884"        # customer's number
 pizzapoint_number="whatsapp:+923004112884"
 hajvery_number="whatsapp:+923004112884"
 # Initialize Twilio client
@@ -217,19 +223,12 @@ def is_relevant_to_programming(message: str) -> bool:
 
 def is_relevant_to_rafis_kitchen(message: str) -> bool:
     keywords = [
-    "rafi", "rafis kitchen", "restaurant", "olean", "wayne street", "800 wayne", "location", "address",
-    "contact", "phone", "call", "hours", "timing", "open", "close", "weekends", "seasonal", "may to december",
-    "menu", "full menu", "appetizers", "soups", "salads", "pita", "kids menu", "kids meals", "lunch", "dinner",
-    "entrees", "pastas", "specials", "popular dishes", "chicken curry", "beef tikka", "lobster mac and cheese",
-    "cuisine", "mediterranean", "italian", "lebanese", "pakistani", "food", "dish", "meal",
-    "vegetarian", "vegan", "gluten free", "halal", "kosher", "nut free", "dairy free", "customized dishes",
-    "takeout", "pickup", "order", "reservation", "book", "table", "private event", "group reservation",
-    "parking", "free parking", "family friendly", "pet", "service dogs", "outdoor seating", "covered patio",
-    "deck", "wheelchair accessible", "wifi", "drinks", "cocktails", "beer", "wine", "price", "cost", "payment",
-    "cash", "card", "casual dining", "dress code", "chef", "amir"
-]
-
-
+        "rafi", "rafis kitchen", "restaurant", "olean", "wayne street", "800 wayne", "location", "address",
+        "contact", "phone", "call", "opening hours", "timing", "open", "close", "menu", "food", "cuisine",
+        "order", "takeout", "delivery", "pickup", "reservation", "book", "dish", "meal", "special", "chef",
+        "owner", "amir", "drinks", "vegetarian", "non-veg", "halal", "dessert", "starter", "appetizer",
+        "lunch", "dinner", "breakfast", "cost", "price", "payment", "card", "cash", "service", "facilities"
+    ]
     return any(word.lower() in message.lower() for word in keywords)
 
 # — OpenAI Setup (v0.27-style) —
@@ -383,36 +382,77 @@ async def send_order_pizzapoint(order: OrderDataPizzaPoint):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send WhatsApp message: {str(e)}")
     
+from datetime import date
+from fastapi import HTTPException, Depends
+from sqlalchemy.orm import Session
+
+from .models import RailwayUsage  # your SQLAlchemy model
+from .database import get_db
+from .schemas import OrderDataHajvery
+from .twilio_client import client, twilio_number, hajvery_number
+
 @app.post("/api/sendorder_hajvery")
-async def send_order_hajvery(order: OrderDataHajvery):
+async def send_order_hajvery(
+    order: OrderDataHajvery,
+    db: Session = Depends(get_db),
+):
+    # --- 1) Build and send WhatsApp message ---
     try:
-        # Build the WhatsApp message content
         lines = [
             "*📦 New Hajvery Milk Shop Order*",
             f"🏠 Address / Vehicle: {order.customerInfo}",
             "",
             "*🛒 Cart Items:*"
         ]
-
         for item in order.cart:
-            lines.append(f"- {item.name} — {item.quantity} × {item.price:.2f} = {(item.quantity * item.price):.2f}")
-
+            lines.append(
+                f"- {item.name} — {item.quantity} × {item.price:.2f} = "
+                f"{(item.quantity * item.price):.2f}"
+            )
         lines.append("")
         lines.append(f"*💰 Total: {order.totalAmount:.2f}*")
-
         message_body = "\n".join(lines)
 
-        # Send the message
         message = client.messages.create(
             body=message_body,
             from_=twilio_number,
             to=hajvery_number
         )
-
-        return {"success": True, "message": "Order sent via WhatsApp", "sid": message.sid}
-
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to send WhatsApp message: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"WhatsApp send failed: {e}")
+
+    # --- 2) Log usage in railway_usage ---
+    today = date.today()
+    vendor = "Hajvery"
+
+    # Try to find existing record for today & this vendor
+    usage = (
+        db.query(RailwayUsage)
+          .filter(RailwayUsage.date == today, RailwayUsage.vendor_name == vendor)
+          .first()
+    )
+    if usage:
+        usage.api_calls += 1
+    else:
+        usage = RailwayUsage(
+            date=today,
+            vendor_name=vendor,
+            api_calls=1
+        )
+        db.add(usage)
+
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Order sent via WhatsApp",
+        "sid": message.sid,
+        "usage": {
+            "date": today.isoformat(),
+            "vendor_name": vendor,
+            "api_calls": usage.api_calls
+        }
+    }
         
 @app.get("/get-menu-items/")
 def get_menu_items(
@@ -596,7 +636,6 @@ def delete_order(order_id: int, db: Session = Depends(get_db)):
 async def chat_rk(msg: Message):
     try:
         # Optional: You can implement a relevance check if needed for restaurant-related queries
-        """
         if not is_relevant_to_rafis_kitchen(msg.message):
             return {
                 "reply": (
@@ -604,54 +643,21 @@ async def chat_rk(msg: Message):
                     "including menu, location, and services provided by Amir, the owner."
                 )
             }
-        """
 
         response = openai.ChatCompletion.create(
             model="gpt-4",
             temperature=0.2,
-            messages = [
-    {
-        "role": "system",
-        "content": (
-            "You are an assistant for Rafi's Kitchen, a seasonal, family-friendly restaurant located at 800 Wayne Street, Olean, NY 14760. "
-            "The owner is Amir. The restaurant is open from May to December.\n\n"
-            "Operating Hours:\n"
-            "- Monday–Thursday: 11:00 AM – 8:00 PM\n"
-            "- Friday: 11:00 AM – 9:00 PM\n"
-            "- Saturday: 12:00 PM – 9:00 PM\n"
-            "- Sunday: Closed\n"
-            "The restaurant is open on weekends.\n\n"
-            "Key Amenities:\n"
-            "- Free parking available\n"
-            "- Family-friendly\n"
-            "- Service dogs permitted on outdoor upper patio only\n"
-            "- Wheelchair accessible\n"
-            "- No guest Wi-Fi\n"
-            "- Casual dining dress code\n\n"
-            "Dining Experience:\n"
-            "- Indoor seating and the area’s largest covered outdoor patio (seating for up to 100 people)\n"
-            "- Reservations helpful but not required\n"
-            "- For reservations or large groups, call (716) 790-8100\n"
-            "- Recommend reserving 24–48 hours in advance for weekends\n\n"
-            "Menu Highlights:\n"
-            "- Cuisine: Mediterranean, Italian, Lebanese, Pakistani\n"
-            "- Popular dishes: Chicken Curry, Vegetable Tikka, Beef Tikka Masala, Lobster Mac and Cheese\n"
-            "- Vegetarian/Vegan options: Vegetable Curry, Vegetable Tikka, Vegetable Samosas, Vegetable Pakora, Mediterranean & Beet Salads\n"
-            "- Gluten-free options: Vegetable Pakora (chickpea flour), curries, kabobs, salmon, grouper, and various salads\n"
-            "- Halal/Kosher options: Chicken and lamb dishes\n"
-            "- Allergy customization: Nut-free and dairy-free options available on request\n"
-            "- Kids Menu includes Chicken Tenders, Mac & Cheese, Pita Pizza, Chicken & Rice, Cavatappi with Marinara\n"
-            "- Specialty beers, wines, and cocktails available\n\n"
-            "Respond only to questions specifically related to Rafi's Kitchen—its menu, services, hours, policies, or location. "
-            "Do not answer questions about general topics or unrelated businesses. If a question is unrelated, politely inform the user that you can only help with inquiries about Rafi's Kitchen."
-        )
-    },
-    {
-        "role": "user",
-        "content": msg.message
-    }
-]
-
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an assistant for Rafi's Kitchen, a restaurant located at 800 Wayne Street, Olean, NY 14760. "
+                        "The owner is Amir. Answer questions only related to the restaurant—its menu, hours, services, or location. "
+                        "Do not answer questions based on prior knowledge or general topics outside Rafi's Kitchen."
+                    )
+                },
+                {"role": "user", "content": msg.message},
+            ]
         )
         return {"reply": response.choices[0].message.content.strip()}
     except Exception as e:
@@ -715,5 +721,6 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
