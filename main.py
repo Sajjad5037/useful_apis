@@ -209,7 +209,6 @@ twilio_number=os.getenv("twilio_number")
 #for local deploymnet
 #DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
 
-                
 hajvery_number = "whatsapp:+923004112884"        # customer's number
 pizzapoint_number="whatsapp:+923004112884"
 hajvery_number="whatsapp:+923004112884"
@@ -448,8 +447,7 @@ async def send_order_pizzapoint(
         print(f"New usage entry created for {vendor}")
 
     # --- 3) Save Order to DB ---
-    from models import PizzaOrder  # import at top if preferred
-
+    
     order_record = PizzaOrder(
         restaurant_name=order.restaurant_name,
         phone=order.phone,
