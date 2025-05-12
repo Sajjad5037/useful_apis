@@ -208,7 +208,7 @@ twilio_number=os.getenv("twilio_number")
 
 #for local deploymnet
 #DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
-
+                
 hajvery_number = "whatsapp:+923004112884"        # customer's number
 pizzapoint_number="whatsapp:+923004112884"
 hajvery_number="whatsapp:+923004112884"
