@@ -24,7 +24,6 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import json
-import vonage
 from email.message import EmailMessage
 from openai import OpenAI
 # Now you can generate a unique order ID
