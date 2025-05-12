@@ -24,6 +24,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import json
+import vonage
 from email.message import EmailMessage
 from openai import OpenAI
 # Now you can generate a unique order ID
@@ -194,13 +195,14 @@ account_sid = os.getenv("account_sid")
 auth_token= os.getenv("auth_token")
 twilio_number=os.getenv("twilio_number")
 
-#for local deploymnet
-#DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
+                
 hajvery_number = "whatsapp:+923004112884"        # customer's number
 pizzapoint_number="whatsapp:+923004112884"
 hajvery_number="whatsapp:+923004112884"
 # Initialize Twilio client
-client = Client(account_sid, auth_token)
+client_twilio = Client(account_sid, auth_token)
+
+
 
 if not DATABASE_URL:
     logging.error("DATABASE_URL not set")
@@ -368,6 +370,8 @@ async def send_order_pizzapoint(
 ):
     # --- 1) Build and send WhatsApp message ---
     try:
+        print("Building message body...")
+
         lines = [
             "*🍕 New Pizza Point Order*",
             f"🏬 Restaurant: {order.restaurant_name}",
@@ -376,33 +380,50 @@ async def send_order_pizzapoint(
             "",
             "*🛒 Order Items:*"
         ]
+        
         for item in order.items:
+            print(f"Processing item: {item.name}, quantity: {item.quantity}, price: {item.price}")
             lines.append(
                 f"- {item.name} — {item.quantity} × Rs.{item.price:.0f} = Rs.{item.quantity * item.price:.0f}"
             )
+
         lines.append("")
         lines.append(f"*💰 Total: Rs.{order.total:.0f}*")
+        
         message_body = "\n".join(lines)
+        print(f"Message body: {message_body}")
 
-        message = client.messages.create(
+        # Check if Twilio credentials are loaded properly
+        print(f"Twilio number: {twilio_number}")
+        print(f"Recipient number: {pizzapoint_number}")
+
+        # Sending the message using Twilio
+        message = client_twilio.messages.create(
             body=message_body,
             from_=twilio_number,
             to=pizzapoint_number
         )
+
+        print(f"Message SID: {message.sid}")
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"WhatsApp send failed: {e}")
+        print(f"Error sending message: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error sending WhatsApp message: {str(e)}")
 
     # --- 2) Log usage in railway_usage ---
     today = date.today()
     vendor = order.restaurant_name  # assuming OrderDataPizzaPoint has vendorName
+    print(f"Logging usage for {vendor} on {today}")
 
     usage = (
         db.query(RailwayUsage)
-          .filter(RailwayUsage.date == today, RailwayUsage.vendor_name == vendor)
-          .first()
+        .filter(RailwayUsage.date == today, RailwayUsage.vendor_name == vendor)
+        .first()
     )
+
     if usage:
         usage.api_calls += 1
+        print(f"Updated usage for {vendor}, API calls: {usage.api_calls}")
     else:
         usage = RailwayUsage(
             date=today,
@@ -410,8 +431,10 @@ async def send_order_pizzapoint(
             api_calls=1
         )
         db.add(usage)
+        print(f"New usage entry created for {vendor}")
 
     db.commit()
+    print("Database commit complete.")
 
     return {
         "success": True,
@@ -422,7 +445,7 @@ async def send_order_pizzapoint(
             "vendor_name": vendor,
             "api_calls": usage.api_calls
         }
-    }    
+    }
 
 #this end point is for orders that is given by using the items selected through multilistbox(hajvery milk)
 @app.post("/api/sendorderText")
