@@ -24,6 +24,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import json
+import vonage
 from email.message import EmailMessage
 from openai import OpenAI
 # Now you can generate a unique order ID
@@ -51,6 +52,17 @@ app.add_middleware(
 )
 
 Base = declarative_base()
+
+class PizzaOrder(Base):
+    __tablename__ = "pizza_order"
+
+    id = Column(Integer, primary_key=True, index=True)
+    restaurant_name = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    timestamp = Column(String, nullable=False)
+    items = Column(String, nullable=False)  # JSON string or flat string
+    total = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class OrderItemHajvery(BaseModel):
     id: str
@@ -193,6 +205,9 @@ DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 account_sid = os.getenv("account_sid") 
 auth_token= os.getenv("auth_token")
 twilio_number=os.getenv("twilio_number")
+
+#for local deploymnet
+#DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
 
                 
 hajvery_number = "whatsapp:+923004112884"        # customer's number
@@ -362,6 +377,7 @@ async def create_menu_items(
         "message": "Menu items created successfully",
         "ids": created_ids
     }
+#meant to be used for all pizza restaurants
 @app.post("/api/sendorder_pizzapoint")
 async def send_order_pizzapoint(
     order: OrderDataPizzaPoint,
@@ -379,24 +395,23 @@ async def send_order_pizzapoint(
             "",
             "*🛒 Order Items:*"
         ]
-        
+
+        item_lines = []
         for item in order.items:
             print(f"Processing item: {item.name}, quantity: {item.quantity}, price: {item.price}")
-            lines.append(
-                f"- {item.name} — {item.quantity} × Rs.{item.price:.0f} = Rs.{item.quantity * item.price:.0f}"
-            )
+            line = f"- {item.name} — {item.quantity} × Rs.{item.price:.0f} = Rs.{item.quantity * item.price:.0f}"
+            lines.append(line)
+            item_lines.append(f"{item.name} x{item.quantity} @Rs.{item.price}")
 
         lines.append("")
         lines.append(f"*💰 Total: Rs.{order.total:.0f}*")
-        
+
         message_body = "\n".join(lines)
         print(f"Message body: {message_body}")
 
-        # Check if Twilio credentials are loaded properly
         print(f"Twilio number: {twilio_number}")
         print(f"Recipient number: {pizzapoint_number}")
 
-        # Sending the message using Twilio
         message = client_twilio.messages.create(
             body=message_body,
             from_=twilio_number,
@@ -411,7 +426,7 @@ async def send_order_pizzapoint(
 
     # --- 2) Log usage in railway_usage ---
     today = date.today()
-    vendor = order.restaurant_name  # assuming OrderDataPizzaPoint has vendorName
+    vendor = order.restaurant_name
     print(f"Logging usage for {vendor} on {today}")
 
     usage = (
@@ -431,6 +446,19 @@ async def send_order_pizzapoint(
         )
         db.add(usage)
         print(f"New usage entry created for {vendor}")
+
+    # --- 3) Save Order to DB ---
+    from models import PizzaOrder  # import at top if preferred
+
+    order_record = PizzaOrder(
+        restaurant_name=order.restaurant_name,
+        phone=order.phone,
+        timestamp=order.timestamp,
+        items="; ".join(item_lines),
+        total=order.total
+    )
+    db.add(order_record)
+    print("Pizza order saved to DB.")
 
     db.commit()
     print("Database commit complete.")
