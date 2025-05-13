@@ -52,6 +52,31 @@ app.add_middleware(
 
 Base = declarative_base()
 
+class SalesRequest(BaseModel):
+    start_date: date
+    end_date: date
+
+class SalePizzaPoint(Base):
+    __tablename__ = "sales_pizza_point"
+
+    id = Column(Integer, primary_key=True, index=True)
+    bill_number = Column(String, nullable=False)
+    date = Column(Date, nullable=False)
+    total = Column(Float, nullable=False)
+
+class SalesFilterRequest(BaseModel):
+    start_date: date
+    end_date: date
+#for sales for pizza point like restaurants
+class SalesResponse(BaseModel):
+    bill_number: str
+    date: date
+    total: float
+
+    class Config:
+        orm_mode = True  # Tells Pydantic to treat this as a model
+
+
 class PizzaOrder(Base):
     __tablename__ = "pizza_order"
 
@@ -60,8 +85,30 @@ class PizzaOrder(Base):
     phone = Column(String, nullable=False)
     timestamp = Column(String, nullable=False)
     items = Column(String, nullable=False)  # JSON string or flat string
+    image_url = Column(String)
     total = Column(Float, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PizzaOrderItemResponse(BaseModel):
+    name: str
+    quantity: int
+    price: float
+    image_url: Optional[str]  # ✅ allow image_url to be None
+
+    class Config:
+        orm_mode = True
+
+class OrderResponsePizzaOrder(BaseModel):
+    id: int
+    restaurant_name: str
+    phone: str
+    timestamp: datetime
+    items: List[PizzaOrderItemResponse]
+    total: float
+
+    class Config:
+        orm_mode = True
 
 class OrderItemHajvery(BaseModel):
     id: str
@@ -74,6 +121,7 @@ class OrderDataHajvery(BaseModel):
     cart: List[OrderItemHajvery]
     totalAmount: float
     vendorName: str  # ✅ Added this to match the payload
+
 class MenuItem(Base):
     __tablename__ = "menu_items"
 
@@ -122,9 +170,14 @@ class OrderItemResponse(BaseModel):
         class Config:
             orm_mode = True   
 class ItemPizzapoint(BaseModel):
+    id: int
     name: str
-    quantity: int
     price: float
+    description: str
+    image_url: str
+    restaurant_name: str
+    quantity: int
+
 class OrderDataPizzaPoint(BaseModel):
     items: List[ItemPizzapoint]
     total: float
@@ -278,6 +331,36 @@ SMTP_USER       = 'proactive1.san@gmail.com'      # from_email
 SMTP_PASS       = 'vsjv dmem twvz avhf'           # from_password
 MANAGEMENT_EMAIL = 'proactive1@live.com'     # where we send reservations
 
+@app.post("/api/get-sales-report", response_model=List[SalesResponse])
+async def get_sales_report(
+    request: SalesRequest,
+    db: Session = Depends(get_db)
+):
+    try:
+        # Validate dates
+        if request.start_date > request.end_date:
+            raise HTTPException(status_code=400, detail="Start date must be before end date.")
+
+        # Query database
+        sales = (
+            db.query(Sale)
+            .filter(Sale.date >= request.start_date, Sale.date <= request.end_date)
+            .order_by(Sale.date)
+            .all()
+        )
+
+        return [
+            SalesResponse(
+                bill_number=sale.bill_number,
+                date=sale.date,
+                total=sale.total
+            )
+            for sale in sales
+        ]
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/send-email-rafis-kitchen")
 async def send_email(
     name: str = Form(...),
@@ -424,7 +507,10 @@ async def send_order_pizzapoint(
 
     # --- 2) Log usage in railway_usage ---
     today = date.today()
+    
     vendor = order.restaurant_name
+    
+    
     print(f"Logging usage for {vendor} on {today}")
 
     usage = (
@@ -448,15 +534,27 @@ async def send_order_pizzapoint(
     # --- 3) Save Order to DB ---
     
     order_record = PizzaOrder(
-        restaurant_name=order.restaurant_name,
-        phone=order.phone,
-        timestamp=order.timestamp,
-        items="; ".join(item_lines),
-        total=order.total
-    )
+    restaurant_name=order.restaurant_name,
+    phone=order.phone,
+    timestamp=order.timestamp,
+    items="; ".join(item_lines),
+    total=order.total,
+    image_url=order.items[0].image_url  # ✅ use first item
+)
     db.add(order_record)
     print("Pizza order saved to DB.")
+    order_timestamp = datetime.strptime(order.timestamp, "%Y-%m-%dT%H:%M:%S.%fZ")
 
+
+    # Save to SalePizzaPoint (sales reporting)
+    sale_record = SalePizzaPoint(
+        bill_number=f"BILL-{int(datetime.now().timestamp())}",  # or however you generate bill numbers
+        date=order_timestamp.date(),  # Ensure it's a `date` object
+        total=order.total
+    )
+    db.add(sale_record)
+    print("Sales record saved to DB.")
+    
     db.commit()
     print("Database commit complete.")
 
@@ -471,6 +569,29 @@ async def send_order_pizzapoint(
         }
     }
 
+@app.get("/view-sales", response_model=List[SalesResponse])
+async def view_sales(
+    start_date: date = Query(..., description="The start date of the sales report"),
+    end_date: date = Query(..., description="The end date of the sales report"),
+    db: Session = Depends(get_db),
+):
+    try:
+        sales = db.query(SalePizzaPoint).filter(
+            SalePizzaPoint.date >= start_date,
+            SalePizzaPoint.date <= end_date
+        ).all()
+
+        if not sales:
+            raise HTTPException(status_code=404, detail="No sales found for the given date range")
+
+        return sales
+
+    except HTTPException:
+        raise  # Allow FastAPI to handle known HTTP errors
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+        
 #this end point is for orders that is given by using the items selected through multilistbox(hajvery milk)
 @app.post("/api/sendorderText")
 async def send_order_hajvery(
@@ -494,7 +615,7 @@ async def send_order_hajvery(
         lines.append(f"*💰 Total: {order.totalAmount:.2f}*")
         message_body = "\n".join(lines)
 
-        message = client.messages.create(
+        message = client_twilio.messages.create(
             body=message_body,
             from_=twilio_number,
             to=hajvery_number
@@ -617,7 +738,7 @@ def update_menu_item(
     db.refresh(item)
     return item
 
-
+#meant to display orders for rafis kitchen only.
 @app.get("/orders", response_model=List[OrderResponse])
 def get_orders(restaurant_name: Optional[str] = Query(None), db: Session = Depends(get_db)):
     query = db.query(OrderModel).options(joinedload(OrderModel.items))
@@ -630,6 +751,63 @@ def get_orders(restaurant_name: Optional[str] = Query(None), db: Session = Depen
     orders = query.all()
 
     return orders
+#meant to display orders for all pizza point type restaurants
+
+
+@app.get("/orders_pizza_point", response_model=List[OrderResponsePizzaOrder])
+def get_orders_pizza_point(
+    restaurant_name: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
+):
+    query = db.query(PizzaOrder)
+    
+    if restaurant_name:
+        query = query.filter(PizzaOrder.restaurant_name == restaurant_name)
+
+    try:
+        orders = query.all()
+    except Exception as e:
+        print("Error during query:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    parsed_orders = []
+    for order in orders:
+        parsed_items = []
+
+        # Split by ';' and parse each item
+        for item_str in order.items.split(';'):
+            item_str = item_str.strip()
+            if item_str:
+                try:
+                    name_part, price_part = item_str.split(' x')
+                    quantity, price = price_part.split(' @Rs.')
+
+                    # Use the same image_url for all items in the order
+                    image_url = order.image_url
+
+                    parsed_items.append({
+                        "name": name_part.strip(),
+                        "quantity": int(quantity.strip()),
+                        "price": float(price.strip()),
+                        "image_url": image_url  # Add the image_url here
+                    })
+                except Exception as parse_error:
+                    print(f"Failed to parse item string: '{item_str}', error: {parse_error}")
+                    continue
+
+        # Create the OrderResponsePizzaOrder object with the parsed data
+        parsed_orders.append(OrderResponsePizzaOrder(
+            id=order.id,
+            restaurant_name=order.restaurant_name,
+            phone=order.phone,
+            timestamp=order.timestamp,
+            items=parsed_items,
+            total=order.total
+        ))
+
+    return parsed_orders
+
 """
 @app.post("/create_tables")
 def create_table(data: CreateTableRequest, db: Session = Depends(get_db)):
@@ -697,7 +875,7 @@ def place_order(order: Order, db: Session = Depends(get_db)):
 
     return {"message": "Order received", "order_id": db_order.id}
 
-
+#meant to be used for RAfis kitchen
 @app.delete("/delete-orders/{order_id}")
 def delete_order(order_id: int, db: Session = Depends(get_db)):
     order = db.query(OrderModel).filter(OrderModel.id == order_id).first()
@@ -712,6 +890,17 @@ def delete_order(order_id: int, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": f"Order {order_id} deleted successfully"}
+#meant to delete orders from Pizza Point type restaurants
+@app.delete("/delete-pizza-order/{order_id}")
+def delete_pizza_order(order_id: int, db: Session = Depends(get_db)):
+    order = db.query(PizzaOrder).filter(PizzaOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Pizza order not found")
+
+    db.delete(order)
+    db.commit()
+
+    return {"message": f"Pizza order {order_id} deleted successfully"}
 # — OpenAI Chat Endpoints —
 @app.post("/api/chatRK")
 async def chat_rk(msg: Message):
