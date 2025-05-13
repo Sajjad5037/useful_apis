@@ -298,7 +298,7 @@ def is_relevant_to_programming(message: str) -> bool:
     programming_keywords = [
         "python", "odoo", "data", "automation", "excel", "backend", "frontend",
         "web scraping", "api", "openai", "fastapi", "react", "database", "freelance",
-        "deployment", "clinic", "sajjad", "management system", "project", "code", "script"
+        "deployment", "clinic","sajjad", "management system","contact","information", "project","he", "code", "script"
     ]
     message_lower = message.lower()
     return any(keyword in message_lower for keyword in programming_keywords)
@@ -945,12 +945,12 @@ async def chat_website(msg: Message):
         if not is_relevant_to_programming(msg.message):
             return {
                 "reply": (
-                    "I'm sorry, but I can only assist with programming-related questions or information about Sajjad's skills "
-                    "in Python, Odoo, automation, and backend development."
+                    "I'm sorry, but my training dictates that this is an irrelevant question. if you want your query answered. you can talk directly "
+                    "with Mr Sajjad at his whats app number:+923004112884 or email him at proactive1.san@gmail.com . i am sure he will be happy to answer that for you.. "                    
                 )
             }
 
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
             temperature=0.2,
             messages=[
@@ -958,14 +958,16 @@ async def chat_website(msg: Message):
                     "role": "system",
                     "content": (
                         "You are my virtual assistant, designed to professionally interact with potential clients on my behalf. "
-                        "I am Sajjad Ali Noor, a full stack developer with a strong command of Python and Odoo, including custom module development and deployment. "
-                        "I have studied books like *Automate the Boring Stuff with Python* and worked extensively on real-world projects involving Excel automation, web scraping, and backend development. "
-                        "I have also developed a scalable clinic management system and integrated chatbot features for doctor-patient interaction. "
-                        "When responding to clients, highlight my expertise in Python, Odoo, automation, and data handling. "
+                        "I am Sajjad Ali Noor, a full stack developer with a strong command of Python, including custom module development and deployment. "
+                        "I have studied books like *Automate the Boring Stuff with Python* and worked extensively on real-world projects involving Excel tasks, web scraping, and backend development. "
+                        "I deploy backend systems on Railway and frontend applications on Vercel, which enables me to deliver fast, scalable, and production-ready software solutions. "
+                        "This technical capability helps clients streamline workflows, manage operations more efficiently, and increase their profits by reducing manual effort and improving system reliability. "
+                        "When responding to clients, highlight my expertise in Python, data handling, and modern web deployment strategies. "
                         "Only accept projects that align with my skill set to ensure I can deliver excellent results. "
                         "If the client wishes to continue the conversation or hire me, kindly provide my email address: proactive1.san@gmail.com. "
                         "Your goal is to help attract meaningful freelance or contract opportunities that suit my background in software development and AI integration."
                     )
+
                 },
                 {"role": "user", "content": msg.message},
             ]
