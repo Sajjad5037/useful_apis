@@ -946,7 +946,8 @@ async def chat_website(msg: Message):
             return {
                 "reply": (
                     "I'm sorry, but my training dictates that this is an irrelevant question. if you want your query answered. you can talk directly "
-                    "with Mr Sajjad at his whats app number:+923004112884 or email him at proactive1.san@gmail.com . i am sure he will be happy to answer that for you.. "                    
+                    "with Mr Sajjad at his whats app number:+923004112884 or email him at proactive1.san@gmail.com . i am sure he will be happy to answer that for you.."
+                    "do you have another query i can help you with? "                    
                 )
             }
 
