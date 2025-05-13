@@ -295,11 +295,15 @@ def get_db():
         db.close()
 
 def is_relevant_to_programming(message: str) -> bool:
+    def is_relevant_to_programming(message: str) -> bool:
     programming_keywords = [
         "python", "odoo", "data", "automation", "excel", "backend", "frontend",
         "web scraping", "api", "openai", "fastapi", "react", "database", "freelance",
-        "deployment", "clinic", "management system", "project", "code", "script"
+        "deployment", "clinic","sajjad", "management system", "project", "code", "script"
     ]
+    message_lower = message.lower()
+    return any(keyword in message_lower for keyword in programming_keywords)
+
     message_lower = message.lower()
     return any(keyword in message_lower for keyword in programming_keywords)
 
