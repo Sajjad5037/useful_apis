@@ -260,6 +260,7 @@ twilio_number=os.getenv("twilio_number")
 
 #for local deploymnet
 #DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
+# Twilio credentials (use environment variables in production)
                 
 hajvery_number = "whatsapp:+923004112884"        # customer's number
 pizzapoint_number="whatsapp:+923004112884"
@@ -422,6 +423,30 @@ async def make_reservation(reservation: Reservation):
             server.send_message(msg)
 
         return { "message": "Reservation email sent successfully." }
+
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        return { "error": "Failed to send reservation email." }
+
+
+@app.post("/api/reservation")
+async def make_reservation(reservation: Reservation):
+    try:
+        # Email content
+        subject = "New Reservation Request - Rafi's Kitchen"
+        body = f"""
+        <h2>New Reservation Details</h2>
+        <ul>
+            <li><strong>Name:</strong> {reservation.name}</li>
+            <li><strong>Phone:</strong> {reservation.phone}</li>
+            <li><strong>Date:</strong> {reservation.date}</li>
+            <li><strong>Time:</strong> {reservation.time}</li>
+            <li><strong>Party Size:</strong> {reservation.partySize}</li>
+        </ul>
+        """
+
+        
+        return { "message": "Reservation details added successfully!!!" }
 
     except Exception as e:
         print(f"Error sending email: {e}")
