@@ -718,7 +718,7 @@ def extract_text_from_pdf(pdf_input, target_page=None):
             else:
                 print(f"Page {target_page} is out of range. This PDF has {len(doc)} pages.")
         else:
-            for page_number in range(3, 50):  # Read pages 4 to 6
+            for page_number in range(3, 9):  # Read pages 4 to 6
                 try:
                     page = doc.load_page(page_number)
                     page_text = clean_extracted_text(page.get_text())
