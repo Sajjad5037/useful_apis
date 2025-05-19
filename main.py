@@ -1027,16 +1027,21 @@ async def make_reservation(reservation: ReservationBase, db: Session = Depends(g
         db.refresh(new_reservation)
 
         prompt = (
-            f"A reservation was made by {reservation.customer_name} on {reservation.date} at "
-            f"{reservation.time_slot} for table {reservation.table_id}. Status: {reservation.status}.\n\n"
-            "Based on this reservation, generate **five** likely questions a restaurant manager might ask and provide clear answers. "
-            "Cover topics such as:\n"
-            "  • Table number\n"
-            "  • Reservation date & time\n"
-            "  • Confirmation status\n"
-            "  • Customer contact details\n"
-            "  • Party size (if available)\n\n"
-            "Respond strictly in this format, one pair per line:\n"
+            f"A new reservation record was received with these details:\n"
+            f"  • Customer Name: {reservation.customer_name}\n"
+            f"  • Contact: {reservation.customer_contact}\n"
+            f"  • Date: {reservation.date}\n"
+            f"  • Time: {reservation.time_slot}\n"
+            f"  • Table Number: {reservation.table_id}\n"
+            f"  • Status: {reservation.status}\n\n"
+            "Generate **five** question-and-answer pairs that reference the customer by name. "
+            "Use exactly this phrasing pattern for at least these questions:\n"
+            "  1. Did [Customer] book a reservation?\n"
+            "  2. At what time did [Customer] book a reservation?\n"
+            "  3. What is the status of [Customer]’s reservation?\n"
+            "  4. What are [Customer]’s contact details?\n"
+            "  5. If any detail is missing (e.g., party size), note how to obtain it.\n\n"
+            "Respond in this exact format, one pair per line:\n"
             "Q1: <question text>\n"
             "A1: <answer text>\n"
             "Q2: <question text>\n"
@@ -1045,29 +1050,29 @@ async def make_reservation(reservation: ReservationBase, db: Session = Depends(g
             "Q5: <question text>\n"
             "A5: <answer text>"
         )
-
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "You are an AI assistant that turns reservation data into management FAQs."},
-                {"role": "user",   "content": prompt}
+                {"role": "user", "content": prompt}
             ],
             temperature=0.2,
         )
 
         faq_text = response.choices[0].message.content.strip()
 
-        # 2. Parse out the 5 Q&A pairs
         pairs = re.findall(r'(Q\d:\s*.+?)\n(A\d:\s*.+?)(?=\nQ\d:|\Z)', faq_text, re.S)
 
         for q_label, a_label in pairs:
             question = q_label.split(":", 1)[1].strip()
-            answer   = a_label.split(":", 1)[1].strip()
+            answer = a_label.split(":", 1)[1].strip()
 
-            # 3. Split longer answers into sentences for finer-grained embeddings
             sentences = re.split(r'(?<=[.!?])\s+', answer)
+            if len(sentences) <= 2:
+                sentences = [answer]
+
             for sentence in sentences:
-                if not sentence:
+                if not sentence.strip():
                     continue
 
                 embedding = client.embeddings.create(
@@ -1084,13 +1089,12 @@ async def make_reservation(reservation: ReservationBase, db: Session = Depends(g
 
         db.commit()
         return {"message": "Reservation details added successfully!", "reservation_id": new_reservation.id}
+
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to add reservation: {e}")    
-    except Exception as e:
-        db.rollback()  # rollback transaction on error
         print(f"Error adding reservation: {e}")
-        raise HTTPException(status_code=500, detail="Failed to add reservation.")
+        raise HTTPException(status_code=500, detail=f"Failed to add reservation: {e}")
+        
 @app.post("/create-menu-items/")
 async def create_menu_items(
     items: List[MenuItemRequest],
@@ -1620,25 +1624,22 @@ async def chat_with_database(request: ChatRequest, db: Session = Depends(get_db_
         raise HTTPException(status_code=400, detail="Empty message")
 
     # 1. Generate embedding for user query
-    query_embedding = get_embedding(user_message)  # e.g., returns a List[float]
-    #embedding_vector_str = "[" + ",".join(map(str, query_embedding)) + "]"
+    query_embedding = get_embedding(user_message)  # e.g., returns List[float]
 
-    # 2. Query top 3 FAQs by vector similarity (assuming pgvector installed and column embedding)
+    # 2. Query top 3 FAQs by vector similarity with explicit cast to vector
     faqs = db.execute(
         text("""
-            SELECT id, question, answer, embedding <=> :embedding AS distance
+            SELECT id, question, answer, embedding <=> CAST(:embedding AS vector) AS distance
             FROM faqs
             ORDER BY distance
             LIMIT 3
         """),
-       # {"embedding": embedding_vector_str}
-       {"embedding": query_embedding}
+        {"embedding": query_embedding}
     ).fetchall()
-
-
     # 3. Prepare context from top FAQs
     context_text = "\n\n".join([f"Q: {faq.question}\nA: {faq.answer}" for faq in faqs])
     print("Context passed to the model:\n", context_text)
+
     # 4. Compose prompt with context + user question
     prompt = f"Use the following FAQ knowledge base to answer the user question.\n\n{context_text}\n\nUser Question: {user_message}\nAnswer:"
 
