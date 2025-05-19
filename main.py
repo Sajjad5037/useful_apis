@@ -1615,47 +1615,72 @@ def get_faqs(db: Session = Depends(get_db_aws)):
     return result
 @app.post("/api/chat_database", response_model=ChatResponse)
 async def chat_with_database(request: ChatRequest, db: Session = Depends(get_db_aws)):
+    print(">> Received chat request:", request.dict())
+
     user_message = request.message.strip()
     if not user_message:
+        print("!! Empty message received.")
         raise HTTPException(status_code=400, detail="Empty message")
 
-    # 1. Generate embedding for user query
-    query_embedding = get_embedding(user_message)  # e.g., returns a List[float]
+    print(">> User message:", user_message)
+
+    try:
+        query_embedding = get_embedding(user_message)
+        print(f">> Embedding generated (len={len(query_embedding)}):", query_embedding[:5], "...")
+    except Exception as e:
+        print("!! Embedding generation error:", e)
+        raise HTTPException(status_code=500, detail="Embedding generation failed")
+
     embedding_vector_str = "[" + ",".join(map(str, query_embedding)) + "]"
+    print(">> Embedding string:", embedding_vector_str[:60], "...")
 
-    # 2. Query top 3 FAQs by vector similarity (assuming pgvector installed and column embedding)
-    faqs = db.execute(
-        text("""
-            SELECT id, question, answer, embedding <=> :embedding AS distance
-            FROM faqs
-            ORDER BY distance
-            LIMIT 3
-        """),
-        {"embedding": embedding_vector_str}
-    ).fetchall()
+    try:
+        faqs = db.execute(
+            text("""
+                SELECT id, question, answer, embedding <=> :embedding AS distance
+                FROM faqs
+                ORDER BY distance
+                LIMIT 3
+            """),
+            {"embedding": embedding_vector_str}
+        ).fetchall()
+        print(f">> Retrieved {len(faqs)} FAQ entries")
+    except Exception as e:
+        print("!! DB query error:", e)
+        raise HTTPException(status_code=500, detail="DB query failed")
 
-
-    # 3. Prepare context from top FAQs
     context_text = "\n\n".join([f"Q: {faq.question}\nA: {faq.answer}" for faq in faqs])
-    print("Context passed to the model:\n", context_text)
-    # 4. Compose prompt with context + user question
-    prompt = f"Use the following FAQ knowledge base to answer the user question.\n\n{context_text}\n\nUser Question: {user_message}\nAnswer:"
+    print(">> Context text:\n", context_text)
 
-    # 5. Call OpenAI chat completion
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant who answers user questions using the provided FAQ knowledge base. If the answer is not explicitly stated, try to infer from the given information but do not make up unsupported facts."},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=300,
-        temperature=0.2,
+    prompt = (
+        f"Use the following FAQ knowledge base to answer the user question.\n\n"
+        f"{context_text}\n\n"
+        f"User Question: {user_message}\nAnswer:"
     )
+    print(">> Prompt prepared:\n", prompt[:500], "...")
 
-    answer = response.choices[0].message.content.strip()
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": (
+                    "You are a helpful assistant who answers user questions using the provided FAQ knowledge base. "
+                    "If the answer is not explicitly stated, try to infer from the given information but do not make up unsupported facts."
+                )},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=300,
+            temperature=0.2,
+        )
+        answer = response.choices[0].message.content.strip()
+        print(">> OpenAI answer received.")
+    except Exception as e:
+        print("!! OpenAI API error:", e)
+        raise HTTPException(status_code=500, detail="OpenAI API call failed")
 
+    print(">> Final answer:\n", answer)
     return ChatResponse(reply=answer)
-
+    
 @app.post("/api/chatwebsite")
 async def chat_website(msg: Message):
     try:
