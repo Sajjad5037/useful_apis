@@ -1621,7 +1621,7 @@ async def chat_with_database(request: ChatRequest, db: Session = Depends(get_db_
 
     # 1. Generate embedding for user query
     query_embedding = get_embedding(user_message)  # e.g., returns a List[float]
-    embedding_vector_str = "[" + ",".join(map(str, query_embedding)) + "]"
+    #embedding_vector_str = "[" + ",".join(map(str, query_embedding)) + "]"
 
     # 2. Query top 3 FAQs by vector similarity (assuming pgvector installed and column embedding)
     faqs = db.execute(
@@ -1631,7 +1631,8 @@ async def chat_with_database(request: ChatRequest, db: Session = Depends(get_db_
             ORDER BY distance
             LIMIT 3
         """),
-        {"embedding": embedding_vector_str}
+       # {"embedding": embedding_vector_str}
+       {"embedding": query_embedding}
     ).fetchall()
 
 
