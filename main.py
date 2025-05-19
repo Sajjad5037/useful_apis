@@ -1,17 +1,30 @@
 import os
 import sys
+import fitz 
+import joblib
+from langchain.schema import Document
+from urllib.parse import quote
 import re
+import numpy as np
+from langchain.chains import RetrievalQA
+from langchain.chat_models import ChatOpenAI
+from sklearn.metrics.pairwise import cosine_similarity
+from langchain.prompts import PromptTemplate
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.vectorstores import FAISS,VectorStore
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 import logging
-from typing import Optional,List
-from fastapi import FastAPI, HTTPException, Depends,Form,File
+from typing import Optional,List,Union
+from fastapi import FastAPI, HTTPException, Depends,Form,File,UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String,Float,DateTime,ForeignKey,desc,Boolean,Date
+from sqlalchemy import create_engine, Column, Integer, String,Float,DateTime,ForeignKey,desc,Boolean,Date,Time,func,text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session,relationship,joinedload
 import openai  # classic client
-from fastapi import Query
+from fastapi import Query,Request
 import datetime
+from sqlalchemy.types import UserDefinedType
 from datetime import datetime,date
 import uvicorn
 import uuid  # Add this import at the top of your file
@@ -19,6 +32,8 @@ import random
 import requests
 from dotenv import load_dotenv
 from twilio.rest import Client
+from io import BytesIO
+from botocore.exceptions import ClientError
 import traceback
 import smtplib
 from email.mime.text import MIMEText
@@ -26,9 +41,10 @@ from email.mime.multipart import MIMEMultipart
 import json
 from email.message import EmailMessage
 from openai import OpenAI
-# Now you can generate a unique order ID
- # Use uuid.uuid4() to generate a unique ID
-
+import boto3
+from fastapi.responses import JSONResponse
+vectorstore = None
+total_pdf = 0
 
 # — Logging —
 logging.basicConfig(level=logging.DEBUG)
@@ -52,9 +68,84 @@ app.add_middleware(
 
 Base = declarative_base()
 
+# AWS S3 config (use Railway ENV variables in deployment)
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.getenv("AWS_REGION")
+BUCKET_NAME = os.getenv("AWS_BUCKET_NAME")
+
+
+
+s3 = boto3.client(
+    "s3",
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    region_name=AWS_REGION
+)
+#for pdf query chatbot
+
+    
+class Vector(UserDefinedType):
+    def __init__(self, dimension):
+        self.dimension = dimension
+
+    def get_col_spec(self):
+        return f'vector({self.dimension})'
+
+    def bind_expression(self, bindvalue):
+        return bindvalue
+
+    def column_expression(self, col):
+        return col
+
+#for database query
+class ChatRequest(BaseModel):
+    message: str
+class FAQOut(BaseModel):
+    question: str
+    answer: str
+
+    class Config:
+        orm_mode = True
+#for database query
+# Response model (optional)
+class ChatResponse(BaseModel):
+    reply: str
+
+from sqlalchemy import Column
+
+class FAQModel(Base):
+    __tablename__ = "faqs"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    question = Column(String, nullable=False)
+    answer = Column(String, nullable=False)
+    embedding = Column(Vector(1536)) 
+
 class SalesRequest(BaseModel):
     start_date: date
     end_date: date
+
+class ReservationBase(BaseModel):
+    table_id: int
+    customer_name: str
+    customer_contact: str | None = None  # optional field
+    date: date
+    time_slot: str
+    status: str
+
+    class Config:
+        orm_mode = True
+
+class ReservationModel_new(Base):
+    __tablename__ = "reservations_new"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    table_id = Column(Integer, nullable=False)
+    customer_name = Column(String, nullable=False)
+    customer_contact = Column(String, nullable=True)
+    date = Column(Date, nullable=False)
+    time_slot = Column(String, nullable=False)  # If time format is string, else use Time
+    status = Column(String, nullable=False)
 
 class SalePizzaPoint(Base):
     __tablename__ = "sales_pizza_point"
@@ -259,8 +350,10 @@ auth_token= os.getenv("auth_token")
 twilio_number=os.getenv("twilio_number")
 
 #for local deploymnet
-#DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
-# Twilio credentials (use environment variables in production)
+/DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
+DATABASE_URLAWS="postgresql://postgres:shaazZ121024@database-1.ch0wcs62mtif.eu-north-1.rds.amazonaws.com:5432/postgres"
+
+
                 
 hajvery_number = "whatsapp:+923004112884"        # customer's number
 pizzapoint_number="whatsapp:+923004112884"
@@ -275,9 +368,14 @@ if not DATABASE_URL:
     sys.exit(1)
 
 engine = create_engine(DATABASE_URL)
+engineAWS = create_engine(DATABASE_URLAWS)
 #creating a local session
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+SessionAWS = sessionmaker(bind=engineAWS, autoflush=False, autocommit=False)
+
 Base.metadata.create_all(bind=engine)
+#Base.metadata.create_all(bind=engineAWS)
+
 # — OpenAI Setup (v0.27-style) —
 #openai_api_key = os.getenv("OPENAI_API_KEY")
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -295,6 +393,21 @@ def get_db():
     finally:
         db.close()
 
+def sanitize_filename(filename: str) -> str:
+    # Trim spaces
+    filename = filename.strip()
+    # Replace spaces with underscores
+    filename = filename.replace(" ", "_")
+    # Remove any characters except word chars, dots, hyphens, and underscores
+    filename = re.sub(r'[^\w\.-]', '', filename)
+    return filename
+def get_db_aws():
+    db = SessionAWS()
+    try:
+        yield db
+    finally:
+        db.close()
+
 def is_relevant_to_programming(message: str) -> bool:
     programming_keywords = [
         "python", "odoo", "data", "automation", "excel", "backend", "frontend",
@@ -304,6 +417,331 @@ def is_relevant_to_programming(message: str) -> bool:
     message_lower = message.lower()
     return any(keyword in message_lower for keyword in programming_keywords)
 
+def separate_sentences(text):
+    # Split by newline characters and filter out any empty strings
+    sentences = [sentence for sentence in text.split("\n") if sentence.strip()]
+    return sentences
+
+def extract_relevant_context(relevant_text, query, num_sentences=2):
+    """
+    Refines the relevant context by selecting the top N sentences
+    that are most similar to the query.
+    """
+    query_embedding = get_embedding(query, model="text-embedding-ada-002")
+
+    # Split text into sentences based on multiple delimiters
+    sentences = re.split(r'[.?!]', relevant_text)
+
+    cleaned_sentences = []
+    sentence_embeddings = []
+
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if sentence:  # Ignore empty sentences
+            # Remove non-ASCII characters
+            sentence = re.sub(r'[^\x00-\x7F]+', '', sentence)
+            cleaned_sentences.append(sentence)
+
+            # Generate embedding for the sentence
+            try:
+                embedding = get_embedding(sentence, model="text-embedding-ada-002")
+                sentence_embeddings.append(embedding)
+            except Exception as e:
+                print(f"Error generating embedding for sentence: {sentence}. Skipping.")
+                continue  # Skip problematic sentences
+
+    if not sentence_embeddings:
+        return "No relevant context could be extracted."
+
+    # Convert list to NumPy array for efficient similarity computation
+    sentence_embeddings = np.array(sentence_embeddings)
+
+    # Compute cosine similarity scores
+    similarity_scores = cosine_similarity([query_embedding], sentence_embeddings)[0]
+
+    # Pair sentences with their similarity scores
+    scored_sentences = list(zip(cleaned_sentences, similarity_scores))
+
+    # Sort sentences by similarity score in descending order
+    scored_sentences.sort(key=lambda x: x[1], reverse=True)
+
+    # Select the top N most relevant sentences
+    top_relevant_sentences = [sentence for sentence, _ in scored_sentences[:num_sentences]]
+
+    # Format final output
+    final_context = '\n'.join([f"{sentence}" for sentence in top_relevant_sentences])
+
+
+    return final_context
+
+
+def create_qa_chain(vectorstore, question, top_n=5):
+    client = openai.OpenAI(api_key=openai_api_key)
+
+    # Define a prompt template
+    prompt = PromptTemplate(
+        template="""
+    You are a helpful assistant. Use ONLY the following retrieved context to answer the user's query.
+    Do NOT use any information outside this context.
+    If the answer is not contained within the provided context, respond honestly by saying you don't know.
+    Additionally, suggest that the user try asking a more general-purpose language model like ChatGPT for questions beyond this context.
+
+    Context:
+    {context}
+
+    Question:
+    {question}
+
+    Answer:
+    """,
+        input_variables=["context", "question"]
+    )
+
+    # Set up the retrieval-augmented QA chain
+    
+    retriever = vectorstore.as_retriever(search_kwargs={"k": top_n})
+    llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
+
+    try:
+        # Retrieve the top N relevant documents
+        search_results = retriever.get_relevant_documents(question)
+
+        if not search_results:
+            raise ValueError("No documents found for the given query.")
+
+        # Extract document texts, filenames, and page numbers
+        document_texts = []
+        document_metadata = []
+        unique_pdf_names = set()
+
+        for doc in search_results:
+            text = doc.page_content
+            metadata = doc.metadata
+            pdf_name = metadata.get("pdf_name", "Unknown PDF")
+            page_number = metadata.get("page_number", "Unknown Page")
+            
+            document_texts.append(text)
+            document_metadata.append((pdf_name, page_number))
+            unique_pdf_names.add(pdf_name)
+        
+        # Determine the number of unique PDFs to extract context from
+        num_relevant_docs = len(unique_pdf_names)
+        
+        # Generate embeddings for the documents
+        document_embeddings = []
+        for text in document_texts:
+            try:
+                response = client.embeddings.create(
+                    input=text,
+                    model="text-embedding-ada-002"
+                )
+                embedding = response.data[0].embedding
+                document_embeddings.append(embedding)
+            except openai.OpenAI.OpenAIError as e:
+                print(f"Error generating embedding for document: {e}")
+                document_embeddings.append(None)
+
+        # Generate the embedding for the question
+        try:
+            response = client.embeddings.create(
+                input=question,
+                model="text-embedding-ada-002"
+            )
+            query_embedding = response.data[0].embedding
+        except openai.OpenAI.OpenAIError as e:
+            print(f"Error generating embedding for query: {e}")
+            query_embedding = None
+
+        # Ensure embeddings were successfully generated
+        if query_embedding is None or any(embedding is None for embedding in document_embeddings):
+            raise ValueError("Error in generating embeddings. Please check the API responses.")
+
+        # Calculate cosine similarity
+        similarities = cosine_similarity([query_embedding], document_embeddings)[0]
+
+        # Find indices of the top `num_relevant_docs` documents
+        #sorted_indices = similarities.argsort()[::-1]
+
+        sorted_indices = similarities.argsort()[::-1]
+        
+        # Extract relevant text and metadata from multiple PDFs
+        #relevant_texts = [extract_relevant_context(document_texts[i], question) for i in sorted_indices]
+        relevant_texts = [extract_relevant_context(document_texts[sorted_indices[0]], question)]
+
+        most_relevant_pdf = sorted_indices[0]
+        relevant_metadata = [document_metadata[most_relevant_pdf]]  
+
+        # Merge the contexts from multiple PDFs
+        merged_relevant_text = "\n\n".join(relevant_texts)
+
+        # Create QA chain
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            retriever=retriever,
+            chain_type="stuff",
+            chain_type_kwargs={"prompt": prompt},
+        )
+
+        return qa_chain, merged_relevant_text, relevant_metadata
+
+    except ValueError as ve:
+        print(f"ValueError: {ve}")
+        return None, None, None
+
+    except OpenAI.OpenAIError as e:
+        print(f"OpenAI API Error: {e}")
+        return None, None, None
+
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return None, None, None
+
+
+def create_or_load_vectorstore(
+    pdf_text,
+    openai_api_key,
+    s3_client,
+    bucket_name,
+    vectorstore_key="vectorstore.faiss",
+    embeddings_key="embeddings.pkl"
+):
+    try:
+        print("[INFO] Starting creation of new vector store and embeddings...")
+        global vectorstore
+        # Write extracted text summary to a file
+        print("[INFO] Writing extracted text summary to 'extracted_pages.txt'...")
+        with open("extracted_pages.txt", "w", encoding="utf-8") as f:
+            for pdf_name, pages in pdf_text.items():
+                for page_number, text in pages.items():
+                    snippet = text[:200].replace("\n", " ").replace("\r", " ")
+                    f.write(f"PDF: {pdf_name} | Page: {page_number} | Text (first 200 chars): {snippet}\n\n")
+        print("[INFO] Finished writing text summary.")
+
+        # Initialize text splitter
+        print("[INFO] Initializing RecursiveCharacterTextSplitter...")
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        print("[INFO] Text splitter initialized.")
+
+        documents_with_page_info = []
+        print("[INFO] Splitting text into chunks and creating Document objects...")
+        for pdf_name, page_content in pdf_text.items():
+            for page_number, text in page_content.items():
+                if text.strip():
+                    chunks = text_splitter.split_text(text)
+                    print(f"[DEBUG] PDF '{pdf_name}', Page {page_number}: Split into {len(chunks)} chunks.")
+                    for chunk in chunks:
+                        document_with_page_info = Document(
+                            page_content=chunk,
+                            metadata={"pdf_name": pdf_name, "page_number": page_number}
+                        )
+                        documents_with_page_info.append(document_with_page_info)
+        print(f"[INFO] Created {len(documents_with_page_info)} document chunks in total.")
+
+        print("[INFO] Initializing OpenAIEmbeddings with provided API key...")
+        embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
+        print("[INFO] OpenAIEmbeddings initialized.")
+
+        print("[INFO] Creating FAISS vector store from documents...")
+        vectorstore = FAISS.from_documents(documents_with_page_info, embeddings)
+        print("[INFO] Vector store created.")
+
+        print(f"[INFO] Saving vector store locally to '{vectorstore_key}'...")
+        vectorstore.save_local(vectorstore_key)
+        print("[INFO] Vector store saved locally.")
+
+        embeddings_params = {openai_api_key: embeddings.openai_api_key}
+        print(f"[INFO] Saving embeddings parameters locally to '{embeddings_key}'...")
+        joblib.dump(embeddings_params, embeddings_key)
+        print("[INFO] Embeddings parameters saved.")
+
+        # Upload to S3 is currently disabled
+        # print("[INFO] Uploading vector store and embeddings to S3...")
+        # s3_client.upload_file(vectorstore_key, bucket_name, vectorstore_key)
+        # s3_client.upload_file(embeddings_key, bucket_name, embeddings_key)
+        # print("[INFO] Upload to S3 completed.")
+
+        # Optional cleanup
+        # print("[INFO] Removing local temporary files...")
+        # os.remove(vectorstore_key)
+        # os.remove(embeddings_key)
+        # print("[INFO] Local temporary files removed.")
+
+        print("[SUCCESS] Vector store and embeddings creation complete.")
+        return vectorstore, embeddings
+
+    except Exception as e:
+        print(f"[ERROR] Exception occurred: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+def clean_extracted_text(text):
+    if text is None:
+        return ""
+    
+    # Step 1: Replace newline characters with spaces
+    cleaned_text = text.replace('\n', ' ')
+    
+    # Step 2: Add space between lowercase and uppercase letters
+    # This pattern detects transitions from lowercase to uppercase, commonly used in concatenated words
+    cleaned_text = re.sub(r'([a-z])([A-Z])', r'\1 \2', cleaned_text)
+    
+    
+    # Step 4: Remove any extra spaces (multiple spaces or spaces at the beginning/end)
+    cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+    
+    return cleaned_text
+
+
+def extract_text_from_pdf(pdf_input, target_page=None):
+    
+
+    pdf_text = {}
+
+    try:
+        # Determine if input is a file path (string) or a BytesIO stream
+        if isinstance(pdf_input, str):
+            pdf_name = pdf_input.split('/')[-1]
+            doc = fitz.open(pdf_input)
+        else:
+            # It's a file-like object (e.g., BytesIO), used when reading from S3
+            pdf_name = "from_stream.pdf"
+            doc = fitz.open(stream=pdf_input.read(), filetype="pdf")
+
+        pdf_text = {pdf_name: {}}
+
+        if target_page:
+            if 1 <= target_page <= len(doc):
+                page = doc.load_page(target_page - 1)
+                text = clean_extracted_text(page.get_text())
+                pdf_text[pdf_name][target_page] = text
+            else:
+                print(f"Page {target_page} is out of range. This PDF has {len(doc)} pages.")
+        else:
+            for page_number in range(3, 10):  # Read pages 4 to 6
+                try:
+                    page = doc.load_page(page_number)
+                    page_text = clean_extracted_text(page.get_text())
+                    pdf_text[pdf_name][page_number + 1] = page_text
+                except IndexError:
+                    break  # Stop if we reach beyond available pages
+                except Exception as e:
+                    print(f"Error reading page {page_number + 1}: {e}")
+                    continue
+
+        return pdf_text
+
+    except Exception as e:
+        print(f"Error processing PDF: {e}")
+        return {}
+
+def get_embedding(text: str, model: str = "text-embedding-ada-002") -> list[float]:
+    text = text.replace("\n", " ")  # Clean text
+    response = client.embeddings.create(
+        input=[text],
+        model=model
+    )
+    return response.data[0].embedding
 def is_relevant_to_rafis_kitchen(message: str) -> bool:
     keywords = [
         "rafi", "rafis kitchen", "restaurant", "olean", "wayne street", "800 wayne", "location", "address",
@@ -331,6 +769,131 @@ SMTP_PORT       = 587
 SMTP_USER       = 'proactive1.san@gmail.com'      # from_email
 SMTP_PASS       = 'vsjv dmem twvz avhf'           # from_password
 MANAGEMENT_EMAIL = 'proactive1@live.com'     # where we send reservations
+
+
+@app.post("/api/pdf_chatbot")
+async def chat(request: ChatRequest):
+    user_message = request.message
+
+    # Assuming vectorStore is always initialized elsewhere
+    qa_chain, relevant_texts, document_metadata = create_qa_chain(vectorstore, user_message)  
+
+    # Ask the question
+    answer = qa_chain.run(user_message)    
+
+    S3_BASE_URL = "https://pdfquerybucket.s3.amazonaws.com"
+    UPLOADS_FOLDER = "upload"
+
+    context_data = []
+    for metadata in document_metadata:
+        pdf_s3_key = metadata[0]  # e.g., "folder/subfolder/file.pdf"
+        pdf_page = metadata[1]
+
+        safe_pdf_key = quote(pdf_s3_key)  # URL encode to handle spaces/special chars
+
+        pdf_url = f"{S3_BASE_URL}/{UPLOADS_FOLDER}/{safe_pdf_key}"
+
+        context_data.append({
+            "page_number": pdf_page,
+            "pdf_url": pdf_url,
+        })
+        context_data.append({
+            "page_number": pdf_page,
+            "pdf_url": pdf_url,
+        })
+
+    # Process relevant texts for search strings
+    search_strings = separate_sentences(relevant_texts)
+    bot_reply = f"ChatBot: {answer}"
+
+    response = {
+        "reply": bot_reply,
+        "context": context_data,
+        "search_strings": search_strings,
+        "relevant_texts": relevant_texts  # Add this line
+    }
+
+    print(response)
+    
+
+    return JSONResponse(content=response)
+@app.post("/api/train_model")
+async def train_model(request: Request):
+    
+    try:
+        combined_text = {}
+        total_pdf = 0  # Make sure to initialize this if it starts at 0 every time
+
+        # List all files in the 'upload/' folder of your S3 bucket
+        response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix="upload/")
+
+        if "Contents" not in response:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "No PDF files found in the S3 'upload/' folder."}
+            )
+
+        for obj in response["Contents"]:
+            key = obj["Key"]
+            if key.lower().endswith(".pdf") and not key.endswith("/"):
+                try:
+                    total_pdf += 1
+                    s3_obj = s3.get_object(Bucket=BUCKET_NAME, Key=key)
+                    file_stream = BytesIO(s3_obj["Body"].read())
+                    pdf_data = extract_text_from_pdf(file_stream)  # assumes extract_text_from_pdf accepts file-like input
+                    combined_text.update(pdf_data)
+                except Exception as e:
+                    print(f"Error processing {key}: {e}")
+                    continue
+
+        vectorstore, embeddings = create_or_load_vectorstore(
+            combined_text,
+            openai_api_key,
+            s3,
+            BUCKET_NAME
+        )
+         
+
+        return JSONResponse(
+            status_code=200,
+            content={"message": f"Model trained successfully from {total_pdf} PDFs!"}
+        )
+
+    except ClientError as e:
+        print(f"S3 client error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Failed to access S3 bucket."}
+        )
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Model could not be trained!"}
+        )
+
+@app.post("/api/upload")
+async def upload_pdfs(pdfs: Union[UploadFile, List[UploadFile]] = File(...)):
+    # Normalize to list even if a single file is uploaded
+    if not isinstance(pdfs, list):
+        pdfs = [pdfs]
+
+    uploaded_files = []
+
+    for pdf in pdfs:
+        if not pdf.filename.strip().lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail=f"{pdf.filename} is not a PDF")
+
+        try:
+            safe_filename = sanitize_filename(pdf.filename)
+            key = f"upload/{safe_filename}"
+            s3.upload_fileobj(pdf.file, BUCKET_NAME, key)
+            file_url = f"https://{BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{key}"
+            uploaded_files.append(file_url)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Upload failed for {pdf.filename}: {str(e)}")
+
+    return JSONResponse(content={"message": "Files uploaded successfully", "files": uploaded_files})
 
 @app.post("/api/get-sales-report", response_model=List[SalesResponse])
 async def get_sales_report(
@@ -430,28 +993,85 @@ async def make_reservation(reservation: Reservation):
 
 
 @app.post("/api/reservation")
-async def make_reservation(reservation: Reservation):
+async def make_reservation(reservation: ReservationBase, db: Session = Depends(get_db_aws)):
     try:
-        # Email content
-        subject = "New Reservation Request - Rafi's Kitchen"
-        body = f"""
-        <h2>New Reservation Details</h2>
-        <ul>
-            <li><strong>Name:</strong> {reservation.name}</li>
-            <li><strong>Phone:</strong> {reservation.phone}</li>
-            <li><strong>Date:</strong> {reservation.date}</li>
-            <li><strong>Time:</strong> {reservation.time}</li>
-            <li><strong>Party Size:</strong> {reservation.partySize}</li>
-        </ul>
-        """
+        new_reservation = ReservationModel_new(
+            table_id=reservation.table_id,
+            customer_name=reservation.customer_name,
+            customer_contact=reservation.customer_contact,
+            date=reservation.date,
+            time_slot=reservation.time_slot,
+            status=reservation.status,
+        )
+        db.add(new_reservation)
+        db.commit()
+        db.refresh(new_reservation)
 
-        
-        return { "message": "Reservation details added successfully!!!" }
+        prompt = (
+            f"A reservation was made by {reservation.customer_name} on {reservation.date} at "
+            f"{reservation.time_slot} for table {reservation.table_id}. Status: {reservation.status}.\n\n"
+            "Based on this reservation, generate **five** likely questions a restaurant manager might ask and provide clear answers. "
+            "Cover topics such as:\n"
+            "  • Table number\n"
+            "  • Reservation date & time\n"
+            "  • Confirmation status\n"
+            "  • Customer contact details\n"
+            "  • Party size (if available)\n\n"
+            "Respond strictly in this format, one pair per line:\n"
+            "Q1: <question text>\n"
+            "A1: <answer text>\n"
+            "Q2: <question text>\n"
+            "A2: <answer text>\n"
+            "…\n"
+            "Q5: <question text>\n"
+            "A5: <answer text>"
+        )
 
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an AI assistant that turns reservation data into management FAQs."},
+                {"role": "user",   "content": prompt}
+            ],
+            temperature=0.2,
+        )
+
+        faq_text = response.choices[0].message.content.strip()
+
+        # 2. Parse out the 5 Q&A pairs
+        pairs = re.findall(r'(Q\d:\s*.+?)\n(A\d:\s*.+?)(?=\nQ\d:|\Z)', faq_text, re.S)
+
+        for q_label, a_label in pairs:
+            question = q_label.split(":", 1)[1].strip()
+            answer   = a_label.split(":", 1)[1].strip()
+
+            # 3. Split longer answers into sentences for finer-grained embeddings
+            sentences = re.split(r'(?<=[.!?])\s+', answer)
+            for sentence in sentences:
+                if not sentence:
+                    continue
+
+                embedding = client.embeddings.create(
+                    input=sentence,
+                    model="text-embedding-ada-002"
+                ).data[0].embedding
+
+                new_faq = FAQModel(
+                    question=question,
+                    answer=sentence,
+                    embedding=embedding
+                )
+                db.add(new_faq)
+
+        db.commit()
+        return {"message": "Reservation details added successfully!", "reservation_id": new_reservation.id}
     except Exception as e:
-        print(f"Error sending email: {e}")
-        return { "error": "Failed to send reservation email." }
-
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to add reservation: {e}")    
+    except Exception as e:
+        db.rollback()  # rollback transaction on error
+        print(f"Error adding reservation: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add reservation.")
 @app.post("/create-menu-items/")
 async def create_menu_items(
     items: List[MenuItemRequest],
@@ -963,7 +1583,60 @@ async def chat_rk(msg: Message):
     except Exception as e:
         logging.error(f"chatRK error: {e}")
         raise HTTPException(status_code=500, detail="Sorry, something went wrong.")
-        
+
+
+@app.get("/api/faqs", response_model=list[FAQOut])
+def get_faqs(db: Session = Depends(get_db_aws)):
+    # Query only the needed columns
+    faqs = db.query(FAQModel.id, FAQModel.question, FAQModel.answer).all()
+
+    # Map tuples to dicts (or to FAQOut if FAQOut supports ORM mode)
+    result = [{"id": id, "question": question, "answer": answer} for id, question, answer in faqs]
+
+    return result
+@app.post("/api/chat_database", response_model=ChatResponse)
+async def chat_with_database(request: ChatRequest, db: Session = Depends(get_db_aws)):
+    user_message = request.message.strip()
+    if not user_message:
+        raise HTTPException(status_code=400, detail="Empty message")
+
+    # 1. Generate embedding for user query
+    query_embedding = get_embedding(user_message)  # e.g., returns a List[float]
+    embedding_vector_str = "[" + ",".join(map(str, query_embedding)) + "]"
+
+    # 2. Query top 3 FAQs by vector similarity (assuming pgvector installed and column embedding)
+    faqs = db.execute(
+        text("""
+            SELECT id, question, answer, embedding <=> :embedding AS distance
+            FROM faqs
+            ORDER BY distance
+            LIMIT 3
+        """),
+        {"embedding": embedding_vector_str}
+    ).fetchall()
+
+
+    # 3. Prepare context from top FAQs
+    context_text = "\n\n".join([f"Q: {faq.question}\nA: {faq.answer}" for faq in faqs])
+    print("Context passed to the model:\n", context_text)
+    # 4. Compose prompt with context + user question
+    prompt = f"Use the following FAQ knowledge base to answer the user question.\n\n{context_text}\n\nUser Question: {user_message}\nAnswer:"
+
+    # 5. Call OpenAI chat completion
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant who answers user questions using the provided FAQ knowledge base. If the answer is not explicitly stated, try to infer from the given information but do not make up unsupported facts."},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=300,
+        temperature=0.2,
+    )
+
+    answer = response.choices[0].message.content.strip()
+
+    return ChatResponse(reply=answer)
+
 @app.post("/api/chatwebsite")
 async def chat_website(msg: Message):
     try:
