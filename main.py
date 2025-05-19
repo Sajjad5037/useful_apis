@@ -350,7 +350,7 @@ auth_token= os.getenv("auth_token")
 twilio_number=os.getenv("twilio_number")
 
 #for local deploymnet
-/DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
+
 DATABASE_URLAWS="postgresql://postgres:shaazZ121024@database-1.ch0wcs62mtif.eu-north-1.rds.amazonaws.com:5432/postgres"
 
 
