@@ -874,27 +874,46 @@ async def train_model(request: Request):
 
 @app.post("/api/upload")
 async def upload_pdfs(pdfs: Union[UploadFile, List[UploadFile]] = File(...)):
+    print("Received upload request")
+
     # Normalize to list even if a single file is uploaded
     if not isinstance(pdfs, list):
+        print("Single file detected, converting to list")
         pdfs = [pdfs]
+    else:
+        print(f"{len(pdfs)} files received")
 
     uploaded_files = []
 
     for pdf in pdfs:
+        print(f"Processing file: {pdf.filename}")
+
         if not pdf.filename.strip().lower().endswith(".pdf"):
-            raise HTTPException(status_code=400, detail=f"{pdf.filename} is not a PDF")
+            error_message = f"{pdf.filename} is not a PDF"
+            print("Error:", error_message)
+            raise HTTPException(status_code=400, detail=error_message)
 
         try:
             safe_filename = sanitize_filename(pdf.filename)
             key = f"upload/{safe_filename}"
+            print(f"Uploading to S3 bucket: {BUCKET_NAME}, key: {key}")
+
+            # Reset file pointer before uploading
+            pdf.file.seek(0)
             s3.upload_fileobj(pdf.file, BUCKET_NAME, key)
+
             file_url = f"https://{BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{key}"
             uploaded_files.append(file_url)
+
+            print(f"Successfully uploaded: {file_url}")
         except Exception as e:
+            print("Exception occurred during upload:")
+            traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Upload failed for {pdf.filename}: {str(e)}")
 
+    print("Upload completed. Returning response.")
     return JSONResponse(content={"message": "Files uploaded successfully", "files": uploaded_files})
-
+    
 @app.post("/api/get-sales-report", response_model=List[SalesResponse])
 async def get_sales_report(
     request: SalesRequest,
