@@ -34,5 +34,4 @@ typing_extensions==4.13.2
 uvicorn==0.34.2
 joblib==1.3.2
 twilio==9.0.2
-# FAISS is required by langchain's FAISS wrapper:
 faiss-cpu==1.7.4
