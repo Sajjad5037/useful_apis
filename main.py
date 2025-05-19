@@ -1041,6 +1041,7 @@ async def make_reservation(reservation: ReservationBase, db: Session = Depends(g
             "  3. What is the status of [Customer]’s reservation?\n"
             "  4. What are [Customer]’s contact details?\n"
             "  5. If any detail is missing (e.g., party size), note how to obtain it.\n\n"
+            "**If the answer to any question is not available in the context above, reply with 'I do not know.'**\n\n"
             "Respond in this exact format, one pair per line:\n"
             "Q1: <question text>\n"
             "A1: <answer text>\n"
@@ -1050,6 +1051,7 @@ async def make_reservation(reservation: ReservationBase, db: Session = Depends(g
             "Q5: <question text>\n"
             "A5: <answer text>"
         )
+
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
