@@ -5,9 +5,13 @@ import joblib
 from langchain.schema import Document
 from urllib.parse import quote
 import re
+from sqlalchemy.sql import text
 import numpy as np
 from langchain.chains import RetrievalQA
 from langchain.chat_models import ChatOpenAI
+import boto3
+from botocore.exceptions import ClientError
+
 from sklearn.metrics.pairwise import cosine_similarity
 from langchain.prompts import PromptTemplate
 from langchain.embeddings import OpenAIEmbeddings
@@ -72,7 +76,8 @@ Base = declarative_base()
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_REGION = os.getenv("AWS_REGION")
-BUCKET_NAME = os.getenv("BUCKET_NAME")
+BUCKET_NAME = os.getenv("AWS_BUCKET_NAME")
+
 
 
 
@@ -350,12 +355,11 @@ auth_token= os.getenv("auth_token")
 twilio_number=os.getenv("twilio_number")
 
 #for local deploymnet
-
+#DATABASE_URL= "postgresql://postgres:aootkoMsCIGKpgEbGjAjFfilVKEgOShN@switchback.proxy.rlwy.net:24756/railway"
 DATABASE_URLAWS="postgresql://postgres:shaazZ121024@database-1.ch0wcs62mtif.eu-north-1.rds.amazonaws.com:5432/postgres"
 
-
                 
-hajvery_number = "whatsapp:+923004112884"        # customer's number
+hajvery_number = "whatsapp:+923004112884"  
 pizzapoint_number="whatsapp:+923004112884"
 hajvery_number="whatsapp:+923004112884"
 # Initialize Twilio client
@@ -422,6 +426,55 @@ def separate_sentences(text):
     sentences = [sentence for sentence in text.split("\n") if sentence.strip()]
     return sentences
 
+
+#meant to clean the relevant context that was used by the model to answer the user query
+def clean(text):
+    # This pattern finds a lowercase letter or digit followed by a space and then a capital letter
+    # It inserts a period before the capital letter
+    cleaned_text = re.sub(r'([a-z0-9])\s+([A-Z])', r'\1. \2', text)
+    return cleaned_text
+
+def delete_previous_pdf_in_aws():
+    try:
+        s3 = boto3.client(
+            "s3",
+            region_name=AWS_REGION,
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+        )
+
+        # List objects in 'upload/' folder
+        response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix="upload/")
+        if "Contents" not in response:
+            print("No files found in 'upload/' folder.")
+            return
+
+        pdf_keys = [
+            obj["Key"] for obj in response["Contents"]
+            if obj["Key"].lower().endswith(".pdf") and not obj["Key"].endswith("/")
+        ]
+
+        if not pdf_keys:
+            print("No PDFs to delete in 'upload/' folder.")
+            return
+
+        # Batch delete
+        delete_payload = {
+            "Objects": [{"Key": key} for key in pdf_keys]
+        }
+        delete_response = s3.delete_objects(Bucket=BUCKET_NAME, Delete=delete_payload)
+
+        deleted = delete_response.get("Deleted", [])
+        print(f"Deleted {len(deleted)} PDF(s):")
+        for item in deleted:
+            print(f" - {item['Key']}")
+
+    except ClientError as e:
+        print(f"AWS Client Error: {e}")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+
+
 def extract_relevant_context(relevant_text, query, num_sentences=2):
     """
     Refines the relevant context by selecting the top N sentences
@@ -475,37 +528,38 @@ def extract_relevant_context(relevant_text, query, num_sentences=2):
     return final_context
 
 
-def create_qa_chain(vectorstore, question, top_n=5):
+def create_qa_chain(vectorstore, question, top_n=5, fetch_k=10):
     client = openai.OpenAI(api_key=openai_api_key)
 
     # Define a prompt template
     prompt = PromptTemplate(
         template="""
-    You are a helpful assistant. Use ONLY the following retrieved context to answer the user's query.
-    Do NOT use any information outside this context.
-    If the answer is not contained within the provided context, respond honestly by saying you don't know.
-    Additionally, suggest that the user try asking a more general-purpose language model like ChatGPT for questions beyond this context.
+You are a helpful assistant. Use ONLY the following retrieved context to answer the user's query.
+Do NOT use any information outside this context.
+If the answer is not contained within the provided context, respond honestly by saying you don't know.
+Additionally, suggest that the user try asking a more general-purpose language model like ChatGPT for questions beyond this context.
 
-    Context:
-    {context}
+Context:
+{context}
 
-    Question:
-    {question}
+Question:
+{question}
 
-    Answer:
-    """,
+Answer:
+""",
         input_variables=["context", "question"]
     )
 
-    # Set up the retrieval-augmented QA chain
-    
-    retriever = vectorstore.as_retriever(search_kwargs={"k": top_n})
+    # Set up the retrieval-augmented QA chain using MMR for more diverse retrievals
+    retriever = vectorstore.as_retriever(
+        search_type="mmr",
+        search_kwargs={"k": top_n, "fetch_k": fetch_k}
+    )
     llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
 
     try:
         # Retrieve the top N relevant documents
         search_results = retriever.get_relevant_documents(question)
-
         if not search_results:
             raise ValueError("No documents found for the given query.")
 
@@ -513,21 +567,20 @@ def create_qa_chain(vectorstore, question, top_n=5):
         document_texts = []
         document_metadata = []
         unique_pdf_names = set()
-
         for doc in search_results:
             text = doc.page_content
             metadata = doc.metadata
             pdf_name = metadata.get("pdf_name", "Unknown PDF")
             page_number = metadata.get("page_number", "Unknown Page")
-            
+
             document_texts.append(text)
             document_metadata.append((pdf_name, page_number))
             unique_pdf_names.add(pdf_name)
-        
+
         # Determine the number of unique PDFs to extract context from
         num_relevant_docs = len(unique_pdf_names)
-        
-        # Generate embeddings for the documents
+
+        # Generate embeddings for the retrieved documents
         document_embeddings = []
         for text in document_texts:
             try:
@@ -556,25 +609,21 @@ def create_qa_chain(vectorstore, question, top_n=5):
         if query_embedding is None or any(embedding is None for embedding in document_embeddings):
             raise ValueError("Error in generating embeddings. Please check the API responses.")
 
-        # Calculate cosine similarity
+        # Calculate cosine similarity (here)
         similarities = cosine_similarity([query_embedding], document_embeddings)[0]
-
-        # Find indices of the top `num_relevant_docs` documents
-        #sorted_indices = similarities.argsort()[::-1]
-
         sorted_indices = similarities.argsort()[::-1]
-        
-        # Extract relevant text and metadata from multiple PDFs
-        #relevant_texts = [extract_relevant_context(document_texts[i], question) for i in sorted_indices]
-        relevant_texts = [extract_relevant_context(document_texts[sorted_indices[0]], question)]
 
+        # Extract the single most relevant text chunk for context
+        relevant_texts = [
+            extract_relevant_context(document_texts[sorted_indices[0]], question)
+        ]
         most_relevant_pdf = sorted_indices[0]
-        relevant_metadata = [document_metadata[most_relevant_pdf]]  
+        relevant_metadata = [document_metadata[most_relevant_pdf]]
 
-        # Merge the contexts from multiple PDFs
+        # Merge the retrieved context
         merged_relevant_text = "\n\n".join(relevant_texts)
 
-        # Create QA chain
+        # Create the QA chain
         qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
             retriever=retriever,
@@ -588,13 +637,136 @@ def create_qa_chain(vectorstore, question, top_n=5):
         print(f"ValueError: {ve}")
         return None, None, None
 
-    except OpenAI.OpenAIError as e:
+    except openai.OpenAI.OpenAIError as e:
         print(f"OpenAI API Error: {e}")
         return None, None, None
 
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         return None, None, None
+    
+"""
+old function : 
+# def create_qa_chain(vectorstore, question, top_n=5):
+#     client = openai.OpenAI(api_key=openai_api_key)
+#
+#     # Define a prompt template
+#     prompt = PromptTemplate(
+#         template="""
+#     You are a helpful assistant. Use ONLY the following retrieved context to answer the user's query.
+#     Do NOT use any information outside this context.
+#     If the answer is not contained within the provided context, respond honestly by saying you don't know.
+#     Additionally, suggest that the user try asking a more general-purpose language model like ChatGPT for questions beyond this context.
+#
+#     Context:
+#     {context}
+#
+#     Question:
+#     {question}
+#
+#     Answer:
+#     """,
+#         input_variables=["context", "question"]
+#     )
+#
+#     # Set up the retrieval-augmented QA chain
+#     retriever = vectorstore.as_retriever(search_kwargs={"k": top_n})
+#     llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
+#
+#     try:
+#         # Retrieve the top N relevant documents
+#         search_results = retriever.get_relevant_documents(question)
+#
+#         if not search_results:
+#             raise ValueError("No documents found for the given query.")
+#
+#         # Extract document texts, filenames, and page numbers
+#         document_texts = []
+#         document_metadata = []
+#         unique_pdf_names = set()
+#
+#         for doc in search_results:
+#             text = doc.page_content
+#             metadata = doc.metadata
+#             pdf_name = metadata.get("pdf_name", "Unknown PDF")
+#             page_number = metadata.get("page_number", "Unknown Page")
+#
+#             document_texts.append(text)
+#             document_metadata.append((pdf_name, page_number))
+#             unique_pdf_names.add(pdf_name)
+#
+#         # Determine the number of unique PDFs to extract context from
+#         num_relevant_docs = len(unique_pdf_names)
+#
+#         # Generate embeddings for the documents
+#         document_embeddings = []
+#         for text in document_texts:
+#             try:
+#                 response = client.embeddings.create(
+#                     input=text,
+#                     model="text-embedding-ada-002"
+#                 )
+#                 embedding = response.data[0].embedding
+#                 document_embeddings.append(embedding)
+#             except openai.OpenAI.OpenAIError as e:
+#                 print(f"Error generating embedding for document: {e}")
+#                 document_embeddings.append(None)
+#
+#         # Generate the embedding for the question
+#         try:
+#             response = client.embeddings.create(
+#                 input=question,
+#                 model="text-embedding-ada-002"
+#             )
+#             query_embedding = response.data[0].embedding
+#         except openai.OpenAI.OpenAIError as e:
+#             print(f"Error generating embedding for query: {e}")
+#             query_embedding = None
+#
+#         # Ensure embeddings were successfully generated
+#         if query_embedding is None or any(embedding is None for embedding in document_embeddings):
+#             raise ValueError("Error in generating embeddings. Please check the API responses.")
+#
+#         # Calculate cosine similarity
+#         similarities = cosine_similarity([query_embedding], document_embeddings)[0]
+#
+#         # Find indices of the top `num_relevant_docs` documents
+#         #sorted_indices = similarities.argsort()[::-1]
+#
+#         sorted_indices = similarities.argsort()[::-1]
+#
+#         # Extract relevant text and metadata from multiple PDFs
+#         #relevant_texts = [extract_relevant_context(document_texts[i], question) for i in sorted_indices]
+#         relevant_texts = [extract_relevant_context(document_texts[sorted_indices[0]], question)]
+#
+#         most_relevant_pdf = sorted_indices[0]
+#         relevant_metadata = [document_metadata[most_relevant_pdf]]
+#
+#         # Merge the contexts from multiple PDFs
+#         merged_relevant_text = "\n\n".join(relevant_texts)
+#
+#         # Create QA chain
+#         qa_chain = RetrievalQA.from_chain_type(
+#             llm=llm,
+#             retriever=retriever,
+#             chain_type="stuff",
+#             chain_type_kwargs={"prompt": prompt},
+#         )
+#
+#         return qa_chain, merged_relevant_text, relevant_metadata
+#
+#     except ValueError as ve:
+#         print(f"ValueError: {ve}")
+#         return None, None, None
+#
+#     except OpenAI.OpenAIError as e:
+#         print(f"OpenAI API Error: {e}")
+#         return None, None, None
+#
+#     except Exception as e:
+#         print(f"An unexpected error occurred: {e}")
+#         return None, None, None
+
 
 
 def create_or_load_vectorstore(
@@ -608,14 +780,14 @@ def create_or_load_vectorstore(
     try:
         print("[INFO] Starting creation of new vector store and embeddings...")
         global vectorstore
-        # Write extracted text summary to a file
+        """# Write extracted text summary to a file
         print("[INFO] Writing extracted text summary to 'extracted_pages.txt'...")
         with open("extracted_pages.txt", "w", encoding="utf-8") as f:
             for pdf_name, pages in pdf_text.items():
                 for page_number, text in pages.items():
                     snippet = text[:200].replace("\n", " ").replace("\r", " ")
                     f.write(f"PDF: {pdf_name} | Page: {page_number} | Text (first 200 chars): {snippet}\n\n")
-        print("[INFO] Finished writing text summary.")
+        print("[INFO] Finished writing text summary.")"""
 
         # Initialize text splitter
         print("[INFO] Initializing RecursiveCharacterTextSplitter...")
@@ -678,20 +850,32 @@ def create_or_load_vectorstore(
 def clean_extracted_text(text):
     if text is None:
         return ""
-    
-    # Step 1: Replace newline characters with spaces
-    cleaned_text = text.replace('\n', ' ')
-    
-    # Step 2: Add space between lowercase and uppercase letters
-    # This pattern detects transitions from lowercase to uppercase, commonly used in concatenated words
-    cleaned_text = re.sub(r'([a-z])([A-Z])', r'\1 \2', cleaned_text)
-    
-    
-    # Step 4: Remove any extra spaces (multiple spaces or spaces at the beginning/end)
-    cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
-    
-    return cleaned_text
 
+    # Replace newline characters with space
+    cleaned_text = text.replace('\n', ' ')
+
+    # Insert space between lowercase and uppercase transitions (e.g., "smallText" → "small Text")
+    cleaned_text = re.sub(r'([a-z])([A-Z])', r'\1 \2', cleaned_text)
+
+    # Normalize fancy quotes
+    cleaned_text = cleaned_text.replace('“', '"').replace('”', '"')
+
+    # Add separator after colons before capitalized list items
+    cleaned_text = re.sub(r': ([A-Z])', r':. \1', cleaned_text)
+
+    # Remove common unwanted unicode characters
+    unwanted_chars = ['\uf0b7', '\u00a0', '\ufeff']
+    for char in unwanted_chars:
+        cleaned_text = cleaned_text.replace(char, ' ')
+
+    # Remove known repeated noise (site names, page numbers)
+    cleaned_text = re.sub(r'www\.\S+\.com', '', cleaned_text)  # Remove URLs
+    cleaned_text = re.sub(r'Page\s*\d+', '', cleaned_text)     # Remove 'Page 4', 'Page 10', etc.
+
+    # Collapse multiple spaces into one
+    cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+
+    return cleaned_text
 
 def extract_text_from_pdf(pdf_input, target_page=None):
     
@@ -718,7 +902,7 @@ def extract_text_from_pdf(pdf_input, target_page=None):
             else:
                 print(f"Page {target_page} is out of range. This PDF has {len(doc)} pages.")
         else:
-            for page_number in range(3, 9):  # Read pages 4 to 6
+            for page_number in range(3, 10):  # Read pages 4 to 6
                 try:
                     page = doc.load_page(page_number)
                     page_text = clean_extracted_text(page.get_text())
@@ -805,7 +989,7 @@ async def chat(request: ChatRequest):
     # Process relevant texts for search strings
     search_strings = separate_sentences(relevant_texts)
     bot_reply = f"ChatBot: {answer}"
-
+    relevant_texts=clean(relevant_texts)
     response = {
         "reply": bot_reply,
         "context": context_data,
@@ -818,8 +1002,7 @@ async def chat(request: ChatRequest):
 
     return JSONResponse(content=response)
 @app.post("/api/train_model")
-async def train_model(request: Request):
-    
+async def train_model(request: Request):    
     try:
         combined_text = {}
         total_pdf = 0  # Make sure to initialize this if it starts at 0 every time
@@ -874,46 +1057,28 @@ async def train_model(request: Request):
 
 @app.post("/api/upload")
 async def upload_pdfs(pdfs: Union[UploadFile, List[UploadFile]] = File(...)):
-    print("Received upload request")
-
     # Normalize to list even if a single file is uploaded
     if not isinstance(pdfs, list):
-        print("Single file detected, converting to list")
         pdfs = [pdfs]
-    else:
-        print(f"{len(pdfs)} files received")
 
     uploaded_files = []
+    delete_previous_pdf_in_aws()
 
     for pdf in pdfs:
-        print(f"Processing file: {pdf.filename}")
-
         if not pdf.filename.strip().lower().endswith(".pdf"):
-            error_message = f"{pdf.filename} is not a PDF"
-            print("Error:", error_message)
-            raise HTTPException(status_code=400, detail=error_message)
+            raise HTTPException(status_code=400, detail=f"{pdf.filename} is not a PDF")
 
         try:
             safe_filename = sanitize_filename(pdf.filename)
             key = f"upload/{safe_filename}"
-            print(f"Uploading to S3 bucket: {BUCKET_NAME}, key: {key}")
-
-            # Reset file pointer before uploading
-            pdf.file.seek(0)
             s3.upload_fileobj(pdf.file, BUCKET_NAME, key)
-
             file_url = f"https://{BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{key}"
             uploaded_files.append(file_url)
-
-            print(f"Successfully uploaded: {file_url}")
         except Exception as e:
-            print("Exception occurred during upload:")
-            traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Upload failed for {pdf.filename}: {str(e)}")
 
-    print("Upload completed. Returning response.")
     return JSONResponse(content={"message": "Files uploaded successfully", "files": uploaded_files})
-    
+
 @app.post("/api/get-sales-report", response_model=List[SalesResponse])
 async def get_sales_report(
     request: SalesRequest,
@@ -1096,7 +1261,7 @@ async def make_reservation(reservation: ReservationBase, db: Session = Depends(g
         db.rollback()
         print(f"Error adding reservation: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to add reservation: {e}")
-        
+    
 @app.post("/create-menu-items/")
 async def create_menu_items(
     items: List[MenuItemRequest],
@@ -1617,8 +1782,8 @@ def get_faqs(db: Session = Depends(get_db_aws)):
 
     # Map tuples to dicts (or to FAQOut if FAQOut supports ORM mode)
     result = [{"id": id, "question": question, "answer": answer} for id, question, answer in faqs]
+
     return result
-    
 @app.post("/api/chat_database", response_model=ChatResponse)
 async def chat_with_database(request: ChatRequest, db: Session = Depends(get_db_aws)):
     user_message = request.message.strip()
@@ -1659,7 +1824,7 @@ async def chat_with_database(request: ChatRequest, db: Session = Depends(get_db_
     answer = response.choices[0].message.content.strip()
 
     return ChatResponse(reply=answer)
-    
+
 @app.post("/api/chatwebsite")
 async def chat_website(msg: Message):
     try:
