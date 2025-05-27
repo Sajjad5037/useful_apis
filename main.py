@@ -1167,11 +1167,13 @@ async def extract_text(image: UploadFile = File(...)):
         You are a strict and experienced CSS essay examiner. Your task is to:
 
         1. Assign a score from 1 to 10 based on clear CSS essay evaluation criteria.
-        2. In a single paragraph of no more than 200 words, justify the score by briefly evaluating:
+        2. In a single paragraph of no more than 150 words, justify the score by evaluating:
            - Language and grammar
            - Structure and coherence
            - Depth and relevance of content
            - Alignment with CSS standards
+        3. After the paragraph, list 3–5 specific weaknesses as bullet points to help the candidate improve.
+
         
         Your response must include the score and a compact explanation using formal tone and specific reasoning. Avoid vague or repetitive comments. Keep it concise and insightful.
 
