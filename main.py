@@ -448,7 +448,7 @@ def is_relevant_to_css_preparation(message: str) -> bool:
         "strategy", "notes", "study plan", "guidance", "tips", "mcqs", "current affairs",
         "pak affairs", "islamiat", "english", "mentor", "coaching", "shah rukh", 
         "video lectures", "subscription", "resources", "join", "how to start", "mentorship",
-        "prepare", "roadmap", "study schedule", "course", "material", "feedback", "evaluation",
+        "prepare", "roadmap", "study schedule","preparation", "course", "material", "feedback", "evaluation",
         "essay checker", "review", "marking", "exam strategy"
     ]
     message_lower = message.lower()
@@ -1096,7 +1096,7 @@ async def train_model(request: Request):
             status_code=500,
             content={"error": "Model could not be trained!"}
         )
-
+# for extracting text from the image for my portfolio website
 @app.post("/extract_text")
 async def extract_text(image: UploadFile = File(...)):
     # Read and prepare image for Vision API
@@ -1137,6 +1137,55 @@ async def extract_text(image: UploadFile = File(...)):
     )
     cleaned_text = response.choices[0].message.content.strip()
     return {"text": cleaned_text}
+
+# for essay checker for shah rukh bahi's website
+@app.post("/extract_text_essayChecker")
+async def extract_text(image: UploadFile = File(...)):
+    # Read and prepare image for Vision API
+    image_bytes = await image.read()
+    image_content = vision.Image(content=image_bytes)
+
+    # Get raw OCR text (use document_text_detection or text_detection)
+    response = client_google_vision_api.document_text_detection(image=image_content)
+    ocr_text = response.full_text_annotation.text
+
+    if not ocr_text:
+        return {"text": ""}
+
+    # Use OpenAI to act as a CSS essay teacher and score the essay
+    prompt = f"""
+    The following text is an essay written by a candidate who wishes to appear in the CSS (Central Superior Services) exams of Pakistan.
+
+    Your role is to act as an experienced CSS essay examiner. Please:
+
+    1. Assign a score from 1 to 10 based on the quality of the essay.
+    2. Elaborate on the mistakes made, including language, structure, content, coherence, and relevance to CSS exam standards.
+    3. Provide detailed, constructive feedback on how the candidate can improve their essay writing skills and score in future attempts.
+
+    Essay text:
+    {ocr_text}
+
+    Your detailed assessment:
+    """
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a knowledgeable and strict CSS essay examiner who evaluates essays "
+                    "according to the CSS exam standards of Pakistan. You provide detailed feedback, "
+                    "scoring, and constructive advice for improvement."
+                )
+            },
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.3,
+    )
+    assessment = response.choices[0].message.content.strip()
+    return {"text": assessment}
+
 
 @app.post("/api/upload")
 async def upload_pdfs(pdfs: Union[UploadFile, List[UploadFile]] = File(...)):
