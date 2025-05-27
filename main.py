@@ -1108,13 +1108,20 @@ async def extract_text(image: UploadFile = File(...)):
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are an AI assistant that cleans up OCR text by correcting errors and improving formatting."},
+            {
+                "role": "system",
+                "content": (
+                    "You are an AI assistant that fixes OCR errors such as incorrect word splits, "
+                    "misread letters, and misplaced line breaks, while preserving the original grammar, "
+                    "wording, and tone exactly as intended. Do not paraphrase, summarize, or correct grammar. "
+                    "Only fix errors caused by OCR."
+                )
+            },
             {"role": "user", "content": prompt}
         ],
         temperature=0.2,
     )
     cleaned_text = response.choices[0].message.content.strip()
-
     return {"text": cleaned_text}
 
 @app.post("/api/upload")
