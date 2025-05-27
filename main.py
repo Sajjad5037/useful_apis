@@ -1101,7 +1101,8 @@ async def extract_text(image: UploadFile = File(...)):
         return JSONResponse(status_code=500, content={"detail": "Internal image processing error."})
 
     try:
-        response = client_google_vision_api.text_detection(image=image_content)
+        
+        response = client_google_vision_api.document_text_detection(image=image_content)
     except Exception:
         return JSONResponse(status_code=500, content={"detail": "Google Vision API request failed."})
 
