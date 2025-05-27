@@ -1113,7 +1113,7 @@ async def extract_text(image: UploadFile = File(...)):
     if not text_annotations:
         return {"text": ""}
 
-    extracted_text = text_annotations[0].description.strip()
+    extracted_text = response.full_text_annotation.text.strip()
     return {"text": extracted_text}
 
 @app.post("/api/upload")
