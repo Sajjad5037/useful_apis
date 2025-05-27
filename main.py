@@ -6,12 +6,13 @@ from langchain.schema import Document
 from urllib.parse import quote
 import re
 from sqlalchemy.sql import text
+from google.cloud import vision
 import numpy as np
 from langchain.chains import RetrievalQA
 from langchain.chat_models import ChatOpenAI
 import boto3
 from botocore.exceptions import ClientError
-
+from google.cloud.vision_v1 import types
 from sklearn.metrics.pairwise import cosine_similarity
 from langchain.prompts import PromptTemplate
 from langchain.embeddings import OpenAIEmbeddings
@@ -49,6 +50,32 @@ import boto3
 from fastapi.responses import JSONResponse
 vectorstore = None
 total_pdf = 0
+import tempfile
+
+
+
+
+#for text extractor from image 
+# Load the JSON string from the environment variable
+json_creds = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+if not json_creds:
+    raise RuntimeError("GOOGLE_SERVICE_ACCOUNT_JSON not found")
+
+# Write the JSON to a temp file
+with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
+    f.write(json_creds)
+    temp_path = f.name
+
+# Set the correct GOOGLE_APPLICATION_CREDENTIALS to point to that file
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
+
+try:
+    client_google_vision_api = vision.ImageAnnotatorClient()
+    print("[DEBUG] Google Vision API client initialized successfully.")
+except Exception as e:
+    print(f"[ERROR] Failed to initialize Vision client: {e}")
+    raise
+
 
 # — Logging —
 logging.basicConfig(level=logging.DEBUG)
@@ -364,7 +391,8 @@ pizzapoint_number="whatsapp:+923004112884"
 hajvery_number="whatsapp:+923004112884"
 # Initialize Twilio client
 client_twilio = Client(account_sid, auth_token)
-
+#inititailize google vision api
+client_google_vision_api = vision.ImageAnnotatorClient()
 
 
 if not DATABASE_URL:
@@ -1054,6 +1082,39 @@ async def train_model(request: Request):
             status_code=500,
             content={"error": "Model could not be trained!"}
         )
+
+@app.post("/extract_text")
+async def extract_text(image: UploadFile = File(...)):
+    if not image.content_type.startswith("image/"):
+        return JSONResponse(status_code=400, content={"detail": "Invalid file type. Please upload an image."})
+
+    try:
+        image_bytes = await image.read()
+        if not image_bytes:
+            return JSONResponse(status_code=400, content={"detail": "Uploaded file is empty."})
+    except Exception:
+        return JSONResponse(status_code=500, content={"detail": "Could not read uploaded file."})
+
+    try:
+        image_content = types.Image(content=image_bytes)
+    except Exception:
+        return JSONResponse(status_code=500, content={"detail": "Internal image processing error."})
+
+    try:
+        response = client_google_vision_api.text_detection(image=image_content)
+    except Exception:
+        return JSONResponse(status_code=500, content={"detail": "Google Vision API request failed."})
+
+    if response.error.message:
+        return JSONResponse(status_code=500, content={"detail": f"Vision API error: {response.error.message}"})
+
+    text_annotations = response.text_annotations
+
+    if not text_annotations:
+        return {"text": ""}
+
+    extracted_text = text_annotations[0].description.strip()
+    return {"text": extracted_text}
 
 @app.post("/api/upload")
 async def upload_pdfs(pdfs: Union[UploadFile, List[UploadFile]] = File(...)):
@@ -1885,6 +1946,5 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
-
 
 
