@@ -1164,11 +1164,16 @@ async def extract_text(image: UploadFile = File(...)):
         prompt = f"""
         The following text is an essay written by a candidate who wishes to appear in the CSS (Central Superior Services) exams of Pakistan.
 
-        Your role is to act as an experienced CSS essay examiner. Please:
+        You are a strict and experienced CSS essay examiner. Your task is to:
 
-        1. Assign a score from 1 to 10 based on the quality of the essay.
-        2. Elaborate on the mistakes made, including language, structure, content, coherence, and relevance to CSS exam standards.
-        3. Provide detailed, constructive feedback on how the candidate can improve their essay writing skills and score in future attempts.
+        1. Assign a score from 1 to 10 based on clear CSS essay evaluation criteria.
+        2. In a single paragraph of no more than 200 words, justify the score by briefly evaluating:
+           - Language and grammar
+           - Structure and coherence
+           - Depth and relevance of content
+           - Alignment with CSS standards
+        
+        Your response must include the score and a compact explanation using formal tone and specific reasoning. Avoid vague or repetitive comments. Keep it concise and insightful.
 
         Essay text:
         {ocr_text}
