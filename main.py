@@ -1138,53 +1138,75 @@ async def extract_text(image: UploadFile = File(...)):
     cleaned_text = response.choices[0].message.content.strip()
     return {"text": cleaned_text}
 
-# for essay checker for shah rukh bahi's website
 @app.post("/extract_text_essayChecker")
 async def extract_text(image: UploadFile = File(...)):
-    # Read and prepare image for Vision API
-    image_bytes = await image.read()
-    image_content = vision.Image(content=image_bytes)
+    print("Received request to /extract_text_essayChecker")
 
-    # Get raw OCR text (use document_text_detection or text_detection)
-    response = client_google_vision_api.document_text_detection(image=image_content)
-    ocr_text = response.full_text_annotation.text
+    try:
+        # Read and prepare image for Vision API
+        image_bytes = await image.read()
+        print(f"Read image bytes: {len(image_bytes)} bytes")
 
-    if not ocr_text:
-        return {"text": ""}
+        image_content = vision.Image(content=image_bytes)
 
-    # Use OpenAI to act as a CSS essay teacher and score the essay
-    prompt = f"""
-    The following text is an essay written by a candidate who wishes to appear in the CSS (Central Superior Services) exams of Pakistan.
+        # Get raw OCR text (use document_text_detection or text_detection)
+        response = client_google_vision_api.document_text_detection(image=image_content)
+        print("Received response from Google Vision API")
 
-    Your role is to act as an experienced CSS essay examiner. Please:
+        ocr_text = response.full_text_annotation.text if response.full_text_annotation else None
+        print(f"OCR Text extracted: {repr(ocr_text[:200])}...")  # print first 200 chars for preview
 
-    1. Assign a score from 1 to 10 based on the quality of the essay.
-    2. Elaborate on the mistakes made, including language, structure, content, coherence, and relevance to CSS exam standards.
-    3. Provide detailed, constructive feedback on how the candidate can improve their essay writing skills and score in future attempts.
+        if not ocr_text:
+            print("No OCR text found in the image.")
+            return {"text": ""}
 
-    Essay text:
-    {ocr_text}
+        # Use OpenAI to act as a CSS essay teacher and score the essay
+        prompt = f"""
+        The following text is an essay written by a candidate who wishes to appear in the CSS (Central Superior Services) exams of Pakistan.
 
-    Your detailed assessment:
-    """
+        Your role is to act as an experienced CSS essay examiner. Please:
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a knowledgeable and strict CSS essay examiner who evaluates essays "
-                    "according to the CSS exam standards of Pakistan. You provide detailed feedback, "
-                    "scoring, and constructive advice for improvement."
-                )
-            },
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.3,
-    )
-    assessment = response.choices[0].message.content.strip()
-    return {"text": assessment}
+        1. Assign a score from 1 to 10 based on the quality of the essay.
+        2. Elaborate on the mistakes made, including language, structure, content, coherence, and relevance to CSS exam standards.
+        3. Provide detailed, constructive feedback on how the candidate can improve their essay writing skills and score in future attempts.
+
+        Essay text:
+        {ocr_text}
+
+        Your detailed assessment:
+        """
+
+        print("Sending prompt to OpenAI:")
+        print(prompt[:500] + ("..." if len(prompt) > 500 else ""))  # print first 500 chars for sanity check
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a knowledgeable and strict CSS essay examiner who evaluates essays "
+                        "according to the CSS exam standards of Pakistan. You provide detailed feedback, "
+                        "scoring, and constructive advice for improvement."
+                    )
+                },
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+        )
+        print("Received response from OpenAI")
+
+        assessment = response.choices[0].message.content.strip()
+        print(f"Assessment received (first 500 chars): {assessment[:500]}")
+
+        return {"text": assessment}
+
+    except Exception as e:
+        print(f"Exception occurred: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e)}
+        
 
 
 @app.post("/api/upload")
