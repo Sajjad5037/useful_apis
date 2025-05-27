@@ -85,13 +85,14 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins = [
-    "http://127.0.0.1:3000",           # Local React dev server (127.0.0.1)
-    "http://localhost:3000",           # Local React dev server (localhost)
-    "https://rafis-kitchen.vercel.app",
-    "https://sajjadalinoor.vercel.app",
-    "https://clinic-management-system-27d11.web.app",
-],
+    allow_origins=[
+        "http://127.0.0.1:3000",  # Local React dev server (127.0.0.1)
+        "http://localhost:3000",  # Local React dev server (localhost)
+        "https://rafis-kitchen.vercel.app",
+        "https://sajjadalinoor.vercel.app",
+        "https://clinic-management-system-27d11.web.app",
+        "https://shah-rukk-website.vercel.app",  # Added Shah Rukh website
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
