@@ -1085,37 +1085,37 @@ async def train_model(request: Request):
 
 @app.post("/extract_text")
 async def extract_text(image: UploadFile = File(...)):
-    if not image.content_type.startswith("image/"):
-        return JSONResponse(status_code=400, content={"detail": "Invalid file type. Please upload an image."})
+    # Read and prepare image for Vision API
+    image_bytes = await image.read()
+    image_content = vision.Image(content=image_bytes)
 
-    try:
-        image_bytes = await image.read()
-        if not image_bytes:
-            return JSONResponse(status_code=400, content={"detail": "Uploaded file is empty."})
-    except Exception:
-        return JSONResponse(status_code=500, content={"detail": "Could not read uploaded file."})
+    # Get raw OCR text (use document_text_detection or text_detection)
+    response = client_google_vision_api.document_text_detection(image=image_content)
+    ocr_text = response.full_text_annotation.text
 
-    try:
-        image_content = types.Image(content=image_bytes)
-    except Exception:
-        return JSONResponse(status_code=500, content={"detail": "Internal image processing error."})
-
-    try:
-        
-        response = client_google_vision_api.document_text_detection(image=image_content)
-    except Exception:
-        return JSONResponse(status_code=500, content={"detail": "Google Vision API request failed."})
-
-    if response.error.message:
-        return JSONResponse(status_code=500, content={"detail": f"Vision API error: {response.error.message}"})
-
-    text_annotations = response.text_annotations
-
-    if not text_annotations:
+    if not ocr_text:
         return {"text": ""}
 
-    extracted_text = response.full_text_annotation.text.strip()
-    return {"text": extracted_text}
+    # Use OpenAI to clean up OCR text
+    prompt = f"""
+    The following text was extracted by an OCR system and may have mistakes or odd formatting. Please rewrite it so that it is clear, grammatically correct, and preserves the original meaning.
+
+    Text:
+    {ocr_text}
+
+    Cleaned Text:
+    """
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are an AI assistant that cleans up OCR text by correcting errors and improving formatting."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.2,
+    )
+    cleaned_text = response.choices[0].message.content.strip()
+
+    return {"text": cleaned_text}
 
 @app.post("/api/upload")
 async def upload_pdfs(pdfs: Union[UploadFile, List[UploadFile]] = File(...)):
@@ -1947,5 +1947,4 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
-
 
