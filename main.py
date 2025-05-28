@@ -1138,6 +1138,97 @@ async def extract_text(image: UploadFile = File(...)):
     cleaned_text = response.choices[0].message.content.strip()
     return {"text": cleaned_text}
 
+@app.post("/extract_text_essayChecker_mywebsite")
+async def extract_text(image: UploadFile = File(...)):
+    try:
+        # Read image
+        image_bytes = await image.read()
+        image_content = vision.Image(content=image_bytes)
+
+        # Extract text using Vision API
+        response = client_google_vision_api.document_text_detection(image=image_content)
+        ocr_text = response.full_text_annotation.text if response.full_text_annotation else ""
+
+        if not ocr_text:
+            return {"text1": "", "text2": "", "assessment": "No text found in image."}
+
+        # First clean OCR errors using GPT
+        correction_prompt = f"""
+        Please clean the following essay for any OCR or grammatical mistakes without changing the original structure or content:
+
+        Essay:
+        {ocr_text}
+        """
+        correction_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that fixes OCR and grammar issues in text."},
+                {"role": "user", "content": correction_prompt}
+            ],
+            temperature=0.2,
+        )
+        cleaned_text = correction_response.choices[0].message.content.strip()
+
+        # Now send cleaned essay to essay examiner
+        assessment_prompt = f"""
+        The following is a CSS essay written by a candidate.
+
+        You are a strict CSS examiner. Your tasks are:
+
+        1. Assign a score (1-10) based on CSS criteria.
+        2. Give specific feedback about weak areas and why they hurt the score.
+        3. Show a rewrite (first 100 words only) to demonstrate an ideal version.
+
+        Respond using the following strict format:
+
+        **Score:** <your score here>/10
+
+        **Feedback:**
+        <detailed feedback here>
+
+        **Ideal Rewrite (First 100 Words):**
+        <your rewrite here>
+
+        Essay:
+        {cleaned_text}
+        """
+
+        assessment_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a CSS essay examiner providing feedback and ideal writing samples."},
+                {"role": "user", "content": assessment_prompt}
+            ],
+            temperature=0.3,
+        )
+        assessment = assessment_response.choices[0].message.content.strip()
+        
+        # Extract model rewrite section (first 100 words)
+        model_rewrite_match = re.search(
+            r"\*\*Ideal Rewrite \(First 100 Words\):\*\*\s*(.+)", 
+            assessment, 
+            re.DOTALL
+        )
+        model_rewrite = model_rewrite_match.group(1).strip() if model_rewrite_match else ""
+
+
+        # Highlight differences
+        #text1, text2 = highlight_sentence_differences(cleaned_text, model_rewrite)
+        
+        print("")
+
+        return {
+            "text1": cleaned_text,         # cleaned essay with red highlights
+            "text2": model_rewrite,         # improved essay with green highlights
+            "assessment": assessment  # feedback and score
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
 @app.post("/extract_text_essayChecker")
 async def extract_text(image: UploadFile = File(...)):
     print("Received request to /extract_text_essayChecker")
