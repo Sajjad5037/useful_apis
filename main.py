@@ -115,6 +115,11 @@ s3 = boto3.client(
     aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
     region_name=AWS_REGION
 )
+# for solving math problem after exxtracing from images
+class SolveResult(BaseModel):
+    problem: str
+    solution: str
+
 #for pdf query chatbot
 
     
@@ -888,6 +893,21 @@ def create_or_load_vectorstore(
         import traceback
         traceback.print_exc()
         raise
+def insert_explicit_multiplication(expr_str):
+    # Insert * between digit and variable separated by space: '3 xy' -> '3*xy'
+    expr_str = re.sub(r'(\d)\s+([a-zA-Z])', r'\1*\2', expr_str)
+    # Insert * between variable and variable separated by space: 'x y' -> 'x*y'
+    expr_str = re.sub(r'([a-zA-Z])\s+([a-zA-Z])', r'\1*\2', expr_str)
+    return expr_str
+
+def fix_implicit_multiplication(expr_str: str) -> str:
+    # Insert * between number and variable (e.g. 2x -> 2*x)
+    expr_str = re.sub(r'(\d)([a-zA-Z])', r'\1*\2', expr_str)
+    # Insert * between variable and variable (e.g. xy -> x*y)
+    expr_str = re.sub(r'([a-zA-Z])([a-zA-Z])', r'\1*\2', expr_str)
+    # Insert * between number or variable and '(' (e.g. 2(x+1) -> 2*(x+1), x(x+1) -> x*(x+1))
+    expr_str = re.sub(r'(\d|\w)\(', r'\1*(', expr_str)
+    return expr_str
 
 def clean_extracted_text(text):
     if text is None:
@@ -1304,7 +1324,69 @@ async def extract_text(image: UploadFile = File(...)):
         traceback.print_exc()
         return {"error": str(e)}
         
+@app.post("/solve_math_problem")
+async def solve_math_problem(image: UploadFile = File(...)):
+    # Validate file type
+    if not image.content_type.startswith("image/"):
+        return JSONResponse(status_code=400, content={"detail": "Invalid file type. Please upload an image."})
 
+    try:
+        image_bytes = await image.read()
+        if not image_bytes:
+            return JSONResponse(status_code=400, content={"detail": "Uploaded file is empty."})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": f"Could not read uploaded file. Error: {str(e)}"})
+
+    # Send to Google Vision API
+    try:
+        image_content = vision.Image(content=image_bytes)
+        response = client_google_vision_api.text_detection(image=image_content)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": f"Google Vision API error: {str(e)}"})
+
+    if response.error.message:
+        return JSONResponse(status_code=500, content={"detail": f"Vision API error: {response.error.message}"})
+
+    text_annotations = response.text_annotations
+    if not text_annotations:
+        return {"problem": "", "solution": "No text found in image."}
+
+    raw_text = text_annotations[0].description
+    print(f"[DEBUG] OCR Extracted:\n{raw_text}")
+
+    # Clean OCR text lines
+    lines = [line.strip() for line in raw_text.strip().splitlines() if line.strip()]
+    print(f"[DEBUG] OCR Lines: {lines}")
+
+    # Handle fraction if exactly two lines (numerator / denominator)
+    if len(lines) == 2:
+        numerator = lines[0]
+        denominator = lines[1]
+        cleaned_expr = f"({numerator})/({denominator})"
+    else:
+        # Otherwise join all lines without spaces (or adjust as needed)
+        cleaned_expr = ''.join(lines)
+
+    print(f"[DEBUG] Expression after combining numerator and denominator: {cleaned_expr}")
+
+    # Fix implicit multiplication like '2xy' -> '2*x*y'
+    fixed_expr = fix_implicit_multiplication(cleaned_expr)
+    print(f"[DEBUG] Fixed expression after implicit multiplication fix: {fixed_expr}")
+
+    try:
+        expr = sympy.sympify(fixed_expr)
+        simplified = sympy.simplify(expr)
+        solution = str(simplified)
+    except Exception as e:
+        return {
+            "problem": raw_text.strip(),
+            "solution": f"❌ Error simplifying expression: {e}"
+        }
+
+    return {
+        "problem": raw_text.strip(),
+        "solution": f"Simplified result: {solution}"
+    }
 
 @app.post("/api/upload")
 async def upload_pdfs(pdfs: Union[UploadFile, List[UploadFile]] = File(...)):
