@@ -2,6 +2,7 @@ import os
 import sys
 import fitz 
 import joblib
+import sympy
 from langchain.schema import Document
 from urllib.parse import quote
 import re
