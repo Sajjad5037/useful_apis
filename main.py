@@ -1277,17 +1277,17 @@ async def extract_text(image: UploadFile = File(...)):
 
         # Use OpenAI to act as a CSS essay teacher and score the essay
         prompt = f"""
-        The following text is an thesis written by a candidate who wishes to appear in the CSS (Central Superior Services) exams of Pakistan.
+        The following text is an thesis statement written by a candidate who wishes to appear in the CSS (Central Superior Services) exams of Pakistan.
 
         You are a strict and experienced CSS essay examiner. Your task is to:
 
         Assign a score from 1 to 10 based on official CSS essay evaluation criteria.        
         
-        Then, guide the student through rewriting the thesis to a quality that would score a full 10/10. This part must:
+        Then, guide the student through rewriting the thesis statement to a quality that would score a full 10/10. This part must:
         
-        Clearly show your step-by-step thought process as you construct the essay.
+        Clearly show your step-by-step thought process as you construct the thesis statement.
         
-        write the new version of the thesis that will be likely to get a full 10
+        write the new version of the thesis statement that will be likely to get a full 10
         
         Your response must include the score and a compact explanation using formal tone and specific reasoning. Avoid vague or repetitive comments. Keep it concise and insightful.
 
@@ -1351,6 +1351,7 @@ async def extract_text(image: UploadFile = File(...)):
         import traceback
         traceback.print_exc()
         return {"error": str(e)}
+
         
 @app.post("/solve_math_problem")
 async def solve_math_problem(image: UploadFile = File(...)):
