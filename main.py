@@ -1216,7 +1216,7 @@ async def extract_text(image: UploadFile = File(...)):
         assessment_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a CSS essay examiner providing feedback and ideal writing samples."},
+                {"role": "system", "content": "You are a creative writing coach providing feedback and ideal writing samples."},
                 {"role": "user", "content": assessment_prompt}
             ],
             temperature=0.3,
@@ -1225,7 +1225,7 @@ async def extract_text(image: UploadFile = File(...)):
         
         # Extract model rewrite section (first 100 words)
         model_rewrite_match = re.search(
-            r"\*\*Ideal Rewrite \(First 100 Words\):\*\*\s*(.+)", 
+            r"\*\*Ideal Rewrite \(full text\):\*\*\s*(.+)", 
             assessment, 
             re.DOTALL
         )
