@@ -1192,28 +1192,27 @@ async def extract_text(image: UploadFile = File(...)):
 
         # Now send cleaned essay to essay examiner
         assessment_prompt = f"""
-        The following is a CSS essay written by a candidate.
-
-        You are a strict CSS examiner. Your tasks are:
-
-        1. Assign a score (1-10) based on CSS criteria.
-        2. Give specific feedback about weak areas and why they hurt the score.
-        3. Show a rewrite (first 100 words only) to demonstrate an ideal version.
-
+        The following is a piece of creative writing submitted by a student.
+        
+        You are an experienced creative writing coach. Your tasks are:
+        
+        1. Assign a score (1–10) based on clarity, originality, coherence, emotional impact, and grammar.
+        2. Provide specific feedback on what aspects need improvement and why they affect the overall quality.
+        3. Rewrite the whole text that will be likely to get a full score. 
+        
         Respond using the following strict format:
-
+        
         **Score:** <your score here>/10
-
+        
         **Feedback:**
-        <detailed feedback here>
-
-        **Ideal Rewrite (First 100 Words):**
-        <your rewrite here>
-
-        Essay:
+        <clear, constructive feedback here>
+        
+        **Improved Rewrite (First 100 Words):**
+        <your improved version here>
+        
+        Original Writing:
         {cleaned_text}
         """
-
         assessment_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
