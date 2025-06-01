@@ -1255,6 +1255,9 @@ async def extract_text(image: UploadFile = File(...)):
     print("Received request to /extract_text_essayChecker")
 
     try:
+        # Hardcoded recipient email
+        recipient_email = "proactive1.san@gmail.com"
+
         # Read and prepare image for Vision API
         image_bytes = await image.read()
         print(f"Read image bytes: {len(image_bytes)} bytes")
@@ -1266,7 +1269,7 @@ async def extract_text(image: UploadFile = File(...)):
         print("Received response from Google Vision API")
 
         ocr_text = response.full_text_annotation.text if response.full_text_annotation else None
-        print(f"OCR Text extracted: {repr(ocr_text[:200])}...")  # print first 200 chars for preview
+        print(f"OCR Text extracted: {repr(ocr_text[:200])}...")
 
         if not ocr_text:
             print("No OCR text found in the image.")
@@ -1279,12 +1282,12 @@ async def extract_text(image: UploadFile = File(...)):
         You are a strict and experienced CSS essay examiner. Your task is to:
 
         Assign a score from 1 to 10 based on official CSS essay evaluation criteria.        
-               
+        
         Then, guide the student through rewriting the essay to a quality that would score a full 10/10. This part must:
         
         Clearly show your step-by-step thought process as you construct the essay.
         
-        do not write the full essay. just show the glimpse of how creative writing is done by writing only first 100 words that explain the gist of how it should be done. 
+        write the new version of the essay that will be likely to get a full 10
         
         Your response must include the score and a compact explanation using formal tone and specific reasoning. Avoid vague or repetitive comments. Keep it concise and insightful.
 
@@ -1295,7 +1298,7 @@ async def extract_text(image: UploadFile = File(...)):
         """
 
         print("Sending prompt to OpenAI:")
-        print(prompt[:500] + ("..." if len(prompt) > 500 else ""))  # print first 500 chars for sanity check
+        print(prompt[:500] + ("..." if len(prompt) > 500 else ""))
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -1317,7 +1320,31 @@ async def extract_text(image: UploadFile = File(...)):
         assessment = response.choices[0].message.content.strip()
         print(f"Assessment received (first 500 chars): {assessment[:500]}")
 
-        return {"text": assessment}
+        # Prepare email message
+        subject = "Your CSS Essay Assessment"
+        body = f"""
+        <h2>Your CSS Essay Assessment</h2>
+        <p>Dear Candidate,</p>
+        <p>Please find below your detailed CSS essay evaluation:</p>
+        <pre>{assessment}</pre>
+        <p>Regards,<br/>CSS Essay Checker Bot</p>
+        """
+
+        msg = MIMEMultipart()
+        msg['From'] = SMTP_USER
+        msg['To'] = recipient_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'html'))
+
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+
+        return {
+            "message": "Assessment completed and emailed successfully.",
+            "email_sent_to": recipient_email
+        }
 
     except Exception as e:
         print(f"Exception occurred: {e}")
