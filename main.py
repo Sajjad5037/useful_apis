@@ -93,6 +93,7 @@ app.add_middleware(
         "https://sajjadalinoor.vercel.app",
         "https://clinic-management-system-27d11.web.app",
         "https://shah-rukk-website.vercel.app",  # Added Shah Rukh website
+        "https://class-management-system-new.web.app",  # ✅ Newly added
     ],
     allow_credentials=True,
     allow_methods=["*"],
