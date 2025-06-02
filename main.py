@@ -124,6 +124,11 @@ class SolveResult(BaseModel):
 
 #for pdf query chatbot
 
+class ChatRequest_CSS(BaseModel):
+    session_id: str
+    message: str
+    first_message: bool = False
+
     
 class Vector(UserDefinedType):
     def __init__(self, dimension):
