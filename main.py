@@ -454,8 +454,9 @@ MODEL_COST = {
     "gpt-4": {"input": 0.03, "output": 0.06},
     "gpt-4-turbo": {"input": 0.01, "output": 0.03},
     "gpt-3.5-turbo": {"input": 0.0015, "output": 0.002},
-    "gpt-4o": {"input": 0.005, "output": 0.015},  # example
-    "gpt-4o-mini": {"input": 0.003, "output": 0.01},  # 👈 Add this line
+    "gpt-4o": {"input": 0.005, "output": 0.015},
+    "gpt-4o-mini": {"input": 0.003, "output": 0.01},
+    "text-embedding-ada-002": {"input": 0.0001, "output": 0.0}  # embeddings charge only on input
 }
 
 Base.metadata.create_all(bind=engine)
@@ -962,6 +963,8 @@ def create_or_load_vectorstore(
 
         # Step 4: Log to database
         username="Website_visitor"
+        
+        
         if db and username and cost is not None:
             
             cost_record = CostPerInteraction(
