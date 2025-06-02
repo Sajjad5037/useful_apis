@@ -25,7 +25,22 @@ from typing import Optional,List,Union
 from fastapi import FastAPI, HTTPException, Depends,Form,File,UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String,Float,DateTime,ForeignKey,desc,Boolean,Date,Time,func,text
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    String,
+    Float,
+    DateTime,
+    ForeignKey,
+    Boolean,
+    Date,
+    Time,
+    Numeric,
+    desc,
+    func,
+    text
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session,relationship,joinedload
 import openai  # classic client
@@ -146,7 +161,6 @@ class CostPerInteraction(Base):
     total_tokens = Column(Integer, nullable=False)
     cost_usd = Column(Numeric(10, 6), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
     
 class Vector(UserDefinedType):
     def __init__(self, dimension):
