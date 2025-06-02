@@ -1023,43 +1023,75 @@ SMTP_USER       = 'proactive1.san@gmail.com'      # from_email
 SMTP_PASS       = 'vsjv dmem twvz avhf'           # from_password
 MANAGEMENT_EMAIL = 'proactive1@live.com'     # where we send reservations
 
+@app.options("/train-on-images")
+async def options_train_on_images():
+    """Handle CORS preflight requests explicitly."""
+    return JSONResponse(
+        content={"message": "CORS preflight OK"},
+        headers={
+            "Access-Control-Allow-Origin": "*",  # ⚠️ Replace with exact domain in production
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+        },
+        status_code=200,
+    )
+
 @app.post("/train-on-images")
-async def train_on_images(images: List[UploadFile] = File(...)):
+async def train_on_images(images: List[UploadFile] = File(...), request: Request = None):
+    # CORS header override for safety (you may remove this if middleware works consistently)
+    origin = request.headers.get("origin")
+    cors_headers = {
+        "Access-Control-Allow-Origin": origin if origin else "*",
+        "Access-Control-Allow-Credentials": "true",
+    }
+
     if not images:
-        raise HTTPException(status_code=400, detail="No images uploaded")
+        return JSONResponse(
+            content={"detail": "No images uploaded"},
+            status_code=400,
+            headers=cors_headers,
+        )
 
     combined_text = ""
 
-    for image in images:
-        image_bytes = await image.read()
-        print(f"Read image bytes: {len(image_bytes)} bytes")
+    try:
+        for image in images:
+            image_bytes = await image.read()
+            if not image_bytes:
+                continue
 
-        image_content = vision.Image(content=image_bytes)
-        response = client_google_vision_api.document_text_detection(image=image_content)
-        print("Received response from Google Vision API")
+            image_content = vision.Image(content=image_bytes)
+            response = client_google_vision_api.document_text_detection(image=image_content)
 
-        ocr_text = response.full_text_annotation.text if response.full_text_annotation else ""
-        print(f"OCR Text extracted (first 200 chars): {repr(ocr_text[:200])}...")
+            ocr_text = response.full_text_annotation.text if response.full_text_annotation else ""
+            combined_text += ocr_text + "\n\n"
 
-        combined_text += ocr_text + "\n\n"
+        if not combined_text.strip():
+            return JSONResponse(
+                content={"detail": "No text extracted from images"},
+                status_code=400,
+                headers=cors_headers,
+            )
 
-    if not combined_text.strip():
-        raise HTTPException(status_code=400, detail="No text extracted from images")
+        session_id = str(uuid4())
+        session_texts[session_id] = combined_text
 
-    # Create a session ID
-    session_id = str(uuid4())
+        return JSONResponse(
+            content={
+                "status": "success",
+                "session_id": session_id,
+                "images_processed": len(images),
+                "total_text_length": len(combined_text),
+            },
+            headers=cors_headers,
+        )
 
-    # Store extracted text under this session ID
-    session_texts[session_id] = combined_text
-
-    print(f"Session {session_id} created with text length {len(combined_text)}")
-
-    return {
-        "status": "success",
-        "session_id": session_id,
-        "images_processed": len(images),
-        "total_text_length": len(combined_text),
-    }
+    except Exception as e:
+        return JSONResponse(
+            content={"detail": f"Unexpected server error: {str(e)}"},
+            status_code=500,
+            headers=cors_headers,
+        )
 
 @app.post("/chat_interactive_tutor", response_model=ChatResponse)
 async def chat_interactive_tutor(request: ChatRequest_CSS):
