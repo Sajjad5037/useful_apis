@@ -4,6 +4,7 @@ import fitz
 from uuid import uuid4
 import joblib
 import sympy
+from fastapi.responses import JSONResponse
 from langchain.schema import Document
 from urllib.parse import quote
 import re
@@ -1303,7 +1304,8 @@ async def chat_interactive_tutor(
 
         # --- Update session history and return ---
         session_histories[session_id].append({"role": "assistant", "content": reply})
-        return ChatResponse(reply=reply)
+        #return ChatResponse(reply=reply)
+        return JSONResponse(content={"reply": reply})
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
