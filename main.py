@@ -1018,6 +1018,109 @@ SMTP_USER       = 'proactive1.san@gmail.com'      # from_email
 SMTP_PASS       = 'vsjv dmem twvz avhf'           # from_password
 MANAGEMENT_EMAIL = 'proactive1@live.com'     # where we send reservations
 
+@app.post("/train-on-images")
+async def train_on_images(images: List[UploadFile] = File(...)):
+    if not images:
+        raise HTTPException(status_code=400, detail="No images uploaded")
+
+    combined_text = ""
+
+    for image in images:
+        image_bytes = await image.read()
+        print(f"Read image bytes: {len(image_bytes)} bytes")
+
+        image_content = vision.Image(content=image_bytes)
+        response = client_google_vision_api.document_text_detection(image=image_content)
+        print("Received response from Google Vision API")
+
+        ocr_text = response.full_text_annotation.text if response.full_text_annotation else ""
+        print(f"OCR Text extracted (first 200 chars): {repr(ocr_text[:200])}...")
+
+        combined_text += ocr_text + "\n\n"
+
+    if not combined_text.strip():
+        raise HTTPException(status_code=400, detail="No text extracted from images")
+
+    # Create a session ID
+    session_id = str(uuid4())
+
+    # Store extracted text under this session ID
+    session_texts[session_id] = combined_text
+
+    print(f"Session {session_id} created with text length {len(combined_text)}")
+
+    return {
+        "status": "success",
+        "session_id": session_id,
+        "images_processed": len(images),
+        "total_text_length": len(combined_text),
+    }
+
+@app.post("/chat_interactive_tutor", response_model=ChatResponse)
+async def chat_interactive_tutor(request: ChatRequest_CSS):
+    session_id = request.session_id.strip()
+    user_message = request.message.strip()
+
+    if session_id not in session_texts:
+        raise HTTPException(status_code=404, detail="Session ID not found")
+
+    full_text = session_texts[session_id]
+
+    if request.first_message:
+        # First message: initialize with full passage and system prompt
+        system_message = {
+            "role": "system",
+            "content": (
+                "You are a concise and insightful creative writing tutor.\n"
+                "You are helping a student improve their writing, which may be a short passage, several paragraphs, or a full essay.\n"
+                "Only respond to user queries that are directly relevant to the essay shared. Do not entertain or answer unrelated questions.\n"
+                "After each suggestion or feedback point, insert two newline characters (\\n\\n) to create a blank line for better readability.\n"
+                "Keep your responses under 150 words unless the student explicitly requests a full rewrite. Do not exceed this limit in regular responses."
+            ),
+        }
+
+        user_intro_message = {
+            "role": "user",
+            "content": (
+                f"Here is the student's writing passage:\n\n{full_text}\n\n"
+                "Please keep your feedback concise (within 150 words) unless asked for a full essay rewrite and use line breaks after each point."
+                "Keep this in mind for the session. Now, here is my question:"
+            )
+        }
+
+        user_current_message = {
+            "role": "user",
+            "content": (
+                f"{user_message}\n\n"
+                "Please insert two newline characters (\\n\\n) after each suggestion to improve readability. "
+                "Keep the response under 150 words. "
+                "Do not respond to queries unrelated to the essay."
+            )
+        }
+        messages = [system_message, user_intro_message, user_current_message]
+        session_histories[session_id] = messages.copy()
+
+    else:
+        # For ongoing sessions: append user's message to existing history
+        if session_id not in session_histories:
+            raise HTTPException(status_code=400, detail="Session history missing for this session ID")
+
+        messages = session_histories[session_id]
+        messages.append({"role": "user", "content": user_message})
+
+    # Call OpenAI chat model
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        temperature=0.5,
+    )
+
+    reply = response.choices[0].message.content.strip()
+
+    # Append assistant's reply to session history
+    session_histories[session_id].append({"role": "assistant", "content": reply})
+
+    return ChatResponse(reply=reply)
 
 @app.post("/api/pdf_chatbot")
 async def chat(request: ChatRequest):
