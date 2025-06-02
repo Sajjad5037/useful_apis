@@ -1038,7 +1038,6 @@ async def options_train_on_images():
 
 @app.post("/train-on-images")
 async def train_on_images(images: List[UploadFile] = File(...), request: Request = None):
-    # CORS header override for safety (you may remove this if middleware works consistently)
     origin = request.headers.get("origin")
     cors_headers = {
         "Access-Control-Allow-Origin": origin if origin else "*",
@@ -1046,6 +1045,7 @@ async def train_on_images(images: List[UploadFile] = File(...), request: Request
     }
 
     if not images:
+        print("[train-on-images] No images uploaded")
         return JSONResponse(
             content={"detail": "No images uploaded"},
             status_code=400,
@@ -1055,18 +1055,33 @@ async def train_on_images(images: List[UploadFile] = File(...), request: Request
     combined_text = ""
 
     try:
-        for image in images:
+        print(f"[train-on-images] Received {len(images)} images")
+
+        for idx, image in enumerate(images, start=1):
+            print(f"[train-on-images] Reading image {idx}: filename={image.filename}")
             image_bytes = await image.read()
+            print(f"[train-on-images] Read {len(image_bytes)} bytes from image {idx}")
+
             if not image_bytes:
+                print(f"[train-on-images] Warning: Image {idx} has zero bytes, skipping")
                 continue
 
             image_content = vision.Image(content=image_bytes)
+
+            print(f"[train-on-images] Sending image {idx} to Google Vision API")
             response = client_google_vision_api.document_text_detection(image=image_content)
 
+            if response.error.message:
+                print(f"[train-on-images] Google Vision API error for image {idx}: {response.error.message}")
+                raise HTTPException(status_code=500, detail=f"Google Vision API error: {response.error.message}")
+
             ocr_text = response.full_text_annotation.text if response.full_text_annotation else ""
+            print(f"[train-on-images] OCR text length for image {idx}: {len(ocr_text)} characters")
+
             combined_text += ocr_text + "\n\n"
 
         if not combined_text.strip():
+            print("[train-on-images] No text extracted from any images")
             return JSONResponse(
                 content={"detail": "No text extracted from images"},
                 status_code=400,
@@ -1075,6 +1090,7 @@ async def train_on_images(images: List[UploadFile] = File(...), request: Request
 
         session_id = str(uuid4())
         session_texts[session_id] = combined_text
+        print(f"[train-on-images] Session {session_id} created with text length {len(combined_text)}")
 
         return JSONResponse(
             content={
@@ -1087,6 +1103,8 @@ async def train_on_images(images: List[UploadFile] = File(...), request: Request
         )
 
     except Exception as e:
+        tb_str = traceback.format_exc()
+        print(f"[train-on-images] Exception occurred: {str(e)}\nTraceback:\n{tb_str}")
         return JSONResponse(
             content={"detail": f"Unexpected server error: {str(e)}"},
             status_code=500,
