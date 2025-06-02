@@ -4,7 +4,7 @@ import fitz
 from uuid import uuid4
 import joblib
 import sympy
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse
 from langchain.schema import Document
 from urllib.parse import quote
 import re
@@ -450,6 +450,13 @@ engineAWS = create_engine(DATABASE_URLAWS)
 #creating a local session
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 SessionAWS = sessionmaker(bind=engineAWS, autoflush=False, autocommit=False)
+MODEL_COST = {
+    "gpt-4": {"input": 0.03, "output": 0.06},
+    "gpt-4-turbo": {"input": 0.01, "output": 0.03},
+    "gpt-3.5-turbo": {"input": 0.0015, "output": 0.002},
+    "gpt-4o": {"input": 0.005, "output": 0.015},  # example
+    "gpt-4o-mini": {"input": 0.003, "output": 0.01},  # 👈 Add this line
+}
 
 Base.metadata.create_all(bind=engine)
 #Base.metadata.create_all(bind=engineAWS)
@@ -1305,7 +1312,7 @@ async def chat_interactive_tutor(
         # --- Update session history and return ---
         session_histories[session_id].append({"role": "assistant", "content": reply})
         #return ChatResponse(reply=reply)
-        return JSONResponse(content={"reply": reply})
+        return HTMLResponse(content=reply)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
