@@ -454,9 +454,8 @@ MODEL_COST = {
     "gpt-4": {"input": 0.03, "output": 0.06},
     "gpt-4-turbo": {"input": 0.01, "output": 0.03},
     "gpt-3.5-turbo": {"input": 0.0015, "output": 0.002},
-    "gpt-4o": {"input": 0.005, "output": 0.015},
-    "gpt-4o-mini": {"input": 0.003, "output": 0.01},
-    "text-embedding-ada-002": {"input": 0.0001, "output": 0.0}  # embeddings charge only on input
+    "gpt-4o": {"input": 0.005, "output": 0.015},  # example
+    "gpt-4o-mini": {"input": 0.003, "output": 0.01},  # 👈 Add this line
 }
 
 Base.metadata.create_all(bind=engine)
@@ -910,89 +909,77 @@ def create_or_load_vectorstore(
     s3_client,
     bucket_name,
     vectorstore_key="vectorstore.faiss",
-    embeddings_key="embeddings.pkl",
-    model_name="text-embedding-ada-002",
-    calculate_cost=None,
-    db=None,
-    username=None
+    embeddings_key="embeddings.pkl"
 ):
     try:
         print("[INFO] Starting creation of new vector store and embeddings...")
+        global vectorstore
+        """# Write extracted text summary to a file
+        print("[INFO] Writing extracted text summary to 'extracted_pages.txt'...")
+        with open("extracted_pages.txt", "w", encoding="utf-8") as f:
+            for pdf_name, pages in pdf_text.items():
+                for page_number, text in pages.items():
+                    snippet = text[:200].replace("\n", " ").replace("\r", " ")
+                    f.write(f"PDF: {pdf_name} | Page: {page_number} | Text (first 200 chars): {snippet}\n\n")
+        print("[INFO] Finished writing text summary.")"""
 
-        # Step 1: Split text into chunks
+        # Initialize text splitter
+        print("[INFO] Initializing RecursiveCharacterTextSplitter...")
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-        documents_with_page_info = []
-        total_input_tokens = 0
+        print("[INFO] Text splitter initialized.")
 
+        documents_with_page_info = []
+        print("[INFO] Splitting text into chunks and creating Document objects...")
         for pdf_name, page_content in pdf_text.items():
             for page_number, text in page_content.items():
                 if text.strip():
                     chunks = text_splitter.split_text(text)
-                    print(f"[DEBUG] PDF '{pdf_name}', Page {page_number}: {len(chunks)} chunks")
-                    total_input_tokens += sum(len(chunk) // 4 for chunk in chunks)
-
+                    print(f"[DEBUG] PDF '{pdf_name}', Page {page_number}: Split into {len(chunks)} chunks.")
                     for chunk in chunks:
-                        documents_with_page_info.append(
-                            Document(
-                                page_content=chunk,
-                                metadata={"pdf_name": pdf_name, "page_number": page_number}
-                            )
+                        document_with_page_info = Document(
+                            page_content=chunk,
+                            metadata={"pdf_name": pdf_name, "page_number": page_number}
                         )
+                        documents_with_page_info.append(document_with_page_info)
+        print(f"[INFO] Created {len(documents_with_page_info)} document chunks in total.")
 
-        print(f"[INFO] Total documents created: {len(documents_with_page_info)}")
-        print(f"[INFO] Estimated total input tokens: {total_input_tokens}")
-
-        # Step 2: Generate embeddings and build vector store
+        print("[INFO] Initializing OpenAIEmbeddings with provided API key...")
         embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
+        print("[INFO] OpenAIEmbeddings initialized.")
+
+        print("[INFO] Creating FAISS vector store from documents...")
         vectorstore = FAISS.from_documents(documents_with_page_info, embeddings)
+        print("[INFO] Vector store created.")
 
+        print(f"[INFO] Saving vector store locally to '{vectorstore_key}'...")
         vectorstore.save_local(vectorstore_key)
-        joblib.dump({"openai_api_key": openai_api_key}, embeddings_key)
+        print("[INFO] Vector store saved locally.")
 
-        # Step 3: Estimate cost
-        prompt_tokens = total_input_tokens
-        completion_tokens = 0
-        cost = None
+        embeddings_params = {openai_api_key: embeddings.openai_api_key}
+        print(f"[INFO] Saving embeddings parameters locally to '{embeddings_key}'...")
+        joblib.dump(embeddings_params, embeddings_key)
+        print("[INFO] Embeddings parameters saved.")
 
-        if calculate_cost:
-            try:
-                cost = calculate_cost(model_name, prompt_tokens, completion_tokens)
-                print(f"[INFO] Estimated cost: ${cost:.6f}")
-            except Exception as e:
-                print(f"[WARNING] Cost calculation failed: {e}")
+        # Upload to S3 is currently disabled
+        # print("[INFO] Uploading vector store and embeddings to S3...")
+        # s3_client.upload_file(vectorstore_key, bucket_name, vectorstore_key)
+        # s3_client.upload_file(embeddings_key, bucket_name, embeddings_key)
+        # print("[INFO] Upload to S3 completed.")
 
-        # Step 4: Log to database
-        username="Website_visitor"
-        
-        
-        if db and username and cost is not None:
-            
-            cost_record = CostPerInteraction(
-                username=username,
-                model=model_name,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=prompt_tokens,
-                cost_usd=cost,
-                created_at=datetime.utcnow()
-            )
-            try:
-                db.add(cost_record)
-                db.commit()
-                print("[INFO] Cost record saved to database.")
-            except Exception as e:
-                db.rollback()
-                print(f"[ERROR] Failed to save cost record: {e}")
+        # Optional cleanup
+        # print("[INFO] Removing local temporary files...")
+        # os.remove(vectorstore_key)
+        # os.remove(embeddings_key)
+        # print("[INFO] Local temporary files removed.")
 
         print("[SUCCESS] Vector store and embeddings creation complete.")
-        return vectorstore, embeddings, cost
-    
+        return vectorstore, embeddings
+
     except Exception as e:
         print(f"[ERROR] Exception occurred: {e}")
         import traceback
         traceback.print_exc()
         raise
-    
 def insert_explicit_multiplication(expr_str):
     # Insert * between digit and variable separated by space: '3 xy' -> '3*xy'
     expr_str = re.sub(r'(\d)\s+([a-zA-Z])', r'\1*\2', expr_str)
@@ -2603,3 +2590,4 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
