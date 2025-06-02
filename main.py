@@ -1,6 +1,7 @@
 import os
 import sys
 import fitz 
+from uuid import uuid4
 import joblib
 import sympy
 from langchain.schema import Document
