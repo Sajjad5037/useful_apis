@@ -86,6 +86,7 @@ load_dotenv()
 app = FastAPI()
 session_texts = {}     # session_id -> full essay text
 session_histories = {} # session_id -> list of messages (chat history)
+username_for_interactive_session = None
 
 
 
@@ -133,6 +134,18 @@ class ChatRequest_CSS(BaseModel):
     session_id: str
     message: str
     first_message: bool = False
+
+class CostPerInteraction(Base):
+    __tablename__ = "cost_per_interaction"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username = Column(String(100), nullable=False)
+    model = Column(String(50), nullable=False)
+    prompt_tokens = Column(Integer, nullable=False)
+    completion_tokens = Column(Integer, nullable=False)
+    total_tokens = Column(Integer, nullable=False)
+    cost_usd = Column(Numeric(10, 6), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     
 class Vector(UserDefinedType):
@@ -442,6 +455,46 @@ def get_db():
         yield db
     finally:
         db.close()
+def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    try:
+        print(f"[DEBUG] Calculating cost for model: {model}")
+        print(f"[DEBUG] Prompt tokens: {prompt_tokens}")
+        print(f"[DEBUG] Completion tokens: {completion_tokens}")
+
+        # Retrieve cost rates
+        input_cost_per_1k = MODEL_COST[model]["input"]
+        output_cost_per_1k = MODEL_COST[model]["output"]
+
+        print(f"[DEBUG] Input cost per 1K tokens: {input_cost_per_1k}")
+        print(f"[DEBUG] Output cost per 1K tokens: {output_cost_per_1k}")
+
+        # Calculate costs
+        prompt_cost = (prompt_tokens / 1000) * input_cost_per_1k
+        completion_cost = (completion_tokens / 1000) * output_cost_per_1k
+
+        print(f"[DEBUG] Prompt cost: {prompt_cost}")
+        print(f"[DEBUG] Completion cost: {completion_cost}")
+
+        total_cost = prompt_cost + completion_cost
+        print(f"[DEBUG] Total cost before rounding: {total_cost}")
+
+        total_cost_rounded = round(total_cost, 6)
+        print(f"[DEBUG] Total cost after rounding: {total_cost_rounded}")
+
+        return total_cost_rounded
+
+    except KeyError as e:
+        print(f"[ERROR] Model key not found in MODEL_COST: {e}")
+        return 0.0
+
+    except TypeError as e:
+        print(f"[ERROR] Invalid type for token values: {e}")
+        return 0.0
+
+    except Exception as e:
+        print(f"[ERROR] Unexpected error in calculate_cost: {e}")
+        return 0.0
+
 
 def sanitize_filename(filename: str) -> str:
     # Trim spaces
@@ -1042,8 +1095,12 @@ async def options_train_on_images():
     )
 
 @app.post("/train-on-images")
-async def train_on_images(images: List[UploadFile] = File(...), request: Request = None):
-    origin = request.headers.get("origin")
+async def train_on_images(
+    images: List[UploadFile] = File(...),
+    doctorData: Optional[str] = Form(None),
+    request: Request = None,
+):
+    origin = request.headers.get("origin") if request else None
     cors_headers = {
         "Access-Control-Allow-Origin": origin if origin else "*",
         "Access-Control-Allow-Credentials": "true",
@@ -1056,6 +1113,25 @@ async def train_on_images(images: List[UploadFile] = File(...), request: Request
             status_code=400,
             headers=cors_headers,
         )
+
+    # Parse doctorData JSON string to Python dict
+    doctor = {}
+    if doctorData:
+        try:
+            doctor = json.loads(doctorData)
+            print(f"[train-on-images] Received doctorData: {doctor}")
+        except json.JSONDecodeError:
+            print("[train-on-images] Invalid doctorData JSON")
+            return JSONResponse(
+                content={"detail": "Invalid doctorData JSON"},
+                status_code=400,
+                headers=cors_headers,
+            )
+    else:
+        print("[train-on-images] No doctorData provided")
+
+    global username_for_interactive_session
+    username_for_interactive_session = doctor.get("name") if doctor else None
 
     combined_text = ""
 
@@ -1078,7 +1154,11 @@ async def train_on_images(images: List[UploadFile] = File(...), request: Request
 
             if response.error.message:
                 print(f"[train-on-images] Google Vision API error for image {idx}: {response.error.message}")
-                raise HTTPException(status_code=500, detail=f"Google Vision API error: {response.error.message}")
+                return JSONResponse(
+                    content={"detail": f"Google Vision API error: {response.error.message}"},
+                    status_code=500,
+                    headers=cors_headers,
+                )
 
             ocr_text = response.full_text_annotation.text if response.full_text_annotation else ""
             print(f"[train-on-images] OCR text length for image {idx}: {len(ocr_text)} characters")
@@ -1093,8 +1173,12 @@ async def train_on_images(images: List[UploadFile] = File(...), request: Request
                 headers=cors_headers,
             )
 
+        # Generate a unique session ID and store data
         session_id = str(uuid4())
-        session_texts[session_id] = combined_text
+        session_texts[session_id] = {
+            "text": combined_text,
+            "doctorData": doctor,
+        }
         print(f"[train-on-images] Session {session_id} created with text length {len(combined_text)}")
 
         return JSONResponse(
@@ -1117,70 +1201,99 @@ async def train_on_images(images: List[UploadFile] = File(...), request: Request
         )
 
 @app.post("/chat_interactive_tutor", response_model=ChatResponse)
-async def chat_interactive_tutor(request: ChatRequest_CSS):
+async def chat_interactive_tutor(
+    request: ChatRequest_CSS,
+    db: Session = Depends(get_db)
+):
     session_id = request.session_id.strip()
     user_message = request.message.strip()
-
+    
+    
     if session_id not in session_texts:
         raise HTTPException(status_code=404, detail="Session ID not found")
 
     full_text = session_texts[session_id]
 
-    if request.first_message:
-        # First message: initialize with full passage and system prompt
-        system_message = {
-            "role": "system",
-            "content": (
-                "You are a concise and insightful creative writing tutor.\n"
-                "You are helping a student improve their writing, which may be a short passage, several paragraphs, or a full essay.\n"
-                "Only respond to user queries that are directly relevant to the essay shared. Do not entertain or answer unrelated questions.\n"
-                "After each suggestion or feedback point, insert two newline characters (\\n\\n) to create a blank line for better readability.\n"
-                "Keep your responses under 150 words unless the student explicitly requests a full rewrite. Do not exceed this limit in regular responses."
-            ),
-        }
+    try:
+        if request.first_message:
+            system_message = {
+                "role": "system",
+                "content": (
+                    "You are a concise and insightful creative writing tutor.\n"
+                    "You are helping a student improve their writing, which may be a short passage, several paragraphs, or a full essay.\n"
+                    "Only respond to user queries that are directly relevant to the essay shared. Do not entertain or answer unrelated questions.\n"
+                    "After each suggestion or feedback point, insert two newline characters (\\n\\n) to create a blank line for better readability.\n"
+                    "Keep your responses under 150 words unless the student explicitly requests a full rewrite. Do not exceed this limit in regular responses."
+                ),
+            }
 
-        user_intro_message = {
-            "role": "user",
-            "content": (
-                f"Here is the student's writing passage:\n\n{full_text}\n\n"
-                "Please keep your feedback concise (within 150 words) unless asked for a full essay rewrite and use line breaks after each point."
-                "Keep this in mind for the session. Now, here is my question:"
-            )
-        }
+            user_intro_message = {
+                "role": "user",
+                "content": (
+                    f"Here is the student's writing passage:\n\n{full_text}\n\n"
+                    "Please keep your feedback concise (within 150 words) unless asked for a full essay rewrite and use line breaks after each point."
+                    "Keep this in mind for the session. Now, here is my question:"
+                )
+            }
 
-        user_current_message = {
-            "role": "user",
-            "content": (
-                f"{user_message}\n\n"
-                "Please insert two newline characters (\\n\\n) after each suggestion to improve readability. "
-                "Keep the response under 150 words. "
-                "Do not respond to queries unrelated to the essay."
-            )
-        }
-        messages = [system_message, user_intro_message, user_current_message]
-        session_histories[session_id] = messages.copy()
+            user_current_message = {
+                "role": "user",
+                "content": (
+                    f"{user_message}\n\n"
+                    "Please insert two newline characters (\\n\\n) after each suggestion to improve readability. "
+                    "Keep the response under 150 words. "
+                    "Do not respond to queries unrelated to the essay."
+                )
+            }
 
-    else:
-        # For ongoing sessions: append user's message to existing history
-        if session_id not in session_histories:
-            raise HTTPException(status_code=400, detail="Session history missing for this session ID")
+            messages = [system_message, user_intro_message, user_current_message]
+            session_histories[session_id] = messages.copy()
 
-        messages = session_histories[session_id]
-        messages.append({"role": "user", "content": user_message})
+        else:
+            if session_id not in session_histories:
+                raise HTTPException(status_code=400, detail="Session history missing for this session ID")
 
-    # Call OpenAI chat model
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=messages,
-        temperature=0.5,
-    )
+            messages = session_histories[session_id]
+            messages.append({"role": "user", "content": user_message})
 
-    reply = response.choices[0].message.content.strip()
+        # --- Call OpenAI ---
+        model_name = "gpt-3.5-turbo"
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            temperature=0.5,
+        )
 
-    # Append assistant's reply to session history
-    session_histories[session_id].append({"role": "assistant", "content": reply})
+        text = response.choices[0].message.content.strip()
+        reply = text.replace("\n", "<br>")
+        usage = response.usage
 
-    return ChatResponse(reply=reply)
+        # --- Store Cost Info ---
+        cost = calculate_cost(model_name, usage.prompt_tokens, usage.completion_tokens)
+
+        cost_record = CostPerInteraction(
+            username=username_for_interactive_session,
+            model=model_name,
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
+            cost_usd=cost,
+            created_at=datetime.utcnow()
+        )
+        try:
+            db.add(cost_record)
+            db.commit()
+        except SQLAlchemyError as e:
+            db.rollback()  # Roll back the transaction on error
+            print(f"[ERROR] Failed to save cost_record to database: {e}")
+
+        # --- Update session history and return ---
+        session_histories[session_id].append({"role": "assistant", "content": reply})
+        return ChatResponse(reply=reply)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
+
 
 @app.post("/api/pdf_chatbot")
 async def chat(request: ChatRequest):
