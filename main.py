@@ -84,6 +84,10 @@ logging.basicConfig(level=logging.DEBUG)
 load_dotenv()
 # — FastAPI Init & CORS —
 app = FastAPI()
+session_texts = {}     # session_id -> full essay text
+session_histories = {} # session_id -> list of messages (chat history)
+
+
 
 app.add_middleware(
     CORSMiddleware,
