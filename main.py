@@ -1286,8 +1286,9 @@ async def chat_interactive_tutor(
             temperature=0.5,
         )
 
-        text = response.choices[0].message.content.strip()
-        reply = text.replace("\n", "<br>")
+        #text = response.choices[0].message.content.strip()
+        #reply = text.replace("\n", "<br>")
+        reply=response.choices[0].message.content.strip()
         usage = response.usage
 
         # --- Store Cost Info ---
@@ -1311,8 +1312,8 @@ async def chat_interactive_tutor(
 
         # --- Update session history and return ---
         session_histories[session_id].append({"role": "assistant", "content": reply})
-        #return ChatResponse(reply=reply)
-        return HTMLResponse(content=reply)
+        return ChatResponse(reply=reply)
+        
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
