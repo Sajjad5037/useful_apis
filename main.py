@@ -961,6 +961,7 @@ def create_or_load_vectorstore(
                 print(f"[WARNING] Cost calculation failed: {e}")
 
         # Step 4: Log to database
+        username="Website_visitor"
         if db and username and cost is not None:
             
             cost_record = CostPerInteraction(
