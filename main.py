@@ -5,6 +5,7 @@ from uuid import uuid4
 import joblib
 import sympy
 from fastapi.responses import HTMLResponse
+from langchain.embeddings.base import Embeddings
 from langchain.schema import Document
 from urllib.parse import quote
 import re
