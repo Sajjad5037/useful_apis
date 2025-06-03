@@ -145,7 +145,11 @@ class SolveResult(BaseModel):
     solution: str
 
 #for pdf query chatbot
-
+class PageRange(BaseModel):
+    start_page: int
+    
+    end_page: int
+    
 class ChatRequest_CSS(BaseModel):
     session_id: str
     message: str
@@ -901,8 +905,6 @@ old function :
 #         print(f"An unexpected error occurred: {e}")
 #         return None, None, None
 
-
-
 def create_or_load_vectorstore(
     pdf_text,
     openai_api_key,
@@ -980,6 +982,7 @@ def create_or_load_vectorstore(
         import traceback
         traceback.print_exc()
         raise
+
 def insert_explicit_multiplication(expr_str):
     # Insert * between digit and variable separated by space: '3 xy' -> '3*xy'
     expr_str = re.sub(r'(\d)\s+([a-zA-Z])', r'\1*\2', expr_str)
@@ -1026,9 +1029,7 @@ def clean_extracted_text(text):
 
     return cleaned_text
 
-def extract_text_from_pdf(pdf_input, target_page=None):
-    
-
+def extract_text_from_pdf(pdf_input, target_page=None, start_page=1, end_page=None):
     pdf_text = {}
 
     try:
@@ -1041,27 +1042,35 @@ def extract_text_from_pdf(pdf_input, target_page=None):
             pdf_name = "from_stream.pdf"
             doc = fitz.open(stream=pdf_input.read(), filetype="pdf")
 
+        total_pages = len(doc)
         pdf_text = {pdf_name: {}}
 
         if target_page:
-            if 1 <= target_page <= len(doc):
+            if 1 <= target_page <= total_pages:
                 page = doc.load_page(target_page - 1)
                 text = clean_extracted_text(page.get_text())
                 pdf_text[pdf_name][target_page] = text
             else:
-                print(f"Page {target_page} is out of range. This PDF has {len(doc)} pages.")
+                print(f"Page {target_page} is out of range. This PDF has {total_pages} pages.")
         else:
-            for page_number in range(3, 10):  # Read pages 4 to 6
+            # Fallback to last page if end_page is None or out of range
+            if end_page is None or end_page > total_pages:
+                end_page = total_pages
+            if start_page < 1:
+                start_page = 1
+
+            for page_number in range(start_page - 1, end_page):  # 0-based index
                 try:
                     page = doc.load_page(page_number)
                     page_text = clean_extracted_text(page.get_text())
-                    pdf_text[pdf_name][page_number + 1] = page_text
+                    pdf_text[pdf_name][page_number + 1] = page_text  # Keep keys 1-based
                 except IndexError:
-                    break  # Stop if we reach beyond available pages
+                    print(f"IndexError: Page {page_number + 1} not found.")
+                    break
                 except Exception as e:
                     print(f"Error reading page {page_number + 1}: {e}")
                     continue
-
+        print(pdf_text)
         return pdf_text
 
     except Exception as e:
@@ -1361,17 +1370,19 @@ async def chat(request: ChatRequest):
         "relevant_texts": relevant_texts  # Add this line
     }
 
-    print(response)
-    
+    print(response)   
 
     return JSONResponse(content=response)
 @app.post("/api/train_model")
-async def train_model(request: Request):    
+async def train_model(pages: PageRange):
     try:
-        combined_text = {}
-        total_pdf = 0  # Make sure to initialize this if it starts at 0 every time
+        start_page = pages.start_page
+        end_page = pages.end_page
+        print(f"Received page range: {start_page} to {end_page}")
 
-        # List all files in the 'upload/' folder of your S3 bucket
+        combined_text = {}
+        total_pdf = 0
+
         response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix="upload/")
 
         if "Contents" not in response:
@@ -1387,7 +1398,9 @@ async def train_model(request: Request):
                     total_pdf += 1
                     s3_obj = s3.get_object(Bucket=BUCKET_NAME, Key=key)
                     file_stream = BytesIO(s3_obj["Body"].read())
-                    pdf_data = extract_text_from_pdf(file_stream)  # assumes extract_text_from_pdf accepts file-like input
+
+                    # ⬇️ Call your existing extraction logic with range
+                    pdf_data = extract_text_from_pdf(file_stream, start_page, end_page)
                     combined_text.update(pdf_data)
                 except Exception as e:
                     print(f"Error processing {key}: {e}")
@@ -1399,7 +1412,6 @@ async def train_model(request: Request):
             s3,
             BUCKET_NAME
         )
-         
 
         return JSONResponse(
             status_code=200,
@@ -1412,12 +1424,14 @@ async def train_model(request: Request):
             status_code=500,
             content={"error": "Failed to access S3 bucket."}
         )
+
     except Exception as e:
         print(f"Unexpected error: {e}")
         return JSONResponse(
             status_code=500,
             content={"error": "Model could not be trained!"}
         )
+        
 # for extracting text from the image for my portfolio website
 @app.post("/extract_text")
 async def extract_text(image: UploadFile = File(...)):
