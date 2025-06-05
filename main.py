@@ -1570,107 +1570,152 @@ async def extract_text(image: UploadFile = File(...)):
 
 
 @app.post("/extract_text_essayChecker")
-async def extract_text(image: UploadFile = File(...)):
-    print("Received request to /extract_text_essayChecker")
+async def extract_text_essay_checker(
+    images: List[UploadFile] = File(...)
+):
+    print("[DEBUG] Received request to /extract_text_essayChecker")
+    print(f"[DEBUG] Number of images received: {len(images)}")
+    if len(images) == 0:
+        raise HTTPException(status_code=400, detail="No images uploaded.")
 
     try:
-        # Hardcoded recipient email
-        recipient_email = "mshahrukhhaider@gmail.com"
+        # 1. OCR each image and accumulate text
+        all_pages_text = []
+        for idx, image_file in enumerate(images, start=1):
+            try:
+                print(f"[DEBUG] Processing image #{idx}: filename='{image_file.filename}'")
+                image_bytes = await image_file.read()
+                print(f"[DEBUG]   → Read {len(image_bytes)} bytes from '{image_file.filename}'")
 
-        # Read and prepare image for Vision API
-        image_bytes = await image.read()
-        print(f"Read image bytes: {len(image_bytes)} bytes")
+                vision_image = vision.Image(content=image_bytes)
+                ocr_response = client_google_vision_api.document_text_detection(image=vision_image)
+                print(f"[DEBUG]   → Google Vision OCR call completed for '{image_file.filename}'")
 
-        image_content = vision.Image(content=image_bytes)
+                page_text = ""
+                if ocr_response is not None and ocr_response.full_text_annotation:
+                    page_text = ocr_response.full_text_annotation.text
+                    print(f"[DEBUG]   → Extracted {len(page_text)} characters of text from '{image_file.filename}'")
+                else:
+                    print(f"[WARN]   → No text found in OCR for '{image_file.filename}'")
 
-        # Get raw OCR text (use document_text_detection or text_detection)
-        response = client_google_vision_api.document_text_detection(image=image_content)
-        print("Received response from Google Vision API")
+                all_pages_text.append(page_text)
+            except Exception as ocr_err:
+                print(f"[ERROR] OCR error on image #{idx} ('{image_file.filename}'): {ocr_err}")
+                traceback.print_exc()
+                all_pages_text.append("")  # Append empty so index alignment remains
 
-        ocr_text = response.full_text_annotation.text if response.full_text_annotation else None
-        print(f"OCR Text extracted: {repr(ocr_text[:200])}...")
+        # Combine pages into one essay string
+        combined_essay_text = "\n\n".join(all_pages_text).strip()
+        print(f"[DEBUG] Combined essay text length: {len(combined_essay_text)} characters")
 
-        if not ocr_text:
-            print("No OCR text found in the image.")
-            return {"text": ""}
+        if not combined_essay_text:
+            print("[ERROR] No OCR text found across all images.")
+            return {
+                "success": False,
+                "message": "No OCR text found in any of the uploaded images."
+            }
 
-        # Use OpenAI to act as a CSS essay teacher and score the essay
+        # 2. Build the prompt for OpenAI
         prompt = f"""
-        The following text is an thesis statement written by a candidate who wishes to appear in the CSS (Central Superior Services) exams of Pakistan.
+The following text is a combined CSS essay (across multiple pages) from a candidate.
 
-        You are a strict and experienced CSS essay examiner. Your task is to:
+You are a strict and experienced CSS essay examiner. Your tasks are:
+1. Assign a score from 1 to 10 based on official CSS essay evaluation criteria.
+2. Guide the student through rewriting the entire essay to a quality that would score a full 10/10.
+   - Show step-by-step reasoning as you reconstruct the essay.
+   - Provide the new rewritten essay likely to get a full 10.
+3. Include the score and a concise explanation in a formal tone with specific reasoning.
 
-        Assign a score from 1 to 10 based on official CSS essay evaluation criteria.        
-        
-        Then, guide the student through rewriting the thesis statement to a quality that would score a full 10/10. This part must:
-        
-        Clearly show your step-by-step thought process as you construct the thesis statement.
-        
-        write the new version of the thesis statement that will be likely to get a full 10
-        
-        Your response must include the score and a compact explanation using formal tone and specific reasoning. Avoid vague or repetitive comments. Keep it concise and insightful.
+Essay text (all pages combined):
+{combined_essay_text}
 
-        Essay text:
-        {ocr_text}
+Your detailed assessment:
+"""
+        print("[DEBUG] Prompt built for OpenAI (first 300 chars):")
+        print(prompt[:300] + ("..." if len(prompt) > 300 else ""))
 
-        Your detailed assessment:
-        """
+        # 3. Send to OpenAI for evaluation
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a knowledgeable and strict CSS essay examiner who evaluates essays "
+                            "according to the CSS exam standards of Pakistan. You provide detailed feedback, "
+                            "scoring, and constructive advice for improvement."
+                        )
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+            )
+            print("[DEBUG] Received OpenAI response")
+        except Exception as openai_err:
+            print(f"[ERROR] OpenAI API call failed: {openai_err}")
+            traceback.print_exc()
+            return {
+                "success": False,
+                "message": "OpenAI API call failed. See server logs for details."
+            }
 
-        print("Sending prompt to OpenAI:")
-        print(prompt[:500] + ("..." if len(prompt) > 500 else ""))
+        try:
+            assessment = response.choices[0].message.content.strip()
+            print(f"[DEBUG] Assessment length: {len(assessment)} characters")
+        except Exception as parse_err:
+            print(f"[ERROR] Failed to parse OpenAI response: {parse_err}")
+            traceback.print_exc()
+            return {
+                "success": False,
+                "message": "Failed to parse OpenAI response."
+            }
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a knowledgeable and strict CSS essay examiner who evaluates essays "
-                        "according to the CSS exam standards of Pakistan. You provide detailed feedback, "
-                        "scoring, and constructive advice for improvement."
-                    )
-                },
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,
-        )
-        print("Received response from OpenAI")
-
-        assessment = response.choices[0].message.content.strip()
-        print(f"Assessment received (first 500 chars): {assessment[:500]}")
-
-        # Prepare email message
-        subject = "Your CSS Essay Assessment"
+        # 4. Email the assessment
+        recipient_email = "mshahrukhhaider@gmail.com"
+        subject = "Your Combined CSS Essay Assessment"
         body = f"""
         <h2>Your CSS Essay Assessment</h2>
         <p>Dear Candidate,</p>
-        <p>Please find below your detailed CSS essay evaluation:</p>
-        <pre>{assessment}</pre>
+        <p>Please find below your detailed CSS essay evaluation (combined from all uploaded pages):</p>
+        <pre style="white-space: pre-wrap;">{assessment}</pre>
         <p>Regards,<br/>CSS Essay Checker Bot</p>
         """
 
-        msg = MIMEMultipart()
-        msg['From'] = SMTP_USER
-        msg['To'] = recipient_email
-        msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'html'))
+        try:
+            print(f"[DEBUG] Preparing to send email to {recipient_email}")
+            msg = MIMEMultipart()
+            msg['From'] = SMTP_USER
+            msg['To'] = recipient_email
+            msg['Subject'] = subject
+            msg.attach(MIMEText(body, 'html'))
 
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASS)
-            server.send_message(msg)
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+                print(f"[DEBUG] Connecting to SMTP server {SMTP_HOST}:{SMTP_PORT}")
+                server.starttls()
+                server.login(SMTP_USER, SMTP_PASS)
+                server.send_message(msg)
+            print(f"[DEBUG] Email sent successfully to {recipient_email}")
+        except Exception as email_err:
+            print(f"[ERROR] Failed to send email: {email_err}")
+            traceback.print_exc()
+            return {
+                "success": False,
+                "message": f"Assessment generated but failed to send email: {email_err}"
+            }
 
+        # All steps succeeded
         return {
+            "success": True,
             "message": "Assessment completed and emailed successfully.",
             "email_sent_to": recipient_email
         }
 
     except Exception as e:
-        print(f"Exception occurred: {e}")
-        import traceback
+        # Catch any unforeseen errors
+        print(f"[ERROR] Unhandled exception in /extract_text_essayChecker: {e}")
         traceback.print_exc()
-        return {"error": str(e)}
-
+        raise HTTPException(status_code=500, detail="Internal server error.")
         
 @app.post("/solve_math_problem")
 async def solve_math_problem(image: UploadFile = File(...)):
