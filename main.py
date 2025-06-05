@@ -1474,7 +1474,6 @@ async def extract_text(image: UploadFile = File(...)):
     )
     cleaned_text = response.choices[0].message.content.strip()
     return {"text": cleaned_text}
-
 @app.post("/extract_text_essayChecker_mywebsite")
 async def extract_text(image: UploadFile = File(...)):
     try:
@@ -1508,31 +1507,36 @@ async def extract_text(image: UploadFile = File(...)):
 
         # Now send cleaned essay to essay examiner
         assessment_prompt = f"""
-        The following is a piece of creative writing submitted by a student.
-        
-        You are an experienced creative writing coach. Your tasks are:
-        
-        1. Assign a score (1–10) based on clarity, originality, coherence, emotional impact, and grammar.
-        2. Provide specific feedback on what aspects need improvement and why they affect the overall quality.
-        3. Rewrite the whole text that will be likely to get a full score. 
-        
-        Respond using the following strict format:
-        
+        The following is a CSS essay written by a candidate.
+
+        You are a strict but constructive CSS examiner. Your tasks are:
+
+        1. Assign a score (1-10) based on official CSS English Essay evaluation criteria such as clarity, coherence, argumentation, grammar, structure, and style.
+        2. Provide detailed and didactic feedback. Clearly explain what was weak in the original essay, **why** it was weak, and **how** it negatively affected the score.
+        3. Rewrite the **first 100 words** of the essay to reflect a more ideal version. This rewrite should demonstrate improved structure, clarity, and depth.
+        4. After the rewrite, **justify your changes** — explain in a teaching tone why your version is better, referencing grammar, structure, vocabulary, or idea development. This is to help the writer learn how to improve and emulate this quality in their future writing.
+
+        Respond using the following format:
+
         **Score:** <your score here>/10
-        
+
         **Feedback:**
-        <clear, constructive feedback here>
-        
-        **Improved Rewrite (First 100 Words):**
-        <your improved version here>
-        
-        Original Writing:
+        <Explain what is weak, why it is weak, and how it impacted the score. Be specific about sentence construction, transitions, vocabulary, or logic.>
+
+        **Ideal Rewrite (First 100 Words):**
+        <Your revised version of the first 100 words of the essay.>
+
+        **Justification of Changes:**
+        <Explain, like a teacher, why you made the changes. Focus on clarity, tone, coherence, grammar, and improved idea expression. For example, if you replaced a cliché or vague phrase, explain why the new version is more precise or elegant.>
+
+        Essay:
         {cleaned_text}
         """
+
         assessment_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a creative writing coach providing feedback and ideal writing samples."},
+                {"role": "system", "content": "You are a CSS essay examiner providing feedback and ideal writing samples."},
                 {"role": "user", "content": assessment_prompt}
             ],
             temperature=0.3,
@@ -1541,7 +1545,7 @@ async def extract_text(image: UploadFile = File(...)):
         
         # Extract model rewrite section (first 100 words)
         model_rewrite_match = re.search(
-            r"\*\*Ideal Rewrite \(full text\):\*\*\s*(.+)", 
+            r"\*\*Ideal Rewrite \(First 100 Words\):\*\*\s*(.+)", 
             assessment, 
             re.DOTALL
         )
