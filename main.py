@@ -1673,8 +1673,8 @@ Your detailed assessment:
             }
 
         # 4. Email the assessment
-        #recipient_email = "mshahrukhhaider@gmail.com"
-        recipient_email = "proactive1@hotmail.com"
+        recipient_email = "mshahrukhhaider@gmail.com"
+        #recipient_email = "proactive1@hotmail.com"
         subject = "Your Combined CSS Essay Assessment"
         body = f"""
         <h2>Your CSS Essay Assessment</h2>
