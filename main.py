@@ -1575,7 +1575,7 @@ async def extract_text(image: UploadFile = File(...)):
 
     try:
         # Hardcoded recipient email
-        recipient_email = "proactive1.san@gmail.com"
+        recipient_email = "mshahrukhhaider@gmail.com"
 
         # Read and prepare image for Vision API
         image_bytes = await image.read()
