@@ -1571,7 +1571,8 @@ async def extract_text(image: UploadFile = File(...)):
 
 @app.post("/extract_text_essayChecker")
 async def extract_text_essay_checker(
-    images: List[UploadFile] = File(...)
+    images: List[UploadFile] = File(...),
+    user_message: str = Form("")   # ← add this to receive the tutor’s note
 ):
     print("[DEBUG] Received request to /extract_text_essayChecker")
     print(f"[DEBUG] Number of images received: {len(images)}")
@@ -1636,7 +1637,7 @@ Your detailed assessment:
 
         # 3. Send to OpenAI for evaluation
         try:
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {
@@ -1672,13 +1673,20 @@ Your detailed assessment:
             }
 
         # 4. Email the assessment
-        recipient_email = "mshahrukhhaider@gmail.com"
+        #recipient_email = "mshahrukhhaider@gmail.com"
+        recipient_email = "proactive1@hotmail.com"
         subject = "Your Combined CSS Essay Assessment"
         body = f"""
         <h2>Your CSS Essay Assessment</h2>
         <p>Dear Candidate,</p>
+
+        <p><strong>Note from Student/Tutor:</strong><br/>
+        {user_message}
+        </p>
+
         <p>Please find below your detailed CSS essay evaluation (combined from all uploaded pages):</p>
         <pre style="white-space: pre-wrap;">{assessment}</pre>
+
         <p>Regards,<br/>CSS Essay Checker Bot</p>
         """
 
@@ -1716,6 +1724,7 @@ Your detailed assessment:
         print(f"[ERROR] Unhandled exception in /extract_text_essayChecker: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error.")
+
         
 @app.post("/solve_math_problem")
 async def solve_math_problem(image: UploadFile = File(...)):
