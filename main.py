@@ -1844,7 +1844,7 @@ async def get_sales_report(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/send-email-rafis-kitchen")
+@app.post("/api/send-email-ShahRukh")
 async def send_email(
     name: str = Form(...),
     email: str = Form(...),
@@ -1854,7 +1854,7 @@ async def send_email(
         msg = EmailMessage()
         msg['Subject'] = 'New Contact Form Submission'
         msg['From'] = SMTP_USER
-        msg['To'] = MANAGEMENT_EMAIL
+        msg['To'] = 'mshahrukhhaider@gmail.com'
         msg.set_content(f"""
         New message from contact form:
 
