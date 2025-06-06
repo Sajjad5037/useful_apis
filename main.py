@@ -463,9 +463,9 @@ MODEL_COST = {
     "gpt-4-turbo": {"input": 0.01, "output": 0.03},
     "gpt-3.5-turbo": {"input": 0.0015, "output": 0.002},
     "gpt-4o": {"input": 0.005, "output": 0.015},  # example
-    "gpt-4o-mini": {"input": 0.003, "output": 0.01},  # 👈 Add this line
+    "gpt-4o-mini": {"input": 0.003, "output": 0.01},  # 
+    "text-embedding-ada-002": {"input": 0.0004, "output": 0.0004},  # Added embedding model cost
 }
-
 Base.metadata.create_all(bind=engine)
 #Base.metadata.create_all(bind=engineAWS)
 
