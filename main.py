@@ -148,8 +148,8 @@ class SolveResult(BaseModel):
 #for pdf query chatbot
 class PageRange(BaseModel):
     start_page: int
-    
     end_page: int
+    user_name:str
     
 class ChatRequest_CSS(BaseModel):
     session_id: str
