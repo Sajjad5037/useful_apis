@@ -1589,12 +1589,17 @@ async def extract_text(image: UploadFile = File(...)):
         correction_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a helpful assistant that fixes OCR and grammar issues in text."},
+                {"role": "system", "content": (
+                                        "You are an assistant that only corrects obvious OCR-related errors such as missing spaces, broken words, "
+                                        "and stray characters. Do not paraphrase, reword, or change the sentence structure or grammar unless it is clearly an OCR mistake."
+                                    )},
                 {"role": "user", "content": correction_prompt}
             ],
             temperature=0.2,
         )
         cleaned_text = correction_response.choices[0].message.content.strip()
+
+        
 
         # Now send cleaned essay to essay examiner
         assessment_prompt = f"""
@@ -1711,7 +1716,10 @@ async def extract_text_essay_checker(
         correction_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a helpful assistant that fixes OCR and grammar issues in text."},
+                {"role": "system", "content": (
+                                        "You are an assistant that only corrects obvious OCR-related errors such as missing spaces, broken words, "
+                                        "and stray characters. Do not paraphrase, reword, or change the sentence structure or grammar unless it is clearly an OCR mistake."
+                                    )},
                 {"role": "user", "content": correction_prompt}
             ],
             temperature=0.2,
