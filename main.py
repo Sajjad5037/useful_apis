@@ -1581,17 +1581,27 @@ async def extract_text(image: UploadFile = File(...)):
 
         # First clean OCR errors using GPT
         correction_prompt = f"""
-        Please clean the following essay for any OCR or grammatical mistakes without changing the original structure or content:
-
+        You are given an essay extracted via OCR. Your task is to fix only clear OCR-related errors such as:
+        - Missing or extra spaces between words
+        - Broken or joined words
+        - Stray or incorrect characters (like '1' instead of 'I')
+        
+        ⚠️ Do NOT paraphrase, rewrite, or change the sentence structure or grammar unless it's clearly an OCR error.
+        
         Essay:
+        <<<
         {ocr_text}
+        >>>
         """
+        
         correction_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": (
-                                        "You are an assistant that only corrects obvious OCR-related errors such as missing spaces, broken words, "
-                                        "and stray characters. Do not paraphrase, reword, or change the sentence structure or grammar unless it is clearly an OCR mistake."
+                                        "You are an assistant that only corrects obvious OCR errors. Do not change any sentence structure or reword anything. 
+                                        Only fix things like broken words, missing spaces, and random characters caused by OCR. 
+                                        If you're unsure whether something is an OCR error, leave it unchanged. Preserve the original meaning and order of all words and sentences."
+
                                     )},
                 {"role": "user", "content": correction_prompt}
             ],
@@ -1707,18 +1717,28 @@ async def extract_text_essay_checker(
 
         # First clean OCR errors using GPT
         correction_prompt = f"""
-        Please clean the following essay for any OCR or grammatical mistakes without changing the original structure or content:
+        You are given text extracted from images using OCR. Your task is to fix only clear OCR-related errors such as:
         
-        Essay:
+        - Missing spaces between words  
+        - Words that were incorrectly split or joined  
+        - Obvious character recognition mistakes (e.g., '1' instead of 'I', or '0' instead of 'O')  
+        
+        ⚠️ Do NOT paraphrase, reword, or change the sentence structure.  
+        ⚠️ Preserve the original wording and order exactly, unless a change is clearly required to fix an OCR issue.
+        
+        <<< BEGIN ESSAY TEXT >>>
         {combined_essay_text}
+        <<< END ESSAY TEXT >>>
         """
         
         correction_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": (
-                                        "You are an assistant that only corrects obvious OCR-related errors such as missing spaces, broken words, "
-                                        "and stray characters. Do not paraphrase, reword, or change the sentence structure or grammar unless it is clearly an OCR mistake."
+                                        "You are an assistant that only corrects obvious OCR errors. Do not change any sentence structure or reword anything. 
+                                        Only fix things like broken words, missing spaces, and random characters caused by OCR. 
+                                        If you're unsure whether something is an OCR error, leave it unchanged. Preserve the original meaning and order of all words and sentences."
+
                                     )},
                 {"role": "user", "content": correction_prompt}
             ],
