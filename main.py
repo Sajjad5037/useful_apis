@@ -1329,56 +1329,12 @@ async def chat_interactive_tutor(
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
 
 
-@app.post("/api/pdf_chatbot")
-async def chat(request: ChatRequest):
-    user_message = request.message
-
-    # Assuming vectorStore is always initialized elsewhere
-    qa_chain, relevant_texts, document_metadata = create_qa_chain(vectorstore, user_message)  
-
-    # Ask the question
-    answer = qa_chain.run(user_message)    
-
-    S3_BASE_URL = "https://pdfquerybucket.s3.amazonaws.com"
-    UPLOADS_FOLDER = "upload"
-
-    context_data = []
-    for metadata in document_metadata:
-        pdf_s3_key = metadata[0]  # e.g., "folder/subfolder/file.pdf"
-        pdf_page = metadata[1]
-
-        safe_pdf_key = quote(pdf_s3_key)  # URL encode to handle spaces/special chars
-
-        pdf_url = f"{S3_BASE_URL}/{UPLOADS_FOLDER}/{safe_pdf_key}"
-
-        context_data.append({
-            "page_number": pdf_page,
-            "pdf_url": pdf_url,
-        })
-        context_data.append({
-            "page_number": pdf_page,
-            "pdf_url": pdf_url,
-        })
-
-    # Process relevant texts for search strings
-    search_strings = separate_sentences(relevant_texts)
-    bot_reply = f"ChatBot: {answer}"
-    relevant_texts=clean(relevant_texts)
-    response = {
-        "reply": bot_reply,
-        "context": context_data,
-        "search_strings": search_strings,
-        "relevant_texts": relevant_texts  # Add this line
-    }
-
-    print(response)   
-
-    return JSONResponse(content=response)
 @app.post("/api/train_model")
-async def train_model(pages: PageRange):
+async def train_model(pages: PageRange, db: Session = Depends(get_db)):
     try:
         start_page = pages.start_page
         end_page = pages.end_page
+        username_for_interactive_session=pages.user_name
         print(f"Received page range: {start_page} to {end_page}")
 
         combined_text = {}
@@ -1409,9 +1365,12 @@ async def train_model(pages: PageRange):
 
         vectorstore, embeddings = create_or_load_vectorstore(
             combined_text,
+            username_for_interactive_session,
             openai_api_key,
             s3,
-            BUCKET_NAME
+            BUCKET_NAME,
+            db,
+            
         )
 
         return JSONResponse(
@@ -1432,7 +1391,68 @@ async def train_model(pages: PageRange):
             status_code=500,
             content={"error": "Model could not be trained!"}
         )
-        
+@app.post("/api/train_model")
+async def train_model(pages: PageRange, db: Session = Depends(get_db)):
+    try:
+        start_page = pages.start_page
+        end_page = pages.end_page
+        username_for_interactive_session=pages.user_name
+        print(f"Received page range: {start_page} to {end_page}")
+
+        combined_text = {}
+        total_pdf = 0
+
+        response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix="upload/")
+
+        if "Contents" not in response:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "No PDF files found in the S3 'upload/' folder."}
+            )
+
+        for obj in response["Contents"]:
+            key = obj["Key"]
+            if key.lower().endswith(".pdf") and not key.endswith("/"):
+                try:
+                    total_pdf += 1
+                    s3_obj = s3.get_object(Bucket=BUCKET_NAME, Key=key)
+                    file_stream = BytesIO(s3_obj["Body"].read())
+
+                    # ⬇️ Call your existing extraction logic with range
+                    pdf_data = extract_text_from_pdf(file_stream, start_page, end_page)
+                    combined_text.update(pdf_data)
+                except Exception as e:
+                    print(f"Error processing {key}: {e}")
+                    continue
+
+        vectorstore, embeddings = create_or_load_vectorstore(
+            combined_text,
+            username_for_interactive_session,
+            openai_api_key,
+            s3,
+            BUCKET_NAME,
+            db,
+            
+        )
+
+        return JSONResponse(
+            status_code=200,
+            content={"message": f"Model trained successfully from {total_pdf} PDFs!"}
+        )
+
+    except ClientError as e:
+        print(f"S3 client error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Failed to access S3 bucket."}
+        )
+
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Model could not be trained!"}
+        )        
 # for extracting text from the image for my portfolio website
 @app.post("/extract_text")
 async def extract_text(image: UploadFile = File(...)):
