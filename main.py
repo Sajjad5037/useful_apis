@@ -927,6 +927,7 @@ def create_or_load_vectorstore(
     vectorstore_key="vectorstore.faiss",
     embeddings_key="embeddings.pkl"
 ):
+    
     try:
         print("[INFO] Starting creation of new vector store and embeddings...")
         global vectorstore
@@ -1491,12 +1492,12 @@ async def train_model(pages: PageRange, db: Session = Depends(get_db)):
 
         print("[INFO] Creating/loading vector store")
         vectorstore, embeddings = create_or_load_vectorstore(
-            combined_text,
-            openai_api_key,
-            username_for_interactive_session,
-            s3,
-            BUCKET_NAME,
-            db
+            pdf_text=combined_text,
+            username=username_for_interactive_session,
+            openai_api_key=openai_api_key,
+            s3_client=s3,
+            bucket_name=BUCKET_NAME,
+            db=db
         )
     
 
