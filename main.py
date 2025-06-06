@@ -1253,11 +1253,47 @@ async def train_on_images(
             print(f"[train-on-images] OCR text length for image {idx}: {len(ocr_text)} characters")
 
             combined_text += ocr_text + "\n\n"
-                        # Prepare the prompt to correct OCR-specific errors
+            # Prepare the correction prompt
+            correction_prompt = f"""
+            You are given text extracted using OCR. Correct only clear OCR errors such as:
+            - Missing or extra spaces
+            - Broken or merged words
+            - Misrecognized characters (like '0' instead of 'O' or '1' instead of 'I')
             
-            # Extract the cleaned-up essay
-            combined_text = correction_response.choices[0].message.content.strip()
+            ❌ Do NOT paraphrase or rewrite.
+            ✅ Keep sentence structure and word order intact.
+            ❓ If you're unsure something is an OCR error, leave it unchanged.
             
+            <<< BEGIN TEXT >>>
+            {combined_text.strip()}
+            <<< END TEXT >>>
+            """
+            
+            # Call OpenAI to clean the OCR output
+            correction_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an assistant that only corrects obvious OCR errors. "
+                            "Do not change any sentence structure or reword anything. "
+                            "Only fix things like broken words, missing spaces, and random characters caused by OCR. "
+                            "If you're unsure whether something is an OCR error, leave it unchanged. "
+                            "Preserve the original meaning and order of all words and sentences."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": correction_prompt
+                    }
+                ],
+                temperature=0.2
+            )
+            
+            # Get the corrected text from the response
+            corrected_text = correction_response.choices[0].message.content.strip()
+
 
         if not combined_text.strip():
             print("[train-on-images] No text extracted from any images")
