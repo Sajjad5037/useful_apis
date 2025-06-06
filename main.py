@@ -1768,18 +1768,22 @@ Your detailed assessment:
         #recipient_email = "proactive1@hotmail.com"
         subject = "Your Combined CSS Essay Assessment"
         body = f"""
-        <h2>Your CSS Essay Assessment</h2>
-        <p>Dear Candidate,</p>
-
-        <p><strong>Note from Student/Tutor:</strong><br/>
-        {user_message}
-        </p>
-
-        <p>Please find below your detailed CSS essay evaluation (combined from all uploaded pages):</p>
-        <pre style="white-space: pre-wrap;">{assessment}</pre>
-
-        <p>Regards,<br/>CSS Essay Checker Bot</p>
+            <h2>Your CSS Essay Assessment</h2>
+            <p>Dear Candidate,</p>
+        
+            <p><strong>Note from Student/Tutor:</strong><br/>
+            {user_message}
+            </p>
+        
+            <p><strong>Combined Essay Text (from all uploaded pages):</strong></p>
+            <pre style="white-space: pre-wrap;">{combined_essay_text}</pre>
+        
+            <p><strong>Detailed Assessment:</strong></p>
+            <pre style="white-space: pre-wrap;">{assessment}</pre>
+        
+            <p>Regards,<br/>CSS Essay Checker Bot</p>
         """
+
 
         try:
             print(f"[DEBUG] Preparing to send email to {recipient_email}")
