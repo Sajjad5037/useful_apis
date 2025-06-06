@@ -1391,68 +1391,8 @@ async def train_model(pages: PageRange, db: Session = Depends(get_db)):
             status_code=500,
             content={"error": "Model could not be trained!"}
         )
-@app.post("/api/train_model")
-async def train_model(pages: PageRange, db: Session = Depends(get_db)):
-    try:
-        start_page = pages.start_page
-        end_page = pages.end_page
-        username_for_interactive_session=pages.user_name
-        print(f"Received page range: {start_page} to {end_page}")
 
-        combined_text = {}
-        total_pdf = 0
 
-        response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix="upload/")
-
-        if "Contents" not in response:
-            return JSONResponse(
-                status_code=404,
-                content={"error": "No PDF files found in the S3 'upload/' folder."}
-            )
-
-        for obj in response["Contents"]:
-            key = obj["Key"]
-            if key.lower().endswith(".pdf") and not key.endswith("/"):
-                try:
-                    total_pdf += 1
-                    s3_obj = s3.get_object(Bucket=BUCKET_NAME, Key=key)
-                    file_stream = BytesIO(s3_obj["Body"].read())
-
-                    # ⬇️ Call your existing extraction logic with range
-                    pdf_data = extract_text_from_pdf(file_stream, start_page, end_page)
-                    combined_text.update(pdf_data)
-                except Exception as e:
-                    print(f"Error processing {key}: {e}")
-                    continue
-
-        vectorstore, embeddings = create_or_load_vectorstore(
-            combined_text,
-            username_for_interactive_session,
-            openai_api_key,
-            s3,
-            BUCKET_NAME,
-            db,
-            
-        )
-
-        return JSONResponse(
-            status_code=200,
-            content={"message": f"Model trained successfully from {total_pdf} PDFs!"}
-        )
-
-    except ClientError as e:
-        print(f"S3 client error: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Failed to access S3 bucket."}
-        )
-
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Model could not be trained!"}
-        )        
 # for extracting text from the image for my portfolio website
 @app.post("/extract_text")
 async def extract_text(image: UploadFile = File(...)):
