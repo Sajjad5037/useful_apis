@@ -909,11 +909,13 @@ old function :
 def create_or_load_vectorstore(
     pdf_text,
     openai_api_key,
+    username_for_interactive_session,
     s3_client,
     bucket_name,
+    db,  # ← new param
     vectorstore_key="vectorstore.faiss",
     embeddings_key="embeddings.pkl"
-):
+):    
     try:
         print("[INFO] Starting creation of new vector store and embeddings...")
         global vectorstore
@@ -1384,12 +1386,13 @@ async def train_model(pages: PageRange, db: Session = Depends(get_db)):
         print("[INFO] Creating/loading vector store")
         vectorstore, embeddings = create_or_load_vectorstore(
             combined_text,
-            username_for_interactive_session,
             openai_api_key,
+            username_for_interactive_session,
             s3,
             BUCKET_NAME,
-            db,
+            db
         )
+    
 
         print(f"[SUCCESS] Vectorstore trained using {total_pdf} PDFs.")
         return JSONResponse(
