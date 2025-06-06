@@ -1605,9 +1605,9 @@ async def extract_text(image: UploadFile = File(...)):
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": (
-                                        "You are an assistant that only corrects obvious OCR errors. Do not change any sentence structure or reword anything. 
-                                        Only fix things like broken words, missing spaces, and random characters caused by OCR. 
-                                        If you're unsure whether something is an OCR error, leave it unchanged. Preserve the original meaning and order of all words and sentences."
+                                        "You are an assistant that only corrects obvious OCR errors. Do not change any sentence structure or reword anything." 
+                                        "Only fix things like broken words, missing spaces, and random characters caused by OCR. "
+                                        "If you're unsure whether something is an OCR error, leave it unchanged. Preserve the original meaning and order of all words and sentences."
 
                                     )},
                 {"role": "user", "content": correction_prompt}
@@ -1742,9 +1742,9 @@ async def extract_text_essay_checker(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": (
-                                        "You are an assistant that only corrects obvious OCR errors. Do not change any sentence structure or reword anything. 
-                                        Only fix things like broken words, missing spaces, and random characters caused by OCR. 
-                                        If you're unsure whether something is an OCR error, leave it unchanged. Preserve the original meaning and order of all words and sentences."
+                                        "You are an assistant that only corrects obvious OCR errors. Do not change any sentence structure or reword anything. "
+                                        "Only fix things like broken words, missing spaces, and random characters caused by OCR. "
+                                        "If you're unsure whether something is an OCR error, leave it unchanged. Preserve the original meaning and order of all words and sentences."
 
                                     )},
                 {"role": "user", "content": correction_prompt}
