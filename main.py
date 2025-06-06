@@ -1196,23 +1196,28 @@ async def train_on_images(
     }
 
     if not images:
+        print("[train-on-images] No images uploaded")
         return JSONResponse(
             content={"detail": "No images uploaded"},
             status_code=400,
             headers=cors_headers,
         )
 
-    # Parse doctorData
+    # Parse doctorData JSON string to Python dict
     doctor = {}
     if doctorData:
         try:
             doctor = json.loads(doctorData)
+            print(f"[train-on-images] Received doctorData: {doctor}")
         except json.JSONDecodeError:
+            print("[train-on-images] Invalid doctorData JSON")
             return JSONResponse(
                 content={"detail": "Invalid doctorData JSON"},
                 status_code=400,
                 headers=cors_headers,
             )
+    else:
+        print("[train-on-images] No doctorData provided")
 
     global username_for_interactive_session
     username_for_interactive_session = doctor.get("name") if doctor else None
@@ -1220,16 +1225,24 @@ async def train_on_images(
     combined_text = ""
 
     try:
+        print(f"[train-on-images] Received {len(images)} images")
+
         for idx, image in enumerate(images, start=1):
+            print(f"[train-on-images] Reading image {idx}: filename={image.filename}")
             image_bytes = await image.read()
+            print(f"[train-on-images] Read {len(image_bytes)} bytes from image {idx}")
 
             if not image_bytes:
+                print(f"[train-on-images] Warning: Image {idx} has zero bytes, skipping")
                 continue
 
             image_content = vision.Image(content=image_bytes)
+
+            print(f"[train-on-images] Sending image {idx} to Google Vision API")
             response = client_google_vision_api.document_text_detection(image=image_content)
 
             if response.error.message:
+                print(f"[train-on-images] Google Vision API error for image {idx}: {response.error.message}")
                 return JSONResponse(
                     content={"detail": f"Google Vision API error: {response.error.message}"},
                     status_code=500,
@@ -1237,62 +1250,46 @@ async def train_on_images(
                 )
 
             ocr_text = response.full_text_annotation.text if response.full_text_annotation else ""
+            print(f"[train-on-images] OCR text length for image {idx}: {len(ocr_text)} characters")
+
             combined_text += ocr_text + "\n\n"
+                        # Prepare the prompt to correct OCR-specific errors
+            
+            # Extract the cleaned-up essay
+            combined_text = correction_response.choices[0].message.content.strip()
+            
 
         if not combined_text.strip():
+            print("[train-on-images] No text extracted from any images")
             return JSONResponse(
                 content={"detail": "No text extracted from images"},
                 status_code=400,
                 headers=cors_headers,
             )
 
-        # Prepare prompt for GPT correction
-        correction_prompt = f"""
-You are given text extracted from images using OCR. Your task is to correct only obvious OCR errors such as:
-- Missing or extra spaces
-- Broken or merged words
-- Misrecognized characters (like '0' for 'O', or '1' for 'I')
+        
 
-⚠️ Do NOT paraphrase or rewrite sentences.
-⚠️ Keep the sentence structure and word order exactly as in the original.
-
-<<< BEGIN TEXT >>>
-{combined_text.strip()}
-<<< END TEXT >>>
-"""
-
-        correction_response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a careful assistant that only fixes clear OCR issues while keeping the original writing intact."
-                },
-                {"role": "user", "content": correction_prompt}
-            ],
-            temperature=0.2,
-        )
-
-        corrected_text = correction_response.choices[0].message.content.strip()
-
+        # Generate a unique session ID and store data
         session_id = str(uuid4())
         session_texts[session_id] = {
-            "text": corrected_text,
+            "text": combined_text,
             "doctorData": doctor,
         }
+        print(f"[train-on-images] Session {session_id} created with text length {len(combined_text)}")
 
         return JSONResponse(
             content={
                 "status": "success",
                 "session_id": session_id,
                 "images_processed": len(images),
-                "total_text_length": len(corrected_text),
+                "total_text_length": len(combined_text),
             },
             headers=cors_headers,
         )
 
     except Exception as e:
         tb_str = traceback.format_exc()
+        print(f"[train-on-images] Exception occurred: {str(e)}\nTraceback:\n{tb_str}")
         return JSONResponse(
             content={"detail": f"Unexpected server error: {str(e)}"},
             status_code=500,
