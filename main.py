@@ -670,10 +670,9 @@ def extract_relevant_context(relevant_text, query, num_sentences=2):
     return final_context
 
 
-def create_qa_chain(vectorstore, question, top_n=5, fetch_k=10):
+def create_qa_chain(vectorstore, question, db: Session, username, openai_api_key: str, top_n=5, fetch_k=10):
     client = openai.OpenAI(api_key=openai_api_key)
 
-    # Define a prompt template
     prompt = PromptTemplate(
         template="""
 You are a helpful assistant. Use ONLY the following retrieved context to answer the user's query.
@@ -692,37 +691,31 @@ Answer:
         input_variables=["context", "question"]
     )
 
-    # Set up the retrieval-augmented QA chain using MMR for more diverse retrievals
     retriever = vectorstore.as_retriever(
         search_type="mmr",
         search_kwargs={"k": top_n, "fetch_k": fetch_k}
     )
     llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
 
+    total_tokens = 0
+    document_texts = []
+    document_metadata = []
+    unique_pdf_names = set()
+
     try:
-        # Retrieve the top N relevant documents
         search_results = retriever.get_relevant_documents(question)
         if not search_results:
             raise ValueError("No documents found for the given query.")
 
-        # Extract document texts, filenames, and page numbers
-        document_texts = []
-        document_metadata = []
-        unique_pdf_names = set()
         for doc in search_results:
             text = doc.page_content
             metadata = doc.metadata
             pdf_name = metadata.get("pdf_name", "Unknown PDF")
             page_number = metadata.get("page_number", "Unknown Page")
-
             document_texts.append(text)
             document_metadata.append((pdf_name, page_number))
             unique_pdf_names.add(pdf_name)
 
-        # Determine the number of unique PDFs to extract context from
-        num_relevant_docs = len(unique_pdf_names)
-
-        # Generate embeddings for the retrieved documents
         document_embeddings = []
         for text in document_texts:
             try:
@@ -732,40 +725,60 @@ Answer:
                 )
                 embedding = response.data[0].embedding
                 document_embeddings.append(embedding)
+
+                usage = getattr(response, "usage", None)
+                if usage:
+                    total_tokens += usage.total_tokens
             except openai.OpenAI.OpenAIError as e:
                 print(f"Error generating embedding for document: {e}")
                 document_embeddings.append(None)
 
-        # Generate the embedding for the question
+        # Query embedding
         try:
             response = client.embeddings.create(
                 input=question,
                 model="text-embedding-ada-002"
             )
             query_embedding = response.data[0].embedding
+            usage = getattr(response, "usage", None)
+            if usage:
+                total_tokens += usage.total_tokens
         except openai.OpenAI.OpenAIError as e:
             print(f"Error generating embedding for query: {e}")
             query_embedding = None
 
-        # Ensure embeddings were successfully generated
-        if query_embedding is None or any(embedding is None for embedding in document_embeddings):
-            raise ValueError("Error in generating embeddings. Please check the API responses.")
+        if query_embedding is None or any(e is None for e in document_embeddings):
+            raise ValueError("Error in generating embeddings.")
 
-        # Calculate cosine similarity (here)
         similarities = cosine_similarity([query_embedding], document_embeddings)[0]
         sorted_indices = similarities.argsort()[::-1]
 
-        # Extract the single most relevant text chunk for context
         relevant_texts = [
             extract_relevant_context(document_texts[sorted_indices[0]], question)
         ]
-        most_relevant_pdf = sorted_indices[0]
-        relevant_metadata = [document_metadata[most_relevant_pdf]]
-
-        # Merge the retrieved context
+        relevant_metadata = [document_metadata[sorted_indices[0]]]
         merged_relevant_text = "\n\n".join(relevant_texts)
 
-        # Create the QA chain
+        # Store cost
+        cost = calculate_cost("text-embedding-ada-002", total_tokens, 0)
+        cost_record = CostPerInteraction(
+            username=username,
+            model="text-embedding-ada-002",
+            prompt_tokens=total_tokens,
+            completion_tokens=0,
+            total_tokens=total_tokens,
+            cost_usd=cost,
+            created_at=datetime.utcnow()
+        )
+        try:
+            db.add(cost_record)
+            db.commit()
+            print("[INFO] Cost record stored.")
+        except SQLAlchemyError as e:
+            db.rollback()
+            print(f"[ERROR] Failed to store cost record: {e}")
+
+        # QA chain
         qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
             retriever=retriever,
@@ -778,13 +791,8 @@ Answer:
     except ValueError as ve:
         print(f"ValueError: {ve}")
         return None, None, None
-
-    except openai.OpenAI.OpenAIError as e:
-        print(f"OpenAI API Error: {e}")
-        return None, None, None
-
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        print(f"Unexpected error: {e}")
         return None, None, None
     
 """
