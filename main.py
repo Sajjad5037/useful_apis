@@ -1700,6 +1700,28 @@ async def extract_text_essay_checker(
         combined_essay_text = "\n\n".join(all_pages_text).strip()
         print(f"[DEBUG] Combined essay text length: {len(combined_essay_text)} characters")
 
+        # First clean OCR errors using GPT
+        correction_prompt = f"""
+        Please clean the following essay for any OCR or grammatical mistakes without changing the original structure or content:
+        
+        Essay:
+        {combined_essay_text}
+        """
+        
+        correction_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that fixes OCR and grammar issues in text."},
+                {"role": "user", "content": correction_prompt}
+            ],
+            temperature=0.2,
+        )
+        
+        # Extract the cleaned essay text
+        combined_essay_text = correction_response.choices[0].message.content.strip()
+        
+        print(f"[DEBUG] combined essay text length: {len(combined_essay_text)} characters")
+
         if not combined_essay_text:
             print("[ERROR] No OCR text found across all images.")
             return {
