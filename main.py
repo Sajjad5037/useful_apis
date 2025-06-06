@@ -1330,6 +1330,59 @@ async def chat_interactive_tutor(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
 
+@app.post("/api/pdf_chatbot")
+async def chat(
+    request: ChatRequest_interactive_pdf,
+    db: Session = Depends(get_db)  # Replace with your auth dependency
+):
+    user_message = request.message
+    username_for_interactive_session = request.user_name
+    # Assuming vectorStore is always initialized elsewhere
+    #qa_chain, relevant_texts, document_metadata = create_qa_chain(vectorstore, user_message)  
+    qa_chain, relevant_texts, document_metadata = create_qa_chain(vectorstore, user_message, db=db, username=username_for_interactive_session, openai_api_key=openai_api_key)
+    # Merge relevant texts into a single string for the prompt
+   
+
+    # Run the QA chain with all required inputs
+    answer = qa_chain.run(user_message)  
+
+    S3_BASE_URL = "https://pdfquerybucket.s3.amazonaws.com"
+    UPLOADS_FOLDER = "upload"
+
+    context_data = []
+    for metadata in document_metadata:
+        pdf_s3_key = metadata[0]  # e.g., "folder/subfolder/file.pdf"
+        pdf_page = metadata[1]
+
+        safe_pdf_key = quote(pdf_s3_key)  # URL encode to handle spaces/special chars
+
+        pdf_url = f"{S3_BASE_URL}/{UPLOADS_FOLDER}/{safe_pdf_key}"
+
+        context_data.append({
+            "page_number": pdf_page,
+            "pdf_url": pdf_url,
+        })
+        context_data.append({
+            "page_number": pdf_page,
+            "pdf_url": pdf_url,
+        })
+
+    # Process relevant texts for search strings
+    search_strings = separate_sentences(relevant_texts)
+    bot_reply = f"ChatBot: {answer}"
+    relevant_texts=clean(relevant_texts)
+    response = {
+        "reply": bot_reply,
+        "context": context_data,
+        "search_strings": search_strings,
+        "relevant_texts": relevant_texts  # Add this line
+    }
+
+    print(response)
+    
+
+    return JSONResponse(content=response)
+
 
 @app.post("/api/train_model")
 async def train_model(pages: PageRange, db: Session = Depends(get_db)):
