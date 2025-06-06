@@ -919,27 +919,18 @@ old function :
 
 def create_or_load_vectorstore(
     pdf_text,
+    username,
     openai_api_key,
-    username_for_interactive_session,
     s3_client,
     bucket_name,
-    db,  # ← new param
+    db: Session,    
     vectorstore_key="vectorstore.faiss",
     embeddings_key="embeddings.pkl"
-):    
+):
     try:
         print("[INFO] Starting creation of new vector store and embeddings...")
         global vectorstore
-        """# Write extracted text summary to a file
-        print("[INFO] Writing extracted text summary to 'extracted_pages.txt'...")
-        with open("extracted_pages.txt", "w", encoding="utf-8") as f:
-            for pdf_name, pages in pdf_text.items():
-                for page_number, text in pages.items():
-                    snippet = text[:200].replace("\n", " ").replace("\r", " ")
-                    f.write(f"PDF: {pdf_name} | Page: {page_number} | Text (first 200 chars): {snippet}\n\n")
-        print("[INFO] Finished writing text summary.")"""
 
-        # Initialize text splitter
         print("[INFO] Initializing RecursiveCharacterTextSplitter...")
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         print("[INFO] Text splitter initialized.")
@@ -959,11 +950,44 @@ def create_or_load_vectorstore(
                         documents_with_page_info.append(document_with_page_info)
         print(f"[INFO] Created {len(documents_with_page_info)} document chunks in total.")
 
-        print("[INFO] Initializing OpenAIEmbeddings with provided API key...")
-        embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
-        print("[INFO] OpenAIEmbeddings initialized.")
+        print("[INFO] Initializing OpenAI client...")
+        client = OpenAI(api_key=openai_api_key)
+        print("[INFO] OpenAI client initialized.")
 
-        print("[INFO] Creating FAISS vector store from documents...")
+        # Extract texts for embeddings
+        texts = [doc.page_content for doc in documents_with_page_info]
+
+        print("[INFO] Requesting embeddings from OpenAI API...")
+        openai_response = client.embeddings.create(
+            model="text-embedding-ada-002",
+            input=texts
+        )
+        print("[INFO] Embeddings received from OpenAI API.")
+
+        # Extract embeddings vectors
+        embeddings_list = [data.embedding for data in openai_response.data]
+
+        # Wrap embeddings in a LangChain-compatible Embeddings class
+        # Here, we create a simple class that returns our precomputed embeddings
+        class PrecomputedEmbeddings(Embeddings):
+            def __init__(self, precomputed):
+                self.precomputed = precomputed
+                self.index = 0  # to track which embedding to return
+
+            def embed_documents(self, texts):
+                result = self.precomputed[self.index:self.index + len(texts)]
+                self.index += len(texts)
+                return result
+
+            def embed_query(self, text):
+                resp = client.embeddings.create(
+                    model="text-embedding-ada-002",
+                    input=text
+                )
+                return resp.data[0].embedding
+        embeddings = PrecomputedEmbeddings(precomputed=embeddings_list)
+
+        print("[INFO] Creating FAISS vector store from documents and embeddings...")
         vectorstore = FAISS.from_documents(documents_with_page_info, embeddings)
         print("[INFO] Vector store created.")
 
@@ -971,22 +995,40 @@ def create_or_load_vectorstore(
         vectorstore.save_local(vectorstore_key)
         print("[INFO] Vector store saved locally.")
 
-        embeddings_params = {openai_api_key: embeddings.openai_api_key}
+        embeddings_params = {openai_api_key: openai_api_key}
         print(f"[INFO] Saving embeddings parameters locally to '{embeddings_key}'...")
         joblib.dump(embeddings_params, embeddings_key)
         print("[INFO] Embeddings parameters saved.")
 
-        # Upload to S3 is currently disabled
-        # print("[INFO] Uploading vector store and embeddings to S3...")
-        # s3_client.upload_file(vectorstore_key, bucket_name, vectorstore_key)
-        # s3_client.upload_file(embeddings_key, bucket_name, embeddings_key)
-        # print("[INFO] Upload to S3 completed.")
+        # --- Estimate and store cost per interaction ---
+        usage = getattr(openai_response, "usage", None)
+        usage = getattr(openai_response, "usage", None)
+        if usage:
+            prompt_tokens = getattr(usage, "prompt_tokens", 0)
+            completion_tokens = getattr(usage, "completion_tokens", 0)
+            total_tokens = getattr(usage, "total_tokens", prompt_tokens + completion_tokens)
 
-        # Optional cleanup
-        # print("[INFO] Removing local temporary files...")
-        # os.remove(vectorstore_key)
-        # os.remove(embeddings_key)
-        # print("[INFO] Local temporary files removed.")
+            cost = calculate_cost("text-embedding-ada-002", prompt_tokens, completion_tokens)
+
+            cost_record = CostPerInteraction(
+                username=username,
+                model="text-embedding-ada-002",
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                cost_usd=cost,
+                created_at=datetime.utcnow()
+            )
+
+            try:
+                db.add(cost_record)
+                db.commit()
+                print("[INFO] Cost record stored in database.")
+            except SQLAlchemyError as e:
+                db.rollback()
+                print(f"[ERROR] Failed to store cost info: {e}")
+        else:
+            print("[WARN] Could not retrieve token usage info from OpenAI API.")
 
         print("[SUCCESS] Vector store and embeddings creation complete.")
         return vectorstore, embeddings
@@ -996,7 +1038,6 @@ def create_or_load_vectorstore(
         import traceback
         traceback.print_exc()
         raise
-
 def insert_explicit_multiplication(expr_str):
     # Insert * between digit and variable separated by space: '3 xy' -> '3*xy'
     expr_str = re.sub(r'(\d)\s+([a-zA-Z])', r'\1*\2', expr_str)
@@ -1043,7 +1084,7 @@ def clean_extracted_text(text):
 
     return cleaned_text
 
-def extract_text_from_pdf(pdf_input, target_page=None, start_page=1, end_page=None):
+def extract_text_from_pdf(pdf_input, start_page=1, end_page=1, target_page=None):
     pdf_text = {}
 
     try:
@@ -1077,6 +1118,7 @@ def extract_text_from_pdf(pdf_input, target_page=None, start_page=1, end_page=No
                 try:
                     page = doc.load_page(page_number)
                     page_text = clean_extracted_text(page.get_text())
+                    print(page_text)
                     pdf_text[pdf_name][page_number + 1] = page_text  # Keep keys 1-based
                 except IndexError:
                     print(f"IndexError: Page {page_number + 1} not found.")
@@ -1084,13 +1126,13 @@ def extract_text_from_pdf(pdf_input, target_page=None, start_page=1, end_page=No
                 except Exception as e:
                     print(f"Error reading page {page_number + 1}: {e}")
                     continue
-        print(pdf_text)
+        
         return pdf_text
 
     except Exception as e:
         print(f"Error processing PDF: {e}")
         return {}
-
+        
 def get_embedding(text: str, model: str = "text-embedding-ada-002") -> list[float]:
     text = text.replace("\n", " ")  # Clean text
     response = client.embeddings.create(
@@ -1098,6 +1140,7 @@ def get_embedding(text: str, model: str = "text-embedding-ada-002") -> list[floa
         model=model
     )
     return response.data[0].embedding
+    
 def is_relevant_to_rafis_kitchen(message: str) -> bool:
     keywords = [
         "rafi", "rafis kitchen", "restaurant", "olean", "wayne street", "800 wayne", "location", "address",
