@@ -671,11 +671,6 @@ def extract_relevant_context(relevant_text, query, num_sentences=2):
 
 
 def create_qa_chain(vectorstore, question, db: Session, username, openai_api_key: str, top_n=5, fetch_k=10):
-    print("=== create_qa_chain called ===")
-    print(f"Question received: {question}")
-    print(f"Username: {username}")
-    print(f"top_n: {top_n}, fetch_k: {fetch_k}")
-
     client = openai.OpenAI(api_key=openai_api_key)
 
     prompt = PromptTemplate(
@@ -700,7 +695,6 @@ Answer:
         search_type="mmr",
         search_kwargs={"k": top_n, "fetch_k": fetch_k}
     )
-
     llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
 
     total_tokens = 0
@@ -710,25 +704,20 @@ Answer:
 
     try:
         search_results = retriever.get_relevant_documents(question)
-        print(f"Number of search results: {len(search_results)}")
-
         if not search_results:
             raise ValueError("No documents found for the given query.")
 
-        for idx, doc in enumerate(search_results):
+        for doc in search_results:
             text = doc.page_content
             metadata = doc.metadata
             pdf_name = metadata.get("pdf_name", "Unknown PDF")
             page_number = metadata.get("page_number", "Unknown Page")
-
-            print(f"Doc #{idx}: PDF='{pdf_name}', Page={page_number}, Text excerpt: '{text[:100].replace(chr(10), ' ')}...'")
-
             document_texts.append(text)
             document_metadata.append((pdf_name, page_number))
             unique_pdf_names.add(pdf_name)
 
         document_embeddings = []
-        for idx, text in enumerate(document_texts):
+        for text in document_texts:
             try:
                 response = client.embeddings.create(
                     input=text,
@@ -740,12 +729,11 @@ Answer:
                 usage = getattr(response, "usage", None)
                 if usage:
                     total_tokens += usage.total_tokens
-
-                print(f"Embedding generated for doc #{idx}, tokens used so far: {total_tokens}")
             except openai.OpenAI.OpenAIError as e:
-                print(f"Error generating embedding for document #{idx}: {e}")
+                print(f"Error generating embedding for document: {e}")
                 document_embeddings.append(None)
 
+        # Query embedding
         try:
             response = client.embeddings.create(
                 input=question,
@@ -755,7 +743,6 @@ Answer:
             usage = getattr(response, "usage", None)
             if usage:
                 total_tokens += usage.total_tokens
-            print(f"Query embedding generated, total tokens so far: {total_tokens}")
         except openai.OpenAI.OpenAIError as e:
             print(f"Error generating embedding for query: {e}")
             query_embedding = None
@@ -764,10 +751,7 @@ Answer:
             raise ValueError("Error in generating embeddings.")
 
         similarities = cosine_similarity([query_embedding], document_embeddings)[0]
-        print(f"Similarity scores: {similarities}")
-
         sorted_indices = similarities.argsort()[::-1]
-        print(f"Sorted document indices by similarity: {sorted_indices}")
 
         relevant_texts = [
             extract_relevant_context(document_texts[sorted_indices[0]], question)
@@ -775,12 +759,8 @@ Answer:
         relevant_metadata = [document_metadata[sorted_indices[0]]]
         merged_relevant_text = "\n\n".join(relevant_texts)
 
-        print(f"Selected relevant document metadata: {relevant_metadata[0]}")
-        print(f"Excerpt of relevant text: {merged_relevant_text[:200].replace(chr(10), ' ')}")
-
+        # Store cost
         cost = calculate_cost("text-embedding-ada-002", total_tokens, 0)
-        print(f"Calculated cost: ${cost:.6f}")
-
         cost_record = CostPerInteraction(
             username=username,
             model="text-embedding-ada-002",
@@ -790,15 +770,15 @@ Answer:
             cost_usd=cost,
             created_at=datetime.utcnow()
         )
-
         try:
             db.add(cost_record)
             db.commit()
-            print("[INFO] Cost record stored in DB.")
+            print("[INFO] Cost record stored.")
         except SQLAlchemyError as e:
             db.rollback()
             print(f"[ERROR] Failed to store cost record: {e}")
 
+        # QA chain
         qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
             retriever=retriever,
@@ -806,14 +786,13 @@ Answer:
             chain_type_kwargs={"prompt": prompt},
         )
 
-        print("QA chain successfully created.")
         return qa_chain, merged_relevant_text, relevant_metadata
 
     except ValueError as ve:
-        print(f"[ValueError] {ve}")
+        print(f"ValueError: {ve}")
         return None, None, None
     except Exception as e:
-        print(f"[Unexpected error] {e}")
+        print(f"Unexpected error: {e}")
         return None, None, None
         
 """
@@ -1367,77 +1346,53 @@ async def chat(
     request: ChatRequest_interactive_pdf,
     db: Session = Depends(get_db)  # Replace with your auth dependency
 ):
-    print("=== /api/pdf_chatbot called ===")
-    print(f"Received message: {request.message}")
-    print(f"Username for session: {request.user_name}")
-
     user_message = request.message
     username_for_interactive_session = request.user_name
+    # Assuming vectorStore is always initialized elsewhere
+    #qa_chain, relevant_texts, document_metadata = create_qa_chain(vectorstore, user_message)  
+    qa_chain, relevant_texts, document_metadata = create_qa_chain(vectorstore, user_message, db=db, username=username_for_interactive_session, openai_api_key=openai_api_key)
+    # Merge relevant texts into a single string for the prompt
+   
 
-    # DEBUG: Confirm vectorstore reference — is it global? Per user? Page range?
-    print(f"Using vectorstore instance: {vectorstore}")
-
-    # Call QA chain creation, passing user, db, API key
-    qa_chain, relevant_texts, document_metadata = create_qa_chain(
-        vectorstore,
-        user_message,
-        db=db,
-        username=username_for_interactive_session,
-        openai_api_key=openai_api_key,
-    )
-
-    print("QA chain created.")
-    print(f"Relevant texts (excerpt): {relevant_texts[:200]}")  # print first 200 chars for sanity check
-    print(f"Document metadata received: {document_metadata}")
-
-    # Run the QA chain on user message
-    answer = qa_chain.run(user_message)
-    print(f"QA chain answer: {answer}")
+    # Run the QA chain with all required inputs
+    answer = qa_chain.run(user_message)  
 
     S3_BASE_URL = "https://pdfquerybucket.s3.amazonaws.com"
     UPLOADS_FOLDER = "upload"
 
     context_data = []
-    for idx, metadata in enumerate(document_metadata):
+    for metadata in document_metadata:
         pdf_s3_key = metadata[0]  # e.g., "folder/subfolder/file.pdf"
         pdf_page = metadata[1]
-
-        print(f"Metadata #{idx}: PDF key = {pdf_s3_key}, page = {pdf_page}")
 
         safe_pdf_key = quote(pdf_s3_key)  # URL encode to handle spaces/special chars
 
         pdf_url = f"{S3_BASE_URL}/{UPLOADS_FOLDER}/{safe_pdf_key}"
-        print(f"Constructed PDF URL: {pdf_url}")
 
         context_data.append({
             "page_number": pdf_page,
             "pdf_url": pdf_url,
         })
-        # You have this line twice, maybe intentional? Debug print here:
         context_data.append({
             "page_number": pdf_page,
             "pdf_url": pdf_url,
         })
 
+    # Process relevant texts for search strings
     search_strings = separate_sentences(relevant_texts)
-    print(f"Search strings extracted: {search_strings}")
-
-    relevant_texts = clean(relevant_texts)
-    print(f"Cleaned relevant texts (excerpt): {relevant_texts[:200]}")
-
     bot_reply = f"ChatBot: {answer}"
+    relevant_texts=clean(relevant_texts)
     response = {
         "reply": bot_reply,
         "context": context_data,
         "search_strings": search_strings,
-        "relevant_texts": relevant_texts,
+        "relevant_texts": relevant_texts  # Add this line
     }
 
-    print("Final response being sent:")
     print(response)
+    
 
     return JSONResponse(content=response)
-
 
 @app.post("/api/train_model")
 async def train_model(pages: PageRange, db: Session = Depends(get_db)):
