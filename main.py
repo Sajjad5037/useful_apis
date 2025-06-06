@@ -194,6 +194,9 @@ class FAQOut(BaseModel):
 # Response model (optional)
 class ChatResponse(BaseModel):
     reply: str
+class ChatRequest_interactive_pdf(BaseModel):
+    message: str
+    user_name: str  # <-- added this
 
 from sqlalchemy import Column
 
