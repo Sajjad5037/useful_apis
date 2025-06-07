@@ -1813,30 +1813,30 @@ async def extract_text_essay_checker(
         # 2. Build the prompt for OpenAI
         prompt = f"""
         The following text is a combined CSS essay (across multiple pages) from a candidate.
-        
+
         You are a strict but constructive CSS English essay examiner. Your tasks are:
-        
+
         1. Assign a score from 1 to 10 based on official CSS essay evaluation criteria: clarity, coherence, grammar, structure, argumentation, and style.
-        
+
         2. Guide the student through rewriting the entire essay to a level that would receive a perfect 10/10 score.
            - Stay as close as possible to the student’s original wording, phrasing, tone, and structure.
            - Only make changes that are strictly necessary to improve grammar, punctuation, sentence clarity, paragraph coherence, logical flow, or eliminate repetition.
            - Do **not** replace the student's ideas, voice, or expressions with entirely different vocabulary, structure, or examples **unless absolutely necessary** for clarity or logical consistency.
            - Avoid rewriting stylistically just to sound more polished — only change what genuinely needs improvement.
            - As you rewrite, explain your reasoning **step by step** in a didactic tone. Each change should be educational and easy for the student to understand and learn from.
-        
-        3. At the end, provide the **complete revised version** of the essay that would likely score a 10/10.
-        
+           - **Highlight all changes you make by wrapping the changed words or phrases in double asterisks (`**`) so the student can clearly see the improvements.**
+
+        3. At the end, provide the **complete revised version** of the essay that would likely score a 10/10, with all changes highlighted in bold as described above.
+
         4. Finally, provide:
            - The original essay's **score out of 10**, and
            - A **formal explanation** justifying that score, citing specific strengths and weaknesses using professional academic language.
-        
+
         Essay text (all pages combined):
         {combined_essay_text}
-        
+
         Your detailed assessment:
         """
-
         print("[DEBUG] Prompt built for OpenAI (first 300 chars):")
         print(prompt[:300] + ("..." if len(prompt) > 300 else ""))
 
