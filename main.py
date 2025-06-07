@@ -1264,22 +1264,27 @@ async def train_on_images(
 
         # Step 1: Correct OCR errors ONLY (no formatting, just corrected text)
         correction_prompt = f"""
-        The following text is extracted using OCR.
+        The following text is extracted using OCR and contains errors such as missing spaces, broken words, or misrecognized characters.
         
-        Your task is to carefully correct only clear OCR-related errors such as:
+        Your task is to correct only clear OCR errors, for example:
         - Missing or extra spaces
         - Broken or merged words
-        - Misrecognized characters (e.g., '0' instead of 'O', '1' instead of 'I')
+        - Confused characters (e.g., '0' instead of 'O', '1' instead of 'I')
         
-        - Do **NOT** paraphrase, reword, or alter the sentence structure.
-        - Only fix errors that are clearly caused by OCR mistakes.
-        - If uncertain whether something is an OCR error, leave it unchanged.
+        Do NOT paraphrase or reword sentences or change sentence structure. Only fix errors caused by OCR.
+        
+        Wrap every corrected word or phrase in double asterisks (`**`) so corrections are visible.
+        
+        Example:
+        Original: "Thesis Statement: Ensuring the provision f in human rights has become an illusion"
+        Corrected: "Thesis Statement: Ensuring the provision **of** human rights has become an illusion"
         
         Text to correct:
         <<< BEGIN TEXT >>>
         {combined_text.strip()}
         <<< END TEXT >>>
         """
+
         
         correction_response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -1287,11 +1292,10 @@ async def train_on_images(
                 {
                     "role": "system",
                     "content": (
-                        "You are an assistant that only corrects obvious OCR errors. "
-                        "Do not change any sentence structure or reword anything. "
-                        "Only fix things like broken words, missing spaces, and random characters caused by OCR. "
-                        "If you're unsure whether something is an OCR error, leave it unchanged. "
-                        "Preserve the original meaning and order of all words and sentences."
+                        "You are an assistant dedicated to correcting only obvious OCR errors. "
+                        "Fix broken words, missing spaces, and misrecognized characters. "
+                        "Do not paraphrase or change sentence structure. "
+                        "Wrap all corrections in double asterisks (`**`)."
                     )
                 },
                 {
@@ -1299,11 +1303,9 @@ async def train_on_images(
                     "content": correction_prompt
                 }
             ],
-            temperature=0.2
+            temperature=0  # deterministic corrections
         )
-        
-        corrected_text = correction_response.choices[0].message.content.strip()
-        
+        corrected_text = correction_response.choices[0].message.content.strip()        
         
         # Step 2: Produce final formatted output with Original and Improved Text
         formatting_prompt = f"""
