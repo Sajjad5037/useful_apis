@@ -1376,17 +1376,23 @@ async def chat_interactive_tutor(
     request: ChatRequest_CSS,
     db: Session = Depends(get_db)
 ):
-    session_id = request.session_id.strip()
-    user_message = request.message.strip()
-    
-    
-    if session_id not in session_texts:
-        raise HTTPException(status_code=404, detail="Session ID not found")
-
-    full_text = session_texts[session_id]
-
     try:
+        print("[DEBUG] Received request:", request)
+        session_id = request.session_id.strip()
+        user_message = request.message.strip()
+        print(f"[DEBUG] session_id: {session_id}")
+        print(f"[DEBUG] user_message: {user_message}")
+
+        if session_id not in session_texts:
+            print(f"[ERROR] Session ID {session_id} not found in session_texts")
+            raise HTTPException(status_code=404, detail="Session ID not found")
+
+        full_text = session_texts[session_id]
+        print(f"[DEBUG] Retrieved full_text of length {len(full_text)}")
+
         if request.first_message:
+            print("[DEBUG] Processing first message of the session")
+
             system_message = {
                 "role": "system",
                 "content": (
@@ -1419,29 +1425,35 @@ async def chat_interactive_tutor(
 
             messages = [system_message, user_intro_message, user_current_message]
             session_histories[session_id] = messages.copy()
+            print(f"[DEBUG] Initialized session_histories[{session_id}] with messages")
 
         else:
             if session_id not in session_histories:
+                print(f"[ERROR] Session history missing for session ID {session_id}")
                 raise HTTPException(status_code=400, detail="Session history missing for this session ID")
 
             messages = session_histories[session_id]
+            print(f"[DEBUG] Current session message count: {len(messages)}")
             messages.append({"role": "user", "content": user_message})
+            print(f"[DEBUG] Appended user message to session history")
 
         # --- Call OpenAI ---
         model_name = "gpt-3.5-turbo"
+        print(f"[DEBUG] Sending request to OpenAI model {model_name} with {len(messages)} messages")
         response = client.chat.completions.create(
             model=model_name,
             messages=messages,
             temperature=0.5,
         )
 
-        #text = response.choices[0].message.content.strip()
-        #reply = text.replace("\n", "<br>")
-        reply=response.choices[0].message.content.strip()
+        reply = response.choices[0].message.content.strip()
         usage = response.usage
+        print(f"[DEBUG] OpenAI response received, reply length: {len(reply)}")
+        print(f"[DEBUG] Token usage: {usage}")
 
         # --- Store Cost Info ---
         cost = calculate_cost(model_name, usage.prompt_tokens, usage.completion_tokens)
+        print(f"[DEBUG] Calculated cost: ${cost:.6f}")
 
         cost_record = CostPerInteraction(
             username=username_for_interactive_session,
@@ -1452,20 +1464,28 @@ async def chat_interactive_tutor(
             cost_usd=cost,
             created_at=datetime.utcnow()
         )
+
         try:
             db.add(cost_record)
             db.commit()
+            print("[DEBUG] Cost record saved to database")
         except SQLAlchemyError as e:
-            db.rollback()  # Roll back the transaction on error
+            db.rollback()
             print(f"[ERROR] Failed to save cost_record to database: {e}")
 
         # --- Update session history and return ---
         session_histories[session_id].append({"role": "assistant", "content": reply})
+        print("[DEBUG] Appended assistant reply to session history")
         return ChatResponse(reply=reply)
-        
+
+    except HTTPException:
+        # Re-raise HTTPExceptions so FastAPI can handle them normally
+        raise
 
     except Exception as e:
+        print(f"[ERROR] Internal server error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
+        
 
 @app.post("/api/pdf_chatbot")
 async def chat(
