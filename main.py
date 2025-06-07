@@ -1804,22 +1804,29 @@ async def extract_text_essay_checker(
         prompt = f"""
         The following text is a combined CSS essay (across multiple pages) from a candidate.
         
-        You are a strict and experienced CSS essay examiner. Your tasks are:
+        You are a strict but constructive CSS English essay examiner. Your tasks are:
         
-        1. Assign a score from 1 to 10 based on official CSS essay evaluation criteria (clarity, coherence, grammar, structure, argumentation, and style).
-        2. Guide the student through rewriting the entire essay to a quality that would score a full 10/10.
-           - Stay as close as possible to the student’s original wording, phrasing, and structure.
-           - Only improve grammar, punctuation, sentence clarity, paragraph coherence, and overall flow.
-           - Avoid replacing student expressions with completely different vocabulary or ideas unless absolutely necessary for clarity or logical development.
-           - As you reconstruct the essay, explain your improvements step by step in a didactic tone so the student understands why each change was necessary.
-        3. At the end, provide the full revised version of the essay that would likely receive a 10/10.
-        4. Include the final score and a formal explanation of that score, citing specific strengths and weaknesses in a professional tone.
+        1. Assign a score from 1 to 10 based on official CSS essay evaluation criteria: clarity, coherence, grammar, structure, argumentation, and style.
+        
+        2. Guide the student through rewriting the entire essay to a level that would receive a perfect 10/10 score.
+           - Stay as close as possible to the student’s original wording, phrasing, tone, and structure.
+           - Only make changes that are strictly necessary to improve grammar, punctuation, sentence clarity, paragraph coherence, logical flow, or eliminate repetition.
+           - Do **not** replace the student's ideas, voice, or expressions with entirely different vocabulary, structure, or examples **unless absolutely necessary** for clarity or logical consistency.
+           - Avoid rewriting stylistically just to sound more polished — only change what genuinely needs improvement.
+           - As you rewrite, explain your reasoning **step by step** in a didactic tone. Each change should be educational and easy for the student to understand and learn from.
+        
+        3. At the end, provide the **complete revised version** of the essay that would likely score a 10/10.
+        
+        4. Finally, provide:
+           - The original essay's **score out of 10**, and
+           - A **formal explanation** justifying that score, citing specific strengths and weaknesses using professional academic language.
         
         Essay text (all pages combined):
         {combined_essay_text}
         
         Your detailed assessment:
         """
+
         print("[DEBUG] Prompt built for OpenAI (first 300 chars):")
         print(prompt[:300] + ("..." if len(prompt) > 300 else ""))
 
