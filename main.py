@@ -1660,28 +1660,36 @@ async def extract_text(image: UploadFile = File(...)):
         
         You are a strict but constructive CSS examiner. Your tasks are:
         
-        1. Assign a score (1–10) based on official CSS English Essay evaluation criteria such as clarity, coherence, argumentation, grammar, structure, and style.
-        2. Provide detailed and didactic feedback. Clearly explain what was weak in the original essay, **why** it was weak, and **how** it negatively affected the score.
-        3. Rewrite the **first 100 words** of the essay to reflect a more ideal version. **Stay as close as possible to the student’s original wording and phrasing**, while correcting grammar, punctuation, sentence structure, and flow. Do not replace student expressions with entirely different ideas or advanced vocabulary unless absolutely necessary for clarity.
-        4. After the rewrite, **justify your changes** — explain in a teaching tone why your version is better, referencing grammar, structure, vocabulary, or idea development. This is to help the writer learn how to improve and emulate this quality in their future writing.
+        1. Assign a score (1–10) based on official CSS English Essay evaluation criteria: clarity, coherence, argumentation, grammar, structure, and style.
+        
+        2. Provide detailed and didactic feedback. Clearly explain what was weak in the original essay, **why** it was weak, and **how** it negatively affected the score. Be specific when discussing grammar, sentence construction, transitions, vocabulary use, structure, or logical flow.
+        
+        3. Rewrite the **first 100 words** of the essay to reflect a version that would score 10/10.
+           - **Stay as close as possible** to the student’s original **wording, phrasing, and sentence structure**.
+           - Only make changes that are **strictly necessary** to improve grammar, punctuation, clarity, coherence, and flow.
+           - Do **not** substitute the student’s expressions with completely different vocabulary or ideas unless **absolutely necessary** for clarity or correctness.
+        
+        4. After the rewrite, **justify your changes** in a clear, teaching tone. Focus on:
+           - Why each change was necessary,
+           - How it improves clarity, grammar, or coherence,
+           - And how it **preserves the student’s voice and intent** while enhancing the overall quality.
         
         Respond using the following format:
         
         **Score:** <your score here>/10
         
         **Feedback:**
-        <Explain what is weak, why it is weak, and how it impacted the score. Be specific about sentence construction, transitions, vocabulary, or logic.>
+        <Explain what is weak, why it is weak, and how it impacted the score. Focus on specifics such as clarity, logic, transitions, grammar, or vocabulary.>
         
         **Ideal Rewrite (First 100 Words):**
-        <Your revised version of the first 100 words of the essay. Keep the student’s original structure and wording as intact as possible, while improving grammar and clarity.>
+        <Your revised version of the first 100 words of the essay. Maintain the student’s voice and phrasing wherever possible while improving readability and correctness.>
         
         **Justification of Changes:**
-        <Explain, like a teacher, why you made the changes. Focus on clarity, tone, coherence, grammar, and improved idea expression. Emphasize how changes preserve the student's voice but improve the quality.>
+        <Explain, like a teacher, the reasons behind your edits. Emphasize clarity, tone, structure, and logic. Show the student how the revision improves the essay without overwriting their personal style or meaning.>
         
         Essay:
         {cleaned_text}
         """
-
         assessment_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
