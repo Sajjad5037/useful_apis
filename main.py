@@ -1668,6 +1668,7 @@ async def extract_text(image: UploadFile = File(...)):
            - **Stay as close as possible** to the student’s original **wording, phrasing, and sentence structure**.
            - Only make changes that are **strictly necessary** to improve grammar, punctuation, clarity, coherence, and flow.
            - Do **not** substitute the student’s expressions with completely different vocabulary or ideas unless **absolutely necessary** for clarity or correctness.
+           - **Highlight all improvements by wrapping the changed or corrected parts in double asterisks (i.e., bold)** so the student can easily compare the revision with their original writing.
         
         4. After the rewrite, **justify your changes** in a clear, teaching tone. Focus on:
            - Why each change was necessary,
@@ -1682,7 +1683,7 @@ async def extract_text(image: UploadFile = File(...)):
         <Explain what is weak, why it is weak, and how it impacted the score. Focus on specifics such as clarity, logic, transitions, grammar, or vocabulary.>
         
         **Ideal Rewrite (First 100 Words):**
-        <Your revised version of the first 100 words of the essay. Maintain the student’s voice and phrasing wherever possible while improving readability and correctness.>
+        <Your revised version of the first 100 words of the essay, with all changes clearly highlighted using bold (surround changes with **double asterisks**).>
         
         **Justification of Changes:**
         <Explain, like a teacher, the reasons behind your edits. Emphasize clarity, tone, structure, and logic. Show the student how the revision improves the essay without overwriting their personal style or meaning.>
@@ -1690,6 +1691,7 @@ async def extract_text(image: UploadFile = File(...)):
         Essay:
         {cleaned_text}
         """
+
         assessment_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
