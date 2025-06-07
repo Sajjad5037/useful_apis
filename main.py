@@ -1265,21 +1265,28 @@ async def train_on_images(
         # Build correction prompt once for entire combined text
         correction_prompt = f"""
         The following text is extracted using OCR.
-
+        
         Your task is to carefully correct only clear OCR-related errors such as:
         - Missing or extra spaces
         - Broken or merged words
         - Misrecognized characters (e.g., '0' instead of 'O', '1' instead of 'I')
-
+        
         - Do **NOT** paraphrase, reword, or alter the sentence structure.
         - Only fix errors that are clearly caused by OCR mistakes.
         - If uncertain whether something is an OCR error, leave it unchanged.
         - **Wrap every corrected word or phrase in double asterisks (`**`) so the corrections are clearly visible.**
-
-        Text to correct:
-        <<< BEGIN TEXT >>>
+        
+        Please provide your response in the following format:
+        
+        Original Text:
+        <<< BEGIN ORIGINAL TEXT >>>
         {combined_text.strip()}
-        <<< END TEXT >>>
+        <<< END ORIGINAL TEXT >>>
+        
+        Improved Text:
+        <<< BEGIN IMPROVED TEXT >>>
+        [Your corrected version here with corrections wrapped in `**`]
+        <<< END IMPROVED TEXT >>>
         """
 
         print("[train-on-images] Sending combined text to OpenAI for OCR correction")
