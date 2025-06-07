@@ -1253,47 +1253,6 @@ async def train_on_images(
             print(f"[train-on-images] OCR text length for image {idx}: {len(ocr_text)} characters")
 
             combined_text += ocr_text + "\n\n"
-            # Prepare the correction prompt
-            correction_prompt = f"""
-            You are given text extracted using OCR. Correct only clear OCR errors such as:
-            - Missing or extra spaces
-            - Broken or merged words
-            - Misrecognized characters (like '0' instead of 'O' or '1' instead of 'I')
-            
-            ❌ Do NOT paraphrase or rewrite.
-            ✅ Keep sentence structure and word order intact.
-            ❓ If you're unsure something is an OCR error, leave it unchanged.
-            
-            <<< BEGIN TEXT >>>
-            {combined_text.strip()}
-            <<< END TEXT >>>
-            """
-            
-            # Call OpenAI to clean the OCR output
-            correction_response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an assistant that only corrects obvious OCR errors. "
-                            "Do not change any sentence structure or reword anything. "
-                            "Only fix things like broken words, missing spaces, and random characters caused by OCR. "
-                            "If you're unsure whether something is an OCR error, leave it unchanged. "
-                            "Preserve the original meaning and order of all words and sentences."
-                        )
-                    },
-                    {
-                        "role": "user",
-                        "content": correction_prompt
-                    }
-                ],
-                temperature=0.2
-            )
-            
-            # Get the corrected text from the response
-            corrected_text = correction_response.choices[0].message.content.strip()
-
 
         if not combined_text.strip():
             print("[train-on-images] No text extracted from any images")
@@ -1303,22 +1262,66 @@ async def train_on_images(
                 headers=cors_headers,
             )
 
-        
+        # Build correction prompt once for entire combined text
+        correction_prompt = f"""
+        The following text is extracted using OCR.
+
+        Your task is to carefully correct only clear OCR-related errors such as:
+        - Missing or extra spaces
+        - Broken or merged words
+        - Misrecognized characters (e.g., '0' instead of 'O', '1' instead of 'I')
+
+        - Do **NOT** paraphrase, reword, or alter the sentence structure.
+        - Only fix errors that are clearly caused by OCR mistakes.
+        - If uncertain whether something is an OCR error, leave it unchanged.
+        - **Wrap every corrected word or phrase in double asterisks (`**`) so the corrections are clearly visible.**
+
+        Text to correct:
+        <<< BEGIN TEXT >>>
+        {combined_text.strip()}
+        <<< END TEXT >>>
+        """
+
+        print("[train-on-images] Sending combined text to OpenAI for OCR correction")
+        correction_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an assistant that only corrects obvious OCR errors. "
+                        "Do not change any sentence structure or reword anything. "
+                        "Only fix things like broken words, missing spaces, and random characters caused by OCR. "
+                        "If you're unsure whether something is an OCR error, leave it unchanged. "
+                        "Preserve the original meaning and order of all words and sentences."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": correction_prompt
+                }
+            ],
+            temperature=0.2
+        )
+
+        corrected_text = correction_response.choices[0].message.content.strip()
+        print(f"[train-on-images] Correction completed, corrected text length: {len(corrected_text)}")
 
         # Generate a unique session ID and store data
         session_id = str(uuid4())
         session_texts[session_id] = {
-            "text": combined_text,
+            "text": corrected_text,
             "doctorData": doctor,
         }
-        print(f"[train-on-images] Session {session_id} created with text length {len(combined_text)}")
+        print(f"[train-on-images] Session {session_id} created with corrected text length {len(corrected_text)}")
 
         return JSONResponse(
             content={
                 "status": "success",
                 "session_id": session_id,
                 "images_processed": len(images),
-                "total_text_length": len(combined_text),
+                "total_text_length": len(corrected_text),
+                "corrected_text": corrected_text,  # <-- Add this line
             },
             headers=cors_headers,
         )
@@ -1331,6 +1334,7 @@ async def train_on_images(
             status_code=500,
             headers=cors_headers,
         )
+
 
 @app.post("/chat_interactive_tutor", response_model=ChatResponse)
 async def chat_interactive_tutor(
