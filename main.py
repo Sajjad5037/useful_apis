@@ -1262,7 +1262,7 @@ async def train_on_images(
                 headers=cors_headers,
             )
 
-        # Build correction prompt once for entire combined text
+        # Step 1: Correct OCR errors ONLY (no formatting, just corrected text)
         correction_prompt = f"""
         The following text is extracted using OCR.
         
@@ -1274,22 +1274,13 @@ async def train_on_images(
         - Do **NOT** paraphrase, reword, or alter the sentence structure.
         - Only fix errors that are clearly caused by OCR mistakes.
         - If uncertain whether something is an OCR error, leave it unchanged.
-        - **Wrap every corrected word or phrase in double asterisks (`**`) so the corrections are clearly visible.**
         
-        Please provide your response in the following format:
-        
-        Original Text:
-        <<< BEGIN ORIGINAL TEXT >>>
+        Text to correct:
+        <<< BEGIN TEXT >>>
         {combined_text.strip()}
-        <<< END ORIGINAL TEXT >>>
-        
-        Improved Text:
-        <<< BEGIN IMPROVED TEXT >>>
-        [Your corrected version here with corrections wrapped in `**`]
-        <<< END IMPROVED TEXT >>>
+        <<< END TEXT >>>
         """
-
-        print("[train-on-images] Sending combined text to OpenAI for OCR correction")
+        
         correction_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -1310,25 +1301,60 @@ async def train_on_images(
             ],
             temperature=0.2
         )
-
+        
         corrected_text = correction_response.choices[0].message.content.strip()
-        print(f"[train-on-images] Correction completed, corrected text length: {len(corrected_text)}")
+        
+        
+        # Step 2: Produce final formatted output with Original and Improved Text
+        formatting_prompt = f"""
+        You are given the original OCR text and a corrected version of it.
+        
+        Please produce the response exactly in this format:
+        
+        Original Text:
+        <<< BEGIN ORIGINAL TEXT >>>
+        {combined_text.strip()}
+        <<< END ORIGINAL TEXT >>>
+        
+        Improved Text:
+        <<< BEGIN IMPROVED TEXT >>>
+        [Copy the corrected version here, wrapping every correction in double asterisks (`**`)]
+        <<< END IMPROVED TEXT >>>
+        """
+        
+        formatting_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an assistant that highlights corrections by wrapping changed words or phrases in `**`."
+                },
+                {
+                    "role": "user",
+                    "content": formatting_prompt.replace("[Copy the corrected version here, wrapping every correction in double asterisks (`**`)]", corrected_text)
+                }
+            ],
+            temperature=0.2
+        )
+        
+        final_output = formatting_response.choices[0].message.content.strip()
+        print(f"[train-on-images] Correction completed, final output length: {len(final_output)}")
 
         # Generate a unique session ID and store data
         session_id = str(uuid4())
         session_texts[session_id] = {
-            "text": corrected_text,
+            "text": final_output,
             "doctorData": doctor,
         }
-        print(f"[train-on-images] Session {session_id} created with corrected text length {len(corrected_text)}")
-
+        print(f"[train-on-images] Session {session_id} created with final output length {len(final_output)}")
+        
         return JSONResponse(
             content={
                 "status": "success",
                 "session_id": session_id,
                 "images_processed": len(images),
-                "total_text_length": len(corrected_text),
-                "corrected_text": corrected_text,  # <-- Add this line
+                "total_text_length": len(final_output),
+                "corrected_text": final_output,  # send the formatted text with original + improved
             },
             headers=cors_headers,
         )
