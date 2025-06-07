@@ -73,7 +73,7 @@ total_pdf = 0
 import tempfile
 
 
-USAGE_LIMIT_INCREASE = 0.00000001  # dollars
+USAGE_LIMIT_INCREASE = 5.0  # dollars
 
 # Suppose you have a baseline cost stored somewhere or passed in, for demo let's hardcode:
 BASELINE_COST = 0.0  # Replace this with your actual baseline cost or fetch it from DB/config
