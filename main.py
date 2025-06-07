@@ -1429,8 +1429,26 @@ async def chat_interactive_tutor(
 
         else:
             if session_id not in session_histories:
-                print(f"[ERROR] Session history missing for session ID {session_id}")
-                raise HTTPException(status_code=400, detail="Session history missing for this session ID")
+                print(f"[WARN] Session history missing for session ID {session_id}. Initializing with intro + full_text.")
+            
+                system_message = {
+                    "role": "system",
+                    "content": (
+                        "You are a concise and insightful creative writing tutor.\n"
+                        "You are helping a student improve their writing...\n"
+                        "Only respond to user queries that are directly relevant to the essay shared...\n"
+                    )
+                }
+            
+                user_intro_message = {
+                    "role": "user",
+                    "content": (
+                        f"Here is the student's writing passage:\n\n{session_texts[session_id]}\n\n"
+                        "Please keep your feedback concise (within 150 words) unless asked for a full rewrite..."
+                    )
+                }
+            
+                session_histories[session_id] = [system_message, user_intro_message]
 
             messages = session_histories[session_id]
             print(f"[DEBUG] Current session message count: {len(messages)}")
