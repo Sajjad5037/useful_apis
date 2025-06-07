@@ -4,6 +4,7 @@ import fitz
 from uuid import uuid4
 import joblib
 import sympy
+from decimal import Decimal
 from fastapi.responses import HTMLResponse
 from langchain.embeddings.base import Embeddings
 from langchain.schema import Document
@@ -1566,17 +1567,21 @@ async def chat(
 async def train_model(pages: PageRange, db: Session = Depends(get_db)):
     
     try:
-        total_cost = db.query(func.sum(CostPerInteraction.cost_usd)).scalar() or 0.0
-        print(f"[DEBUG] Total cost so far: {total_cost}")
-        print(f"[DEBUG] Baseline cost: {BASELINE_COST}")
-        print(f"[DEBUG] Usage limit increase threshold: {USAGE_LIMIT_INCREASE}")
+        # Assuming BASELINE_COST and USAGE_LIMIT_INCREASE are floats, convert them to Decimal
+        baseline_cost = Decimal(str(BASELINE_COST))
+        usage_limit_increase = Decimal(str(USAGE_LIMIT_INCREASE))
         
-        # Check if the cost increased by $5 or more compared to baseline
-        if total_cost - BASELINE_COST >= USAGE_LIMIT_INCREASE:
-            print(f"[DEBUG] Usage limit exceeded. Total cost increase: {total_cost - BASELINE_COST}")
+        total_cost = db.query(func.sum(CostPerInteraction.cost_usd)).scalar() or Decimal('0.0')
+        print(f"[DEBUG] Total cost so far: {total_cost}")
+        print(f"[DEBUG] Baseline cost: {baseline_cost}")
+        print(f"[DEBUG] Usage limit increase threshold: {usage_limit_increase}")
+        
+        if total_cost - baseline_cost >= usage_limit_increase:
+            print(f"[DEBUG] Usage limit exceeded. Total cost increase: {total_cost - baseline_cost}")
             raise HTTPException(status_code=403, detail="The usage limit has exceeded.")
         else:
             print(f"[DEBUG] Usage limit not exceeded. Proceeding with training.")
+    
         start_page = pages.start_page
         end_page = pages.end_page
         username_for_interactive_session = pages.user_name
