@@ -1567,11 +1567,16 @@ async def train_model(pages: PageRange, db: Session = Depends(get_db)):
     
     try:
         total_cost = db.query(func.sum(CostPerInteraction.cost_usd)).scalar() or 0.0
-
+        print(f"[DEBUG] Total cost so far: {total_cost}")
+        print(f"[DEBUG] Baseline cost: {BASELINE_COST}")
+        print(f"[DEBUG] Usage limit increase threshold: {USAGE_LIMIT_INCREASE}")
+        
         # Check if the cost increased by $5 or more compared to baseline
         if total_cost - BASELINE_COST >= USAGE_LIMIT_INCREASE:
+            print(f"[DEBUG] Usage limit exceeded. Total cost increase: {total_cost - BASELINE_COST}")
             raise HTTPException(status_code=403, detail="The usage limit has exceeded.")
-
+        else:
+            print(f"[DEBUG] Usage limit not exceeded. Proceeding with training.")
         start_page = pages.start_page
         end_page = pages.end_page
         username_for_interactive_session = pages.user_name
