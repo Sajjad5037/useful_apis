@@ -1657,27 +1657,27 @@ async def extract_text(image: UploadFile = File(...)):
         # Now send cleaned essay to essay examiner
         assessment_prompt = f"""
         The following is a CSS essay written by a candidate.
-
+        
         You are a strict but constructive CSS examiner. Your tasks are:
-
-        1. Assign a score (1-10) based on official CSS English Essay evaluation criteria such as clarity, coherence, argumentation, grammar, structure, and style.
+        
+        1. Assign a score (1–10) based on official CSS English Essay evaluation criteria such as clarity, coherence, argumentation, grammar, structure, and style.
         2. Provide detailed and didactic feedback. Clearly explain what was weak in the original essay, **why** it was weak, and **how** it negatively affected the score.
-        3. Rewrite the **first 100 words** of the essay to reflect a more ideal version. This rewrite should demonstrate improved structure, clarity, and depth.
+        3. Rewrite the **first 100 words** of the essay to reflect a more ideal version. **Stay as close as possible to the student’s original wording and phrasing**, while correcting grammar, punctuation, sentence structure, and flow. Do not replace student expressions with entirely different ideas or advanced vocabulary unless absolutely necessary for clarity.
         4. After the rewrite, **justify your changes** — explain in a teaching tone why your version is better, referencing grammar, structure, vocabulary, or idea development. This is to help the writer learn how to improve and emulate this quality in their future writing.
-
+        
         Respond using the following format:
-
+        
         **Score:** <your score here>/10
-
+        
         **Feedback:**
         <Explain what is weak, why it is weak, and how it impacted the score. Be specific about sentence construction, transitions, vocabulary, or logic.>
-
+        
         **Ideal Rewrite (First 100 Words):**
-        <Your revised version of the first 100 words of the essay.>
-
+        <Your revised version of the first 100 words of the essay. Keep the student’s original structure and wording as intact as possible, while improving grammar and clarity.>
+        
         **Justification of Changes:**
-        <Explain, like a teacher, why you made the changes. Focus on clarity, tone, coherence, grammar, and improved idea expression. For example, if you replaced a cliché or vague phrase, explain why the new version is more precise or elegant.>
-
+        <Explain, like a teacher, why you made the changes. Focus on clarity, tone, coherence, grammar, and improved idea expression. Emphasize how changes preserve the student's voice but improve the quality.>
+        
         Essay:
         {cleaned_text}
         """
