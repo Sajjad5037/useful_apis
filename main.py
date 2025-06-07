@@ -1570,7 +1570,7 @@ async def train_model(pages: PageRange, db: Session = Depends(get_db)):
 
         # Check if the cost increased by $5 or more compared to baseline
         if total_cost - BASELINE_COST >= USAGE_LIMIT_INCREASE:
-            return {"error": "The usage limit has exceeded."}
+            raise HTTPException(status_code=403, detail="The usage limit has exceeded.")
 
         start_page = pages.start_page
         end_page = pages.end_page
