@@ -1802,20 +1802,24 @@ async def extract_text_essay_checker(
 
         # 2. Build the prompt for OpenAI
         prompt = f"""
-The following text is a combined CSS essay (across multiple pages) from a candidate.
-
-You are a strict and experienced CSS essay examiner. Your tasks are:
-1. Assign a score from 1 to 10 based on official CSS essay evaluation criteria.
-2. Guide the student through rewriting the entire essay to a quality that would score a full 10/10.
-   - Show step-by-step reasoning as you reconstruct the essay.
-   - Provide the new rewritten essay likely to get a full 10.
-3. Include the score and a concise explanation in a formal tone with specific reasoning.
-
-Essay text (all pages combined):
-{combined_essay_text}
-
-Your detailed assessment:
-"""
+        The following text is a combined CSS essay (across multiple pages) from a candidate.
+        
+        You are a strict and experienced CSS essay examiner. Your tasks are:
+        
+        1. Assign a score from 1 to 10 based on official CSS essay evaluation criteria (clarity, coherence, grammar, structure, argumentation, and style).
+        2. Guide the student through rewriting the entire essay to a quality that would score a full 10/10.
+           - Stay as close as possible to the student’s original wording, phrasing, and structure.
+           - Only improve grammar, punctuation, sentence clarity, paragraph coherence, and overall flow.
+           - Avoid replacing student expressions with completely different vocabulary or ideas unless absolutely necessary for clarity or logical development.
+           - As you reconstruct the essay, explain your improvements step by step in a didactic tone so the student understands why each change was necessary.
+        3. At the end, provide the full revised version of the essay that would likely receive a 10/10.
+        4. Include the final score and a formal explanation of that score, citing specific strengths and weaknesses in a professional tone.
+        
+        Essay text (all pages combined):
+        {combined_essay_text}
+        
+        Your detailed assessment:
+        """
         print("[DEBUG] Prompt built for OpenAI (first 300 chars):")
         print(prompt[:300] + ("..." if len(prompt) > 300 else ""))
 
