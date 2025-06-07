@@ -1564,23 +1564,14 @@ async def chat(
 
 @app.post("/api/train_model")
 async def train_model(pages: PageRange, db: Session = Depends(get_db)):
+    
     try:
-        # Query total cost_usd so far
         total_cost = db.query(func.sum(CostPerInteraction.cost_usd)).scalar() or 0.0
 
         # Check if the cost increased by $5 or more compared to baseline
         if total_cost - BASELINE_COST >= USAGE_LIMIT_INCREASE:
             return {"error": "The usage limit has exceeded."}
 
-        # Proceed with your training logic here
-        # ...
-
-        return {"message": "Training started successfully."}
-
-    except Exception as e:
-        # Log error if needed
-        raise HTTPException(status_code=500, detail=str(e))
-    try:
         start_page = pages.start_page
         end_page = pages.end_page
         username_for_interactive_session = pages.user_name
