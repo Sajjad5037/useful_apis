@@ -2,6 +2,7 @@ import os
 import sys
 import fitz 
 from uuid import uuid4
+from rapidfuzz import fuzz
 import joblib
 import sympy
 from decimal import Decimal
@@ -546,19 +547,24 @@ def get_db_aws():
     finally:
         db.close()
 
-def is_relevant_to_css_preparation(message: str) -> bool:
+def is_relevant_to_css_preparation(message: str, threshold: int = 85) -> bool:
+    """
+    Returns True if the message is likely about CSS preparation,
+    using fuzzy matching to handle minor typos.
+    """
     css_keywords = [
         "css exam", "competitive exam", "fpsc", "optional subjects", "compulsory subjects",
         "essay", "precis", "past papers", "syllabus", "interview", "psychological test",
         "strategy", "notes", "study plan", "guidance", "tips", "mcqs", "current affairs",
-        "pak affairs", "islamiat", "english", "mentor", "coaching", "shah rukh", 
+        "pak affairs", "islamiat", "english", "mentor", "coaching", "shah rukh",
         "video lectures", "subscription", "resources", "join", "how to start", "mentorship",
-        "prepare", "roadmap", "study schedule","preparation", "course", "material", "feedback", "evaluation",
-        "essay checker", "review", "marking", "exam strategy"
+        "prepare", "roadmap", "study schedule", "preparation", "course", "material",
+        "feedback", "evaluation", "essay checker", "review", "marking", "exam strategy"
     ]
-    message_lower = message.lower()
-    return any(keyword in message_lower for keyword in css_keywords)
 
+    message_lower = message.lower()
+    return any(fuzz.partial_ratio(keyword, message_lower) >= threshold for keyword in css_keywords)
+    
 def is_relevant_to_programming(message: str) -> bool:
     programming_keywords = [
         "python", "odoo", "data", "automation", "excel", "backend", "frontend",
@@ -2883,17 +2889,19 @@ async def chat_website(msg: Message):
             messages = [
                 {
                     "role": "system",
-                    "content": (
-                        "You are a professional virtual assistant representing Shah Rukh, a successful CSS qualifier who now mentors aspiring candidates. "
-                        "Shah Rukh has launched a website to share the proven strategies, resources, and personal mentorship that helped him crack the CSS exam. "
-                        "The platform offers a range of services including AI-powered guidance through a chatbot, essay checking with personalized feedback, exclusive video lectures, study plans, and subscription-based access to premium content. "
-                        "Your role is to engage users respectfully and help them understand how Shah Rukh's mentorship can improve their chances of CSS success. "
-                        "Highlight the features of the website such as the AI chatbot for 24/7 support, the essay review system, flexible subscription plans, and expert advice directly from Shah Rukh. "
-                        "Keep the conversation focused on CSS preparation, mentorship, and how the platform adds value. "
-                        "If the user shows interest in joining, direct them to the subscription or contact page. "
-                        "Avoid discussing topics unrelated to CSS exam preparation or website offerings. "
-                        "Your goal is to guide students effectively and encourage them to benefit from Shah Rukh’s experience and resources."
-                    )
+                    "content": """
+            You are a professional virtual assistant representing Shah Rukh, a successful CSS qualifier who now mentors aspiring candidates. 
+            Shah Rukh has launched a website to share the proven strategies, resources, and personal mentorship that helped him crack the CSS exam. 
+            The platform offers a range of services including AI-powered guidance through a chatbot, essay checking with personalized feedback, exclusive video lectures, study plans, and subscription-based access to premium content. 
+            Your role is to engage users respectfully and help them understand how Shah Rukh's mentorship can improve their chances of CSS success. 
+            Highlight the features of the website such as the AI chatbot for 24/7 support, the essay review system, flexible subscription plans, and expert advice directly from Shah Rukh. 
+            Keep the conversation focused on CSS preparation, mentorship, and how the platform adds value. 
+            If the user shows interest in joining, direct them to the subscription or contact page. 
+            Avoid discussing topics unrelated to CSS exam preparation or website offerings. 
+            Your goal is to guide students effectively and encourage them to benefit from Shah Rukh’s experience and resources.
+            Format your responses with line breaks between sections or steps. Use markdown for bullet points and headings where helpful.
+
+            """
                 },
                 {
                     "role": "user",
@@ -2906,7 +2914,6 @@ async def chat_website(msg: Message):
     except Exception as e:
         logging.error(f"chatwebsite error: {e}")
         raise HTTPException(status_code=500, detail="Sorry, something went wrong.")
-
 
 @app.post("/api/chatwebsite")
 async def chat_website(msg: Message):
