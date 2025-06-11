@@ -553,7 +553,7 @@ def is_relevant_to_css_preparation(message: str, threshold: int = 85) -> bool:
     using fuzzy matching to handle minor typos.
     """
     css_keywords = [
-        "css exam", "competitive exam", "fpsc", "optional subjects", "compulsory subjects",
+        "css exam", "web site" ,"competitive exam", "fpsc", "optional subjects", "compulsory subjects",
         "essay", "precis", "past papers", "syllabus", "interview", "psychological test",
         "strategy", "notes", "study plan", "guidance", "tips", "mcqs", "current affairs",
         "pak affairs", "islamiat", "english", "mentor", "coaching", "shah rukh",
