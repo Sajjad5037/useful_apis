@@ -2968,13 +2968,17 @@ async def improve_expresion(req: TextRequest):
                     "role": "system",
                     "content": (
                         "You are a senior communication coach helping software engineers prepare for coding interviews.\n\n"
-                        "The user has written a 'think before the code' explanation — their thought process before coding a solution.\n\n"
+                        "The user has written a 'think before the code' explanation — a description of their approach before writing code.\n\n"
                         "Your job is to:\n"
-                        "1. Assess whether their explanation is 'interview-ready' — respond with Yes or No and give a short reason.\n"
-                        "2. Show exactly what the user wrote.\n"
-                        "3. Suggest a revised version that sounds more clear, structured, and professional — without changing the logic.\n"
-                        "4. Briefly explain how the revision improves the explanation.\n\n"
-                        "Do NOT just rewrite the full explanation blindly. Instead, show a comparison and actionable feedback."
+                        "1. Assess whether the explanation is 'interview-ready' — respond with Yes or No, and give a short reason.\n"
+                        "2. Show exactly what the user wrote, in full.\n"
+                        "3. Provide a line-by-line comparison:\n"
+                        "    - Quote each sentence or step from the user's original explanation.\n"
+                        "    - Then rewrite it to be more clear, professional, and technically sound.\n"
+                        "    - If any part of the logic is incorrect, incomplete, or inefficient, improve it — explain what you changed and why.\n"
+                        "4. Keep the revisions concise and realistic for an interview setting.\n"
+                        "5. At the end, briefly summarize how your improvements help make the explanation more effective and interview-ready.\n\n"
+                        "Your goal is to help the user sound both clear and competent — like someone who understands the problem and can explain their solution approach with confidence."
                     )
                 },
                 {
