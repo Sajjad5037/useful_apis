@@ -2958,29 +2958,47 @@ async def chat_website(msg: Message):
 @app.post("/improve_expresion")
 async def improve_expresion(req: TextRequest):
     try:
-        prompt = (
-            "Improve the following English text for clarity, grammar, and fluency. "
-            "Keep the original meaning, but rephrase it in a polished, professional way:\n\n"
-            f"{req.text}\n\nImproved version:"
-        )
+        print("\n--- Incoming Request to /improve_expresion ---")
+        print(f"Original Text (raw): {req.text}")
+        print(f"Original Text (stripped): {req.text.strip()}")
+        
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a communication coach helping software engineers improve their articulation in coding interviews. "
+                    "The user is preparing for interviews and has provided a 'think before the code' explanation. "
+                    "Your job is to refine this explanation: improve grammar, clarity, and structure, and make it sound polished and professional. "
+                    "Maintain the original logic and technical content. If helpful, use bullet points or numbered steps."
+                )
+            },
+            {
+                "role": "user",
+                "content": req.text.strip()
+            }
+        ]
+
+        print("Formatted messages for OpenAI:")
+        for msg in messages:
+            print(f"{msg['role'].upper()}: {msg['content'][:150]}{'...' if len(msg['content']) > 150 else ''}")  # Print first 150 chars
 
         response = openai.ChatCompletion.create(
-            model="gpt-4",  # or gpt-3.5-turbo if gpt-4 isn't available
+            model="gpt-4",
             temperature=0.5,
-            messages=[
-                {"role": "system", "content": "You are a helpful and professional English writing assistant."},
-                {"role": "user", "content": prompt},
-            ],
+            messages=messages
         )
 
         improved_text = response.choices[0].message.content.strip()
+        print(f"Improved Text (first 300 chars): {improved_text[:300]}{'...' if len(improved_text) > 300 else ''}")
+        print("--- Request Processed Successfully ---\n")
+
         return {"improved_text": improved_text}
 
     except Exception as e:
         logging.error(f"improve_expresion error: {e}")
+        print(f"❌ Error in /improve_expresion: {e}")
         raise HTTPException(status_code=500, detail="Something went wrong while improving the text.")
-
-
+    
 @app.post("/api/chatQuran")
 async def chat_quran(msg: Message):
     try:
@@ -3002,4 +3020,3 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
-
