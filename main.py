@@ -150,7 +150,8 @@ s3 = boto3.client(
 class SolveResult(BaseModel):
     problem: str
     solution: str
-
+class TextRequest(BaseModel):
+    text: str
 #for pdf query chatbot
 class PageRange(BaseModel):
     start_page: int
@@ -2953,6 +2954,32 @@ async def chat_website(msg: Message):
     except Exception as e:
         logging.error(f"chatwebsite error: {e}")
         raise HTTPException(status_code=500, detail="Sorry, something went wrong.")
+
+@app.post("/improve_expresion")
+async def improve_expresion(req: TextRequest):
+    try:
+        prompt = (
+            "Improve the following English text for clarity, grammar, and fluency. "
+            "Keep the original meaning, but rephrase it in a polished, professional way:\n\n"
+            f"{req.text}\n\nImproved version:"
+        )
+
+        response = openai.ChatCompletion.create(
+            model="gpt-4",  # or gpt-3.5-turbo if gpt-4 isn't available
+            temperature=0.5,
+            messages=[
+                {"role": "system", "content": "You are a helpful and professional English writing assistant."},
+                {"role": "user", "content": prompt},
+            ],
+        )
+
+        improved_text = response.choices[0].message.content.strip()
+        return {"improved_text": improved_text}
+
+    except Exception as e:
+        logging.error(f"improve_expresion error: {e}")
+        raise HTTPException(status_code=500, detail="Something went wrong while improving the text.")
+
 
 @app.post("/api/chatQuran")
 async def chat_quran(msg: Message):
