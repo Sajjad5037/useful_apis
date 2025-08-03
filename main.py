@@ -1676,20 +1676,33 @@ async def train_model(pages: PageRange, db: Session = Depends(get_db)):
 @app.post("/extract_text_pdfEssayChecker_mywebsite")
 async def extract_text_pdfEssayChecker_mywebsite(pdf_file: UploadFile = File(...)):
     try:
+        print(f"[INFO] Received file: {pdf_file.filename}")
+
         # Step 1: Load PDF and convert pages to images
         pdf_bytes = await pdf_file.read()
+        print(f"[DEBUG] Read {len(pdf_bytes)} bytes from uploaded PDF.")
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         full_ocr_text = ""
 
-        for page in doc:
+        print(f"[INFO] PDF contains {len(doc)} pages.")
+        for i, page in enumerate(doc):
+            print(f"[INFO] Processing page {i + 1}/{len(doc)}")
             pix = page.get_pixmap(dpi=300)
             img_bytes = pix.tobytes("png")
+            print(f"[DEBUG] Converted page {i + 1} to image, size: {len(img_bytes)} bytes.")
             image = vision.Image(content=img_bytes)
 
             # Step 2: Use Google Vision OCR
             response = client_google_vision_api.document_text_detection(image=image)
             text = response.full_text_annotation.text
+            print(f"[DEBUG] OCR extracted {len(text)} characters from page {i + 1}.")
             full_ocr_text += text + "\n"
+
+        if not full_ocr_text.strip():
+            print("[WARNING] OCR returned no text.")
+            return {"error": "No text could be extracted from the PDF."}
+
+        print(f"[INFO] Total OCR-extracted text length: {len(full_ocr_text.strip())} characters.")
 
         # Step 3: Clean OCR errors using GPT
         correction_prompt = f"""
@@ -1705,7 +1718,7 @@ Essay:
 {full_ocr_text}
 >>>
 """
-
+        print("[INFO] Sending OCR text to GPT for cleaning OCR errors.")
         correction_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -1719,6 +1732,7 @@ Essay:
             temperature=0.2,
         )
         cleaned_text = correction_response.choices[0].message.content.strip()
+        print(f"[INFO] Cleaned OCR text length: {len(cleaned_text)} characters.")
 
         # Step 4: Send to essay examiner GPT
         assessment_prompt = f"""
@@ -1734,7 +1748,7 @@ You are a strict but constructive CSS examiner. Your tasks are:
 Essay:
 {cleaned_text}
 """
-
+        print("[INFO] Sending cleaned essay to GPT for CSS assessment.")
         assessment_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -1744,6 +1758,7 @@ Essay:
             temperature=0.3,
         )
         assessment = assessment_response.choices[0].message.content.strip()
+        print(f"[INFO] Received CSS assessment, length: {len(assessment)} characters.")
 
         # Extract ideal rewrite (if available)
         model_rewrite_match = re.search(
@@ -1752,6 +1767,10 @@ Essay:
             re.DOTALL
         )
         model_rewrite = model_rewrite_match.group(1).strip() if model_rewrite_match else ""
+        if model_rewrite:
+            print("[INFO] Extracted model rewrite from assessment.")
+        else:
+            print("[WARNING] No model rewrite found in assessment.")
 
         return {
             "text1": cleaned_text,
@@ -1761,6 +1780,7 @@ Essay:
 
     except Exception as e:
         import traceback
+        print(f"[ERROR] An exception occurred: {e}")
         traceback.print_exc()
         return {"error": str(e)}
 
@@ -3110,4 +3130,5 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
