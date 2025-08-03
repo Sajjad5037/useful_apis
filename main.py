@@ -1671,7 +1671,101 @@ async def train_model(pages: PageRange, db: Session = Depends(get_db)):
             content={"error": "Model could not be trained!", "details": str(e)}
         )
 
+#start here 
 
+@app.post("/extract_text_pdfEssayChecker_mywebsite")
+async def extract_text_pdfEssayChecker_mywebsite(pdf_file: UploadFile = File(...)):
+    try:
+        # Step 1: Load PDF and convert pages to images
+        pdf_bytes = await pdf_file.read()
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        full_ocr_text = ""
+
+        for page in doc:
+            pix = page.get_pixmap(dpi=300)
+            img_bytes = pix.tobytes("png")
+            image = vision.Image(content=img_bytes)
+
+            # Step 2: Use Google Vision OCR
+            response = client_google_vision_api.document_text_detection(image=image)
+            text = response.full_text_annotation.text
+            full_ocr_text += text + "\n"
+
+        # Step 3: Clean OCR errors using GPT
+        correction_prompt = f"""
+You are given an essay extracted via OCR. Your task is to fix only clear OCR-related errors such as:
+- Missing or extra spaces between words
+- Broken or joined words
+- Stray or incorrect characters (like '1' instead of 'I')
+
+⚠️ Do NOT paraphrase, rewrite, or change the sentence structure or grammar unless it's clearly an OCR error.
+
+Essay:
+<<<
+{full_ocr_text}
+>>>
+"""
+
+        correction_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": (
+                    "You are an assistant that only corrects obvious OCR errors. Do not change any sentence structure or reword anything. "
+                    "Only fix things like broken words, missing spaces, and random characters caused by OCR. "
+                    "If you're unsure whether something is an OCR error, leave it unchanged."
+                )},
+                {"role": "user", "content": correction_prompt}
+            ],
+            temperature=0.2,
+        )
+        cleaned_text = correction_response.choices[0].message.content.strip()
+
+        # Step 4: Send to essay examiner GPT
+        assessment_prompt = f"""
+The following is a CSS essay written by a candidate.
+
+You are a strict but constructive CSS examiner. Your tasks are:
+
+1. Assign a score (1–10) based on official CSS English Essay evaluation criteria.
+2. Provide detailed and didactic feedback.
+3. Rewrite the **first 100 words**, highlighting changes in **bold**.
+4. Justify all changes made.
+
+Essay:
+{cleaned_text}
+"""
+
+        assessment_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a CSS essay examiner providing feedback and ideal writing samples."},
+                {"role": "user", "content": assessment_prompt}
+            ],
+            temperature=0.3,
+        )
+        assessment = assessment_response.choices[0].message.content.strip()
+
+        # Extract ideal rewrite (if available)
+        model_rewrite_match = re.search(
+            r"\*\*Ideal Rewrite \(First 100 Words\):\*\*\s*(.+)", 
+            assessment, 
+            re.DOTALL
+        )
+        model_rewrite = model_rewrite_match.group(1).strip() if model_rewrite_match else ""
+
+        return {
+            "text1": cleaned_text,
+            "text2": model_rewrite,
+            "assessment": assessment
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+#end here
 # for extracting text from the image for my portfolio website
 @app.post("/extract_text")
 async def extract_text(image: UploadFile = File(...)):
@@ -3016,3 +3110,4 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
