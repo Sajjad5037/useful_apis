@@ -1676,35 +1676,62 @@ async def train_model(pages: PageRange, db: Session = Depends(get_db)):
 @app.post("/extract_text_pdfEssayChecker_mywebsite")
 async def extract_text_pdfEssayChecker_mywebsite(pdf_file: UploadFile = File(...)):
     try:
-        print(f"[INFO] Received file: {pdf_file.filename}")
+        print(f"\n📥 [INFO] Received file: {pdf_file.filename}")
 
-        # Step 1: Load PDF and convert pages to images
-        pdf_bytes = await pdf_file.read()
-        print(f"[DEBUG] Read {len(pdf_bytes)} bytes from uploaded PDF.")
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        # Step 1: Read PDF bytes
+        try:
+            pdf_bytes = await pdf_file.read()
+            print(f"[DEBUG] PDF file read successful. Size: {len(pdf_bytes)} bytes.")
+        except Exception as read_err:
+            print("[❌ ERROR] Failed to read PDF file.")
+            traceback.print_exc()
+            raise HTTPException(status_code=400, detail="Unable to read uploaded PDF.")
+
+        # Step 2: Convert PDF to images
+        try:
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            num_pages = len(doc)
+            print(f"[INFO] PDF loaded. Number of pages: {num_pages}")
+            if num_pages == 0:
+                print("[⚠️ WARNING] PDF contains no pages.")
+                raise HTTPException(status_code=400, detail="Uploaded PDF has no pages.")
+        except Exception as open_err:
+            print("[❌ ERROR] Failed to open or parse PDF with fitz.")
+            traceback.print_exc()
+            raise HTTPException(status_code=422, detail="Invalid or corrupt PDF.")
+
         full_ocr_text = ""
-
-        print(f"[INFO] PDF contains {len(doc)} pages.")
         for i, page in enumerate(doc):
-            print(f"[INFO] Processing page {i + 1}/{len(doc)}")
-            pix = page.get_pixmap(dpi=300)
-            img_bytes = pix.tobytes("png")
-            print(f"[DEBUG] Converted page {i + 1} to image, size: {len(img_bytes)} bytes.")
-            image = vision.Image(content=img_bytes)
+            try:
+                print(f"\n📝 [INFO] Processing page {i+1}/{num_pages}")
+                pix = page.get_pixmap(dpi=300)
+                img_bytes = pix.tobytes("png")
+                image = vision.Image(content=img_bytes)
 
-            # Step 2: Use Google Vision OCR
-            response = client_google_vision_api.document_text_detection(image=image)
-            text = response.full_text_annotation.text
-            print(f"[DEBUG] OCR extracted {len(text)} characters from page {i + 1}.")
-            full_ocr_text += text + "\n"
+                # OCR with Google Vision
+                print("[INFO] Calling Google Vision OCR API...")
+                response = client_google_vision_api.document_text_detection(image=image)
+                page_text = response.full_text_annotation.text.strip()
+
+                if not page_text:
+                    print(f"[⚠️ WARNING] Page {i+1} returned no OCR text.")
+                else:
+                    print(f"[DEBUG] OCR text length for page {i+1}: {len(page_text)} characters.")
+
+                full_ocr_text += page_text + "\n"
+
+            except Exception as ocr_err:
+                print(f"[❌ ERROR] OCR failed on page {i+1}.")
+                traceback.print_exc()
+                continue  # Process remaining pages
 
         if not full_ocr_text.strip():
-            print("[WARNING] OCR returned no text.")
-            return {"error": "No text could be extracted from the PDF."}
+            print("[❌ ERROR] OCR process completed but no text was extracted.")
+            raise HTTPException(status_code=422, detail="OCR failed to extract any text.")
 
-        print(f"[INFO] Total OCR-extracted text length: {len(full_ocr_text.strip())} characters.")
+        print(f"[INFO] Total extracted OCR text: {len(full_ocr_text)} characters.")
 
-        # Step 3: Clean OCR errors using GPT
+        # Step 3: GPT OCR Correction
         correction_prompt = f"""
 You are given an essay extracted via OCR. Your task is to fix only clear OCR-related errors such as:
 - Missing or extra spaces between words
@@ -1718,23 +1745,28 @@ Essay:
 {full_ocr_text}
 >>>
 """
-        print("[INFO] Sending OCR text to GPT for cleaning OCR errors.")
-        correction_response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": (
-                    "You are an assistant that only corrects obvious OCR errors. Do not change any sentence structure or reword anything. "
-                    "Only fix things like broken words, missing spaces, and random characters caused by OCR. "
-                    "If you're unsure whether something is an OCR error, leave it unchanged."
-                )},
-                {"role": "user", "content": correction_prompt}
-            ],
-            temperature=0.2,
-        )
-        cleaned_text = correction_response.choices[0].message.content.strip()
-        print(f"[INFO] Cleaned OCR text length: {len(cleaned_text)} characters.")
+        print("[🧠 GPT] Sending OCR correction prompt to GPT...")
+        try:
+            correction_response = client.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": (
+                        "You are an assistant that only corrects obvious OCR errors. Do not change any sentence structure or reword anything. "
+                        "Only fix things like broken words, missing spaces, and random characters caused by OCR. "
+                        "If you're unsure whether something is an OCR error, leave it unchanged."
+                    )},
+                    {"role": "user", "content": correction_prompt}
+                ],
+                temperature=0.2,
+            )
+            cleaned_text = correction_response.choices[0].message.content.strip()
+            print(f"[INFO] Cleaned OCR text length: {len(cleaned_text)} characters.")
+        except Exception as gpt_ocr_err:
+            print("[❌ ERROR] GPT OCR correction failed.")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail="Failed during GPT OCR correction.")
 
-        # Step 4: Send to essay examiner GPT
+        # Step 4: GPT Assessment
         assessment_prompt = f"""
 The following is a CSS essay written by a candidate.
 
@@ -1748,29 +1780,32 @@ You are a strict but constructive CSS examiner. Your tasks are:
 Essay:
 {cleaned_text}
 """
-        print("[INFO] Sending cleaned essay to GPT for CSS assessment.")
-        assessment_response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a CSS essay examiner providing feedback and ideal writing samples."},
-                {"role": "user", "content": assessment_prompt}
-            ],
-            temperature=0.3,
-        )
-        assessment = assessment_response.choices[0].message.content.strip()
-        print(f"[INFO] Received CSS assessment, length: {len(assessment)} characters.")
 
-        # Extract ideal rewrite (if available)
+        print("[🧠 GPT] Sending essay assessment prompt to GPT...")
+        try:
+            assessment_response = client.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a CSS essay examiner providing feedback and ideal writing samples."},
+                    {"role": "user", "content": assessment_prompt}
+                ],
+                temperature=0.3,
+            )
+            assessment = assessment_response.choices[0].message.content.strip()
+            print(f"[INFO] Assessment received. Length: {len(assessment)} characters.")
+        except Exception as gpt_assess_err:
+            print("[❌ ERROR] GPT assessment failed.")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail="Failed during GPT essay evaluation.")
+
+        # Step 5: Extract Model Rewrite
         model_rewrite_match = re.search(
             r"\*\*Ideal Rewrite \(First 100 Words\):\*\*\s*(.+)", 
             assessment, 
             re.DOTALL
         )
         model_rewrite = model_rewrite_match.group(1).strip() if model_rewrite_match else ""
-        if model_rewrite:
-            print("[INFO] Extracted model rewrite from assessment.")
-        else:
-            print("[WARNING] No model rewrite found in assessment.")
+        print(f"[INFO] Extracted model rewrite: {len(model_rewrite)} characters.")
 
         return {
             "text1": cleaned_text,
@@ -1779,11 +1814,9 @@ Essay:
         }
 
     except Exception as e:
-        import traceback
-        print(f"[ERROR] An exception occurred: {e}")
+        print("[❌ FINAL ERROR] An exception occurred during full processing:")
         traceback.print_exc()
-        return {"error": str(e)}
-
+        raise HTTPException(status_code=500, detail="An unexpected server error occurred.")
 
 #end here
 # for extracting text from the image for my portfolio website
@@ -3130,5 +3163,6 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
