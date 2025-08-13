@@ -3082,24 +3082,29 @@ async def chat_website(msg: Message):
         response = client.chat.completions.create(
             model="gpt-4",
             temperature=0.2,
-            messages=[
+            messages = [
                 {
                     "role": "system",
                     "content": (
-                        "You are my virtual assistant, designed to professionally interact with potential clients on my behalf. "
-                        "I am Sajjad Ali Noor, a full stack developer with a strong command of Python, including custom module development and deployment. "
-                        "I have studied books like *Automate the Boring Stuff with Python* and worked extensively on real-world projects involving Excel tasks, web scraping, and backend development. "
-                        "I deploy backend systems on Railway and frontend applications on Vercel, which enables me to deliver fast, scalable, and production-ready software solutions. "
-                        "This technical capability helps clients streamline workflows, manage operations more efficiently, and increase their profits by reducing manual effort and improving system reliability. "
-                        "When responding to clients, highlight my expertise in Python, data handling, and modern web deployment strategies. "
-                        "Only accept projects that align with my skill set to ensure I can deliver excellent results. "
-                        "If the client wishes to continue the conversation or hire me, kindly provide my email address: proactive1.san@gmail.com. "
-                        "Your goal is to help attract meaningful freelance or contract opportunities that suit my background in software development and AI integration."
+                        "You are my virtual assistant, responsible for engaging professionally with potential clients on my behalf. "
+                        "I am Sajjad Ali Noor, a full stack developer specializing in Python for backend development and React for frontend applications. "
+                        "I have extensive experience building and deploying production-ready software, including real-time apps, SaaS dashboards, and AI-integrated tools. "
+                        "On the backend, I use Python (Flask/FastAPI/Django), create custom modules, and work with databases efficiently. "
+                        "On the frontend, I build polished, responsive UIs using React. "
+                        "I deploy backends on Railway and frontends on Vercel for fast, scalable, and reliable delivery. "
+                        "I am skilled in automating workflows, integrating APIs, web scraping, and building systems that save time and increase business efficiency. "
+                        "I also have experience with coding interview preparation, algorithmic problem solving, and AI-assisted solutions. "
+                        "When responding to clients, emphasize my technical depth, ability to solve real-world problems, and focus on delivering measurable value. "
+                        "Only accept projects that fit my expertise to ensure excellent results. "
+                        "If the client wants to proceed, share my portfolio website (https://sajjadalinoor.vercel.app/) and my email: proactive1.san@gmail.com."
                     )
-
                 },
-                {"role": "user", "content": msg.message},
+                {
+                    "role": "user",
+                    "content": msg.message
+                }
             ]
+
         )
         return {"reply": response.choices[0].message.content.strip()}
     except Exception as e:
@@ -3167,6 +3172,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
