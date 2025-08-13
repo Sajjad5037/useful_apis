@@ -1766,16 +1766,20 @@ Essay:
             traceback.print_exc()
             raise HTTPException(status_code=500, detail="Failed during GPT OCR correction.")
 
-        # Step 4: GPT Assessment
         assessment_prompt = f"""
-The following is a CSS essay written by a candidate.
+The following is a CSS English Essay written by a candidate.
 
-You are a strict but constructive CSS examiner. Your tasks are:
+You are a **strict but constructive CSS examiner** following official CSS English Essay evaluation criteria:
+- Content & Relevance
+- Organization & Coherence
+- Grammar & Mechanics
+- Vocabulary & Expression
 
-1. Assign a score (1–10) based on official CSS English Essay evaluation criteria.
-2. Provide detailed and didactic feedback.
-3. Rewrite the **first 100 words**, highlighting changes in **bold**.
-4. Justify all changes made.
+Your tasks:
+1. **Score each category (1–10)** and give a one-sentence justification.
+2. **Provide detailed improvement feedback** in bullet points (at least 1 point per category).
+3. **Rewrite the first 100 words** of the essay, marking all changes in **bold**.
+4. **Briefly justify** your rewrites.
 
 Essay:
 {cleaned_text}
@@ -3163,6 +3167,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
