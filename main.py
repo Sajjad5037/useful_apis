@@ -165,6 +165,18 @@ class ChatRequest_CSS(BaseModel):
     message: str
     first_message: bool = False
 
+class CommonMistake(Base):
+    __tablename__ = "mistake_pattern_essay"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, index=True)
+    original_text = Column(Text, nullable=False)
+    corrected_text = Column(Text, nullable=False)
+    category = Column(String, nullable=False)
+    explanation = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class CostPerInteraction(Base):
     __tablename__ = "cost_per_interaction"
 
@@ -202,17 +214,6 @@ class Vector(UserDefinedType):
     def column_expression(self, col):
         return col
 
-class CommonMistakeSchema(BaseModel):
-    id: int
-    session_id: str
-    original_text: str
-    corrected_text: str
-    category: Optional[str] = None
-    explanation: Optional[str] = None
-    created_at: str
-
-    class Config:
-        orm_mode = True
 
 #for database query
 class ChatRequest(BaseModel):
@@ -3466,6 +3467,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
