@@ -1388,21 +1388,23 @@ async def train_on_images(
         )
         raw_response = improvement_response.choices[0].message.content.strip()
 
-        # Step 1: Remove any accidental JSON blocks
-        if raw_response.startswith("{") and raw_response.endswith("}"):
-            print("[DEBUG] GPT returned a JSON-like object. Stripping it out.")
-            raw_response = ""  # or extract a key you want
+        # Step 1: Remove code fences (```...```) entirely
+        raw_response = re.sub(r"```(?:json)?\s*([\s\S]*?)```", r"\1", raw_response).strip()
         
-        # Step 2: Remove triple backticks or code fences
-        raw_response = re.sub(r"^```.*?\n|```$", "", raw_response, flags=re.DOTALL).strip()
+        # Step 2: If still pure JSON, strip it completely or parse it
+        if raw_response.strip().startswith("{") and raw_response.strip().endswith("}"):
+            print("[DEBUG] GPT returned pure JSON. Stripping it out.")
+            raw_response = ""  # Or use json.loads(raw_response) to extract a field
         
-        # Step 3: Ensure this is essay-like (basic heuristic: multiple sentences)
+        # Step 3: Remove any <<< END IMPROVED TEXT >>> markers
+        raw_response = re.sub(r"<<<.*?>>>", "", raw_response).strip()
+        
+        # Step 4: Ensure this is essay-like
         if len(raw_response.split()) < 20:
             print("[WARNING] The returned text is too short. Might be invalid.")
             raw_response = "[ERROR: No valid essay returned]"
         
         improved_text = raw_response
-
         
         # Extract patterns
         patterns = extract_mistake_patterns(improved_text)
@@ -1460,31 +1462,36 @@ Improved Text:
             headers=cors_headers,
         )
 
-
-
-
 def extract_mistake_patterns(improved_text):
     print("\n--- DEBUG: Full improved_text ---")
     print(improved_text)
     print("--- END improved_text ---\n")
 
     patterns = []
-    pattern_regex = re.compile(
-        r"Mistake\s*Type\s*:\s*(?P<type>.+?)\s*(?:\n|$)"
-        r"(?:Explanation\s*:\s*(?P<explanation>.+?)(?:\n|$))?",
-        re.IGNORECASE | re.DOTALL
-    )
 
-    for match in pattern_regex.finditer(improved_text):
-        print(f"[DEBUG] Matched type: {match.group('type')}")
-        print(f"[DEBUG] Matched explanation: {match.group('explanation')}")
-        patterns.append({
-            "mistake_type": match.group("type").strip(),
-            "explanation": match.group("explanation").strip() if match.group("explanation") else ""
-        })
+    # Try to find JSON block inside improved_text
+    json_match = re.search(r"\{[\s\S]*\}", improved_text)
+    if not json_match:
+        print("[DEBUG] No JSON block found in improved_text.")
+        return patterns
 
-    print(f"[DEBUG] Total patterns found: {len(patterns)}")
+    json_str = json_match.group(0)
+    print("[DEBUG] Extracted JSON string candidate:")
+    print(json_str)
+
+    try:
+        data = json.loads(json_str)
+        if "mistake_patterns" in data and isinstance(data["mistake_patterns"], list):
+            patterns = data["mistake_patterns"]
+            print(f"[DEBUG] Parsed {len(patterns)} mistake patterns from JSON.")
+        else:
+            print("[DEBUG] 'mistake_patterns' key not found or not a list in JSON.")
+    except json.JSONDecodeError as e:
+        print(f"[DEBUG] JSON decode error: {e}")
+
     return patterns
+
+
 
 # @app.post("/train-on-images")
 #previous working code for CSS_Academy1
@@ -3465,6 +3472,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
