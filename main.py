@@ -1388,26 +1388,58 @@ async def train_on_images(
         )
         raw_response = improvement_response.choices[0].message.content.strip()
 
-        # Step 1: Remove code fences (```...```) entirely
-        raw_response = re.sub(r"```(?:json)?\s*([\s\S]*?)```", r"\1", raw_response).strip()
+        # -----------------------------
+        # Step A: Extract JSON block with mistake patterns
+        json_match = re.search(r"```json\s*(\{.*?\})\s*```", raw_response, re.DOTALL)
+        if not json_match:
+            # fallback: try to find a JSON object anywhere in the text
+            json_match = re.search(r"(\{.*?\})", raw_response, re.DOTALL)
         
-        # Step 2: If still pure JSON, strip it completely or parse it
-        if raw_response.strip().startswith("{") and raw_response.strip().endswith("}"):
-            print("[DEBUG] GPT returned pure JSON. Stripping it out.")
-            raw_response = ""  # Or use json.loads(raw_response) to extract a field
+        mistake_patterns_data = {"mistake_patterns": []}
+        if json_match:
+            try:
+                mistake_patterns_data = json.loads(json_match.group(1))
+                print(f"[DEBUG] Extracted {len(mistake_patterns_data.get('mistake_patterns', []))} mistake patterns")
+            except json.JSONDecodeError as e:
+                print(f"[ERROR] JSON decode failed: {e}")
+        else:
+            print("[WARNING] No JSON block found in AI response")
         
-        # Step 3: Remove any <<< END IMPROVED TEXT >>> markers
-        raw_response = re.sub(r"<<<.*?>>>", "", raw_response).strip()
+        # -----------------------------
+        # Step B: Remove JSON from essay text for user display
+        improved_essay_text = re.sub(r"```json.*?```", "", raw_response, flags=re.DOTALL).strip()
         
-        # Step 4: Ensure this is essay-like
-        if len(raw_response.split()) < 20:
-            print("[WARNING] The returned text is too short. Might be invalid.")
-            raw_response = "[ERROR: No valid essay returned]"
+        # -----------------------------
+        # Step C: Store mistake patterns in the database
+        for pattern in mistake_patterns_data.get("mistake_patterns", []):
+            mp_record = MistakePattern(
+                username=username_for_interactive_session,
+                mistake_type=pattern.get("mistake_type", ""),
+                original_text=pattern.get("original_text", ""),
+                corrected_text=pattern.get("corrected_text", ""),
+                description=pattern.get("explanation", ""),
+                created_at=datetime.utcnow()
+            )
+            try:
+                db.add(mp_record)
+                db.commit()
+                print(f"[INFO] Stored mistake pattern: {pattern.get('mistake_type')}")
+            except SQLAlchemyError as e:
+                db.rollback()
+                print(f"[ERROR] Failed to store mistake pattern: {e}")
         
-        improved_text = raw_response
+        # -----------------------------
+        # Step D: Prepare final output for user
+        final_output = f"""
+        {ocr_corrections_output}
         
-        # Extract patterns
-        patterns = extract_mistake_patterns(improved_text)
+        Improved Text:
+        <<< BEGIN IMPROVED TEXT >>>
+        {improved_essay_text}
+        <<< END IMPROVED TEXT >>>
+        """
+        
+        
         # -------------------
         # Step 4: Combine Original and Improved
         final_output = f"""
@@ -1415,7 +1447,7 @@ async def train_on_images(
 
 Improved Text:
 <<< BEGIN IMPROVED TEXT >>>
-{improved_text}
+{improved_essay_text}
 <<< END IMPROVED TEXT >>>
 """
 
@@ -1462,34 +1494,6 @@ Improved Text:
             headers=cors_headers,
         )
 
-def extract_mistake_patterns(improved_text):
-    print("\n--- DEBUG: Full improved_text ---")
-    print(improved_text)
-    print("--- END improved_text ---\n")
-
-    patterns = []
-
-    # Try to find JSON block inside improved_text
-    json_match = re.search(r"\{[\s\S]*\}", improved_text)
-    if not json_match:
-        print("[DEBUG] No JSON block found in improved_text.")
-        return patterns
-
-    json_str = json_match.group(0)
-    print("[DEBUG] Extracted JSON string candidate:")
-    print(json_str)
-
-    try:
-        data = json.loads(json_str)
-        if "mistake_patterns" in data and isinstance(data["mistake_patterns"], list):
-            patterns = data["mistake_patterns"]
-            print(f"[DEBUG] Parsed {len(patterns)} mistake patterns from JSON.")
-        else:
-            print("[DEBUG] 'mistake_patterns' key not found or not a list in JSON.")
-    except json.JSONDecodeError as e:
-        print(f"[DEBUG] JSON decode error: {e}")
-
-    return patterns
 
 
 
@@ -3472,6 +3476,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
