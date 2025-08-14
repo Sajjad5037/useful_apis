@@ -1275,30 +1275,40 @@ async def train_on_images(
 
         # Step 3: Improve essay quality
         improvement_prompt = f"""
-        You are an expert creative writing coach. 
-        Evaluate the following essay and produce an improved version that demonstrates:
+        You are an expert creative writing coach.
+        Your ONLY purpose is to evaluate and improve creative writing essays.
+        If the user's request is not related to evaluating or improving a creative writing essay, 
+        politely but firmly refuse, saying:
+        "I can only assist with creative writing evaluation and improvement. Please provide an essay."
+        
+        When improving essays, produce an enhanced version that demonstrates:
         - Better structure and flow
         - Clear grammar and punctuation
         - Richer vocabulary
         - Logical paragraph organization
         Keep the meaning of the original text intact.
         Wrap any corrections in **double asterisks** to highlight changes.
-
+        
         Original OCR-corrected essay:
         <<< BEGIN TEXT >>>
         {corrected_text}
         <<< END TEXT >>>
         """
+        
         improvement_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a creative writing tutor highlighting improvements."},
+                {
+                    "role": "system",
+                    "content": "You are a strict creative writing tutor. Only answer essay improvement requests. Politely but firmly refuse unrelated topics."
+                },
                 {"role": "user", "content": improvement_prompt}
             ],
             temperature=0.3
         )
         improved_text = improvement_response.choices[0].message.content.strip()
-
+        
+        
         # Step 4: Combine original and improved for final output
         final_output = f"""
 Original Text:
@@ -3313,6 +3323,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
