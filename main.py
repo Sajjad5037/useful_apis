@@ -1356,7 +1356,11 @@ async def train_on_images(
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a strict yet supportive creative writing tutor. Only answer essay improvement and creative writing guidance requests."
+                    "content": "You are a strict yet supportive creative writing tutor.
+                    You must ONLY respond to requests involving essay improvement or creative writing guidance.
+                    If a request is unrelated — including recipes, factual answers, coding, or general knowledge —
+                    you MUST refuse and reply exactly: 'I can only assist with creative writing evaluation and improvement. Please provide an essay.'"
+
                 },
                 {"role": "user", "content": improvement_prompt}
             ],
@@ -3380,6 +3384,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
