@@ -1438,7 +1438,7 @@ Improved Text:
         
         for idx, mistake in enumerate(mistake_patterns_data, start=1):
             try:
-                mistake_record = MistakePatternEssay(
+                mistake_record = CommonMistake(
                     session_id=session_id_for_db,
                     original_text=mistake.get("original_text", ""),
                     corrected_text=mistake.get("corrected_text", ""),
@@ -3467,6 +3467,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
