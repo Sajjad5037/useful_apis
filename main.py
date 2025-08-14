@@ -1386,7 +1386,24 @@ async def train_on_images(
                 ],
             temperature=0.3
         )
-        improved_text = improvement_response.choices[0].message.content.strip()
+        raw_response = improvement_response.choices[0].message.content.strip()
+
+        # Step 1: Remove any accidental JSON blocks
+        if raw_response.startswith("{") and raw_response.endswith("}"):
+            print("[DEBUG] GPT returned a JSON-like object. Stripping it out.")
+            raw_response = ""  # or extract a key you want
+        
+        # Step 2: Remove triple backticks or code fences
+        raw_response = re.sub(r"^```.*?\n|```$", "", raw_response, flags=re.DOTALL).strip()
+        
+        # Step 3: Ensure this is essay-like (basic heuristic: multiple sentences)
+        if len(raw_response.split()) < 20:
+            print("[WARNING] The returned text is too short. Might be invalid.")
+            raw_response = "[ERROR: No valid essay returned]"
+        
+        improved_text = raw_response
+
+        
         # Extract patterns
         patterns = extract_mistake_patterns(improved_text)
         # -------------------
@@ -1418,6 +1435,7 @@ Improved Text:
             },
             headers=cors_headers,
         )
+        #step 6: find mistake patterns
         try:
             for p in patterns:
                 mistake_record = MistakePattern(
@@ -1446,15 +1464,11 @@ Improved Text:
 
 
 def extract_mistake_patterns(improved_text):
-    """
-    Extract mistake patterns from the improved essay text.
-    Looks for a section like:
-    'Mistake Type: <type>\nExplanation: <desc>'
-    Returns a list of dicts with 'mistake_type' and 'explanation'.
-    """
-    patterns = []
+    print("\n--- DEBUG: Full improved_text ---")
+    print(improved_text)
+    print("--- END improved_text ---\n")
 
-    # Example regex for: "Mistake Type: Spelling\nExplanation: Misspelled word 'recieve'"
+    patterns = []
     pattern_regex = re.compile(
         r"Mistake\s*Type\s*:\s*(?P<type>.+?)\s*(?:\n|$)"
         r"(?:Explanation\s*:\s*(?P<explanation>.+?)(?:\n|$))?",
@@ -1462,16 +1476,15 @@ def extract_mistake_patterns(improved_text):
     )
 
     for match in pattern_regex.finditer(improved_text):
-        mistake_type = match.group("type").strip()
-        explanation = match.group("explanation").strip() if match.group("explanation") else ""
+        print(f"[DEBUG] Matched type: {match.group('type')}")
+        print(f"[DEBUG] Matched explanation: {match.group('explanation')}")
         patterns.append({
-            "mistake_type": mistake_type,
-            "explanation": explanation
+            "mistake_type": match.group("type").strip(),
+            "explanation": match.group("explanation").strip() if match.group("explanation") else ""
         })
 
+    print(f"[DEBUG] Total patterns found: {len(patterns)}")
     return patterns
-
-
 
 # @app.post("/train-on-images")
 #previous working code for CSS_Academy1
@@ -3452,6 +3465,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
