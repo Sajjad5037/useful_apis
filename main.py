@@ -26,7 +26,8 @@ from langchain.vectorstores import FAISS,VectorStore
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import logging
 from typing import Optional,List,Union
-from fastapi import FastAPI, HTTPException, Depends,Form,File,UploadFile
+from fastapi import FastAPI, HTTPException, Depends, Form, File, UploadFile, Request, Header
+
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import (
@@ -1208,14 +1209,16 @@ MANAGEMENT_EMAIL = 'proactive1@live.com'     # where we send reservations
 
 #retrieving common mistake patterns from the database for css essay checker
 @app.get("/css-common-mistakes", response_model=List[CommonMistakeSchema])
-def get_common_mistakes(token: str = Depends(get_token), db: Session = Depends(get_db)):
+def get_common_mistakes(
+    token: Optional[str] = Depends(get_token),
+    db: Session = Depends(get_db)
+):
     try:
         mistakes = db.query(CommonMistake).order_by(CommonMistake.created_at.desc()).all()
         return mistakes
     except Exception as e:
         print("Error fetching common mistakes:", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
-        
+        raise HTTPException(status_code=500, detail="Internal server error")        
 # Token auth dependency
 def get_token(request: Request, authorization: Optional[str] = Header(None)):
     # Skip auth for CORS preflight
@@ -3449,6 +3452,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
