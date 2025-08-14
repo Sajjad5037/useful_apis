@@ -1215,14 +1215,17 @@ def get_common_mistakes(token: str = Depends(get_token), db: Session = Depends(g
     except Exception as e:
         print("Error fetching common mistakes:", e)
         raise HTTPException(status_code=500, detail="Internal server error")
+        
 # Token auth dependency
-def get_token(authorization: Optional[str] = Header(None)):
+def get_token(request: Request, authorization: Optional[str] = Header(None)):
+    # Skip auth for CORS preflight
+    if request.method == "OPTIONS":
+        return None
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Unauthorized")
     token = authorization.split(" ")[1]
-    # Optionally verify JWT here
     return token
-
+    
 @app.options("/train-on-images")
 async def options_train_on_images():
     """Handle CORS preflight requests explicitly."""
@@ -3446,6 +3449,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
