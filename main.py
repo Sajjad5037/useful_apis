@@ -1196,6 +1196,7 @@ SMTP_USER       = 'proactive1.san@gmail.com'      # from_email
 SMTP_PASS       = 'vsjv dmem twvz avhf'           # from_password
 MANAGEMENT_EMAIL = 'proactive1@live.com'     # where we send reservations
 
+
 @app.options("/train-on-images")
 async def options_train_on_images():
     """Handle CORS preflight requests explicitly."""
@@ -1214,6 +1215,7 @@ async def train_on_images(
     images: List[UploadFile] = File(...),
     doctorData: Optional[str] = Form(None),
     request: Request = None,
+    db: Session = Depends(get_db)
 ):
     origin = request.headers.get("origin") if request else None
     cors_headers = {
@@ -1241,12 +1243,12 @@ async def train_on_images(
                     headers=cors_headers,
                 )
 
-        global username_for_interactive_session
-        username_for_interactive_session = doctor.get("name") if doctor else None
+        username = doctor.get("name") if doctor else "unknown"
 
         combined_text = ""
 
-        # OCR extraction for each image
+        # -------------------
+        # OCR extraction
         for idx, image in enumerate(images, start=1):
             image_bytes = await image.read()
             if not image_bytes:
@@ -1275,34 +1277,17 @@ async def train_on_images(
         # -------------------
         # Step 1: Correct OCR errors
         correction_prompt = f"""
-        The following text is extracted using OCR and contains errors such as missing spaces,
-        broken words, or misrecognized characters.
-
-        Your task is to correct only clear OCR errors:
-        - Missing or extra spaces
-        - Broken or merged words
-        - Confused characters (e.g., '0' instead of 'O', '1' instead of 'I')
-
-        Do NOT paraphrase or reword sentences or change sentence structure.
-        Wrap every corrected word or phrase in double asterisks (`**`) so corrections are visible.
-
-        Text to correct:
+        Correct only OCR errors (missing spaces, broken words, misrecognized chars).
+        Wrap corrections in **double asterisks**. Do NOT paraphrase.
+        Text:
         <<< BEGIN TEXT >>>
         {combined_text.strip()}
         <<< END TEXT >>>
         """
-
         correction_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an assistant dedicated to correcting only obvious OCR errors. "
-                        "Fix broken words, missing spaces, and misrecognized characters. "
-                        "Wrap all corrections in double asterisks (`**`)."
-                    )
-                },
+                {"role": "system", "content": "Correct only OCR mistakes and highlight changes in ** **."},
                 {"role": "user", "content": correction_prompt}
             ],
             temperature=0
@@ -1310,91 +1295,43 @@ async def train_on_images(
         corrected_text = correction_response.choices[0].message.content.strip()
 
         # -------------------
-        # Step 2: Produce Original + Corrected format
-        formatting_prompt = f"""
-        You are given the original OCR text and a corrected version of it.
-
-        Please produce the response exactly in this format:
-
-        Original Text:
-        <<< BEGIN ORIGINAL TEXT >>>
-        {combined_text.strip()}
-        <<< END ORIGINAL TEXT >>>
-
-        Corrected Text:
-        <<< BEGIN CORRECTED TEXT >>>
-        {corrected_text}
-        <<< END CORRECTED TEXT >>>
-        """
-
-        formatting_response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an assistant that highlights corrections by wrapping changed words or phrases in `**`."
-                },
-                {"role": "user", "content": formatting_prompt}
-            ],
-            temperature=0.2
-        )
-        ocr_corrections_output = formatting_response.choices[0].message.content.strip()
-
-        # -------------------
-        # Step 3: Improve essay quality
+        # Step 2: Improve essay + request JSON of mistake patterns
         improvement_prompt = f"""
-        You are an expert creative writing coach.  
-        Your ONLY purpose is to evaluate, guide, and improve creative writing essays.  
-        
-        If the user's request is not related to evaluating or improving a creative writing essay,  
-        politely but firmly refuse, saying:  
-        "I can only assist with creative writing evaluation and improvement. Please provide an essay."
-        
-        When improving essays, produce an enhanced version that demonstrates:
-        - Better structure and flow
-        - Clear grammar and punctuation
-        - Richer vocabulary
-        - Logical paragraph organization
-        - Improved creative impact without changing the intended meaning
-        
-        Wrap any corrections in **double asterisks** to highlight changes.
-        
-        After improving the essay, also output a JSON list named `mistake_patterns` where each entry contains:
+        Improve the essay for structure, grammar, punctuation, vocabulary, and style.
+        Wrap all corrections in **double asterisks**.
+        Also output a JSON list named "mistake_patterns" with entries:
         - mistake_type (grammar, punctuation, vocabulary, structure, style)
         - original_text
         - corrected_text
         - explanation
-        
+
         Original OCR-corrected essay:
         <<< BEGIN TEXT >>>
         {corrected_text}
         <<< END TEXT >>>
         """
-
-
         improvement_response = client.chat.completions.create(
             model="gpt-4o-mini",
-                messages = [
-                    {
-                        "role": "system",
-                        "content": """You are a strict yet supportive creative writing tutor.
-                You must ONLY respond to requests involving essay improvement or creative writing guidance.
-                If a request is unrelated — including recipes, factual answers, coding, or general knowledge —
-                you MUST refuse and reply exactly: 'I can only assist with creative writing evaluation and improvement. Please provide an essay.'"""
-                    },
-                    {"role": "user", "content": improvement_prompt}
-                ],
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are a strict yet supportive creative writing tutor.
+Only respond to essay improvement requests. If unrelated, reply exactly:
+'I can only assist with creative writing evaluation and improvement. Please provide an essay.'"""
+                },
+                {"role": "user", "content": improvement_prompt}
+            ],
             temperature=0.3
         )
+
         raw_response = improvement_response.choices[0].message.content.strip()
 
         # -----------------------------
-        # Step A: Extract JSON block with mistake patterns
+        # Step 3: Extract JSON block with mistake patterns
         json_match = re.search(r"```json\s*(\{.*?\})\s*```", raw_response, re.DOTALL)
         if not json_match:
-            # fallback: try to find a JSON object anywhere in the text
-            json_match = re.search(r"(\{.*?\})", raw_response, re.DOTALL)
-        
+            json_match = re.search(r"(\{.*\"mistake_patterns\".*?\})", raw_response, re.DOTALL)
+
         mistake_patterns_data = {"mistake_patterns": []}
         if json_match:
             try:
@@ -1404,16 +1341,17 @@ async def train_on_images(
                 print(f"[ERROR] JSON decode failed: {e}")
         else:
             print("[WARNING] No JSON block found in AI response")
-        
+
         # -----------------------------
-        # Step B: Remove JSON from essay text for user display
+        # Step 4: Remove JSON from essay text for user display
         improved_essay_text = re.sub(r"```json.*?```", "", raw_response, flags=re.DOTALL).strip()
-        
+        improved_essay_text = re.sub(r"\{.*\"mistake_patterns\".*?\}", "", improved_essay_text, flags=re.DOTALL).strip()
+
         # -----------------------------
-        # Step C: Store mistake patterns in the database
+        # Step 5: Store mistake patterns in the database
         for pattern in mistake_patterns_data.get("mistake_patterns", []):
             mp_record = MistakePattern(
-                username=username_for_interactive_session,
+                username=username,
                 mistake_type=pattern.get("mistake_type", ""),
                 original_text=pattern.get("original_text", ""),
                 corrected_text=pattern.get("corrected_text", ""),
@@ -1422,28 +1360,21 @@ async def train_on_images(
             )
             try:
                 db.add(mp_record)
-                db.commit()
-                print(f"[INFO] Stored mistake pattern: {pattern.get('mistake_type')}")
             except SQLAlchemyError as e:
                 db.rollback()
-                print(f"[ERROR] Failed to store mistake pattern: {e}")
-        
+                print(f"[ERROR] Failed to add mistake pattern to DB session: {e}")
+
+        try:
+            db.commit()
+            print(f"[INFO] Stored {len(mistake_patterns_data.get('mistake_patterns', []))} mistake patterns in DB")
+        except SQLAlchemyError as e:
+            db.rollback()
+            print(f"[ERROR] Failed to commit mistake patterns: {e}")
+
         # -----------------------------
-        # Step D: Prepare final output for user
+        # Step 6: Combine OCR corrections + improved essay
         final_output = f"""
-        {ocr_corrections_output}
-        
-        Improved Text:
-        <<< BEGIN IMPROVED TEXT >>>
-        {improved_essay_text}
-        <<< END IMPROVED TEXT >>>
-        """
-        
-        
-        # -------------------
-        # Step 4: Combine Original and Improved
-        final_output = f"""
-{ocr_corrections_output}
+{corrected_text}
 
 Improved Text:
 <<< BEGIN IMPROVED TEXT >>>
@@ -1451,8 +1382,8 @@ Improved Text:
 <<< END IMPROVED TEXT >>>
 """
 
-        # -------------------
-        # Step 5: Save session
+        # -----------------------------
+        # Step 7: Save session
         session_id = str(uuid4())
         session_texts[session_id] = {
             "text": final_output,
@@ -1469,32 +1400,15 @@ Improved Text:
             },
             headers=cors_headers,
         )
-        #step 6: find mistake patterns
-        try:
-            for p in patterns:
-                mistake_record = MistakePattern(
-                    username=username_for_interactive_session or "unknown",
-                    mistake_type=p.get("mistake_type", "Unknown"),
-                    description=p.get("explanation", ""),
-                    created_at=datetime.utcnow()
-                )
-                db.add(mistake_record)
-        
-            db.commit()
-            print("[INFO] Mistake patterns stored in database.")
-        
-        except SQLAlchemyError as e:
-            db.rollback()
-            print(f"[ERROR] Failed to store mistake patterns: {e}")
+
     except Exception as e:
         tb_str = traceback.format_exc()
+        print(f"[ERROR] Unexpected server error: {e}\n{tb_str}")
         return JSONResponse(
             content={"detail": f"Unexpected server error: {str(e)}\n{tb_str}"},
             status_code=500,
             headers=cors_headers,
         )
-
-
 
 
 # @app.post("/train-on-images")
@@ -3476,6 +3390,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
