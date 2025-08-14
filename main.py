@@ -1241,12 +1241,11 @@ async def train_on_images(
                     headers=cors_headers,
                 )
 
-        global username_for_interactive_session
-        username_for_interactive_session = doctor.get("name") if doctor else None
+        username = doctor.get("name") if doctor else "unknown"
 
         combined_text = ""
-
-        # OCR extraction for each image
+        # -------------------
+        # OCR extraction
         for idx, image in enumerate(images, start=1):
             image_bytes = await image.read()
             if not image_bytes:
@@ -1275,11 +1274,8 @@ async def train_on_images(
         # -------------------
         # Step 1: Correct OCR errors
         correction_prompt = f"""
-        The following text is extracted using OCR and contains errors such as missing spaces,
-        broken words, or misrecognized characters.
-
-        Correct only clear OCR errors, wrap corrections in **double asterisks**, do NOT paraphrase.
-
+        Correct only clear OCR errors (spaces, broken words, misrecognized characters).
+        Wrap corrections in **double asterisks**. Do NOT paraphrase.
         Text:
         <<< BEGIN TEXT >>>
         {combined_text.strip()}
@@ -1289,13 +1285,7 @@ async def train_on_images(
         correction_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an assistant dedicated to correcting only obvious OCR errors. "
-                        "Wrap all corrections in **double asterisks**."
-                    )
-                },
+                {"role": "system", "content": "You correct only OCR mistakes."},
                 {"role": "user", "content": correction_prompt}
             ],
             temperature=0
@@ -1303,49 +1293,13 @@ async def train_on_images(
         corrected_text = correction_response.choices[0].message.content.strip()
 
         # -------------------
-        # Step 2: Produce Original + Corrected format
-        formatting_prompt = f"""
-        Original OCR Text:
-        <<< BEGIN ORIGINAL TEXT >>>
-        {combined_text.strip()}
-        <<< END ORIGINAL TEXT >>>
-
-        Corrected Text:
-        <<< BEGIN CORRECTED TEXT >>>
-        {corrected_text}
-        <<< END CORRECTED TEXT >>>
-        """
-
-        formatting_response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Highlight corrections by wrapping changed words or phrases in **double asterisks**."
-                },
-                {"role": "user", "content": formatting_prompt}
-            ],
-            temperature=0.2
-        )
-        ocr_corrections_output = formatting_response.choices[0].message.content.strip()
-
-        # -------------------
-        # Step 3: Improve essay quality with strict JSON output
+        # Step 2: Improve essay quality & get mistake patterns
         improvement_prompt = f"""
-        You are a creative writing tutor. Improve the following essay while highlighting corrections in **double asterisks**.
-        After the essay, ONLY output valid JSON in this exact format (no extra text, no code fences):
-        {{
-            "mistake_patterns": [
-                {{
-                    "mistake_type": "...",
-                    "original_text": "...",
-                    "corrected_text": "...",
-                    "explanation": "..."
-                }}
-            ]
-        }}
+        Improve the following essay. Make corrections to grammar, punctuation, vocabulary, and style.
+        Highlight all corrections in **double asterisks**.
+        After the essay, provide a JSON list of mistake patterns. Essay quality is the priority; JSON is secondary.
 
-        Essay to improve:
+        Essay:
         <<< BEGIN TEXT >>>
         {corrected_text}
         <<< END TEXT >>>
@@ -1354,43 +1308,42 @@ async def train_on_images(
         improvement_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You ONLY respond with the JSON and improved essay. No other text."},
+                {"role": "system", "content": "You are a creative writing coach. Essay quality is your priority."},
                 {"role": "user", "content": improvement_prompt}
             ],
             temperature=0.3
         )
-
         raw_response = improvement_response.choices[0].message.content.strip()
 
-        # -----------------------------
-        # Step 4: Extract JSON for mistake patterns
-        try:
-            start = raw_response.find("{")
-            end = raw_response.rfind("}") + 1
-            if start != -1 and end != -1:
-                json_text = raw_response[start:end]
-                mistake_patterns_data = json.loads(json_text)
+        # -------------------
+        # Step 3: Extract JSON for mistake patterns
+        json_match = re.search(r"```json\s*(\{.*?\})\s*```", raw_response, re.DOTALL)
+        if not json_match:
+            json_match = re.search(r"(\{.*?\})", raw_response, re.DOTALL)
+
+        mistake_patterns_data = {"mistake_patterns": []}
+        if json_match:
+            try:
+                mistake_patterns_data = json.loads(json_match.group(1))
                 print(f"[DEBUG] Extracted {len(mistake_patterns_data.get('mistake_patterns', []))} mistake patterns")
-            else:
-                print("[WARNING] No JSON braces found in AI response")
-                mistake_patterns_data = {"mistake_patterns": []}
-        except json.JSONDecodeError as e:
-            print(f"[ERROR] JSON decode failed: {e}")
-            mistake_patterns_data = {"mistake_patterns": []}
+            except json.JSONDecodeError as e:
+                print(f"[ERROR] JSON decode failed: {e}")
+        else:
+            print("[WARNING] No JSON block found in AI response")
 
-        # -----------------------------
-        # Step 5: Remove JSON from essay for user display
-        improved_essay_text = re.sub(r"\{.*\}", "", raw_response, flags=re.DOTALL).strip()
+        # -------------------
+        # Step 4: Remove JSON from essay for user display
+        improved_essay_text = re.sub(r"```json.*?```", "", raw_response, flags=re.DOTALL).strip()
 
-        # -----------------------------
-        # Step 6: Store mistake patterns in DB
+        # -------------------
+        # Step 5: Store mistake patterns in DB
         for pattern in mistake_patterns_data.get("mistake_patterns", []):
             mp_record = MistakePattern(
-                username=username_for_interactive_session or "unknown",
-                mistake_type=pattern.get("mistake_type", ""),
-                original_text=pattern.get("original_text", ""),
-                corrected_text=pattern.get("corrected_text", ""),
-                description=pattern.get("explanation", ""),
+                username=username,
+                mistake_type=pattern.get("mistake_type") or "Unknown",
+                original_text=pattern.get("original_text") or "",
+                corrected_text=pattern.get("corrected_text") or "",
+                description=pattern.get("explanation") or "",
                 created_at=datetime.utcnow()
             )
             try:
@@ -1401,10 +1354,10 @@ async def train_on_images(
                 db.rollback()
                 print(f"[ERROR] Failed to store mistake pattern: {e}")
 
-        # -----------------------------
-        # Step 7: Prepare final output for user
+        # -------------------
+        # Step 6: Prepare final output
         final_output = f"""
-{ocr_corrections_output}
+{ocr_corrections_output if 'ocr_corrections_output' in locals() else ''}
 
 Improved Text:
 <<< BEGIN IMPROVED TEXT >>>
@@ -1412,8 +1365,7 @@ Improved Text:
 <<< END IMPROVED TEXT >>>
 """
 
-        # -------------------
-        # Step 8: Save session
+        # Save session
         session_id = str(uuid4())
         session_texts[session_id] = {
             "text": final_output,
@@ -1438,7 +1390,6 @@ Improved Text:
             status_code=500,
             headers=cors_headers,
         )
-
 
 
 # @app.post("/train-on-images")
@@ -3420,6 +3371,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
