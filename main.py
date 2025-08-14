@@ -1342,19 +1342,21 @@ async def train_on_images(
         # Step 3: Improve essay quality
         improvement_prompt = f"""
         You are an expert creative writing coach.  
-        Your ONLY purpose is to improve creative writing essays.
+        Your sole task is to improve creative writing essays.
         
         Instructions:
         
-        1. Improve the following essay by correcting grammar, punctuation, vocabulary, and style.
-        2. Highlight **all changes** by wrapping them in **double asterisks**.
-        3. Do NOT add extra evaluation, suggestions, or commentary. Only show the improved essay with corrections in **bold**.
+        1. Improve the essay by correcting grammar, punctuation, vocabulary, and style.
+        2. Prefer concise, smooth, and natural phrasing. Avoid redundant words or awkward constructions.
+        3. Highlight **all changes** by wrapping them in **double asterisks**.
+        4. Do NOT add commentary, evaluation, or suggestions. Only return the improved essay with changes in **bold**.
         
         Original OCR-corrected essay:
         <<< BEGIN TEXT >>>
         {corrected_text}
         <<< END TEXT >>>
         """
+
         improvement_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -3387,6 +3389,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
