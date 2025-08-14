@@ -1353,17 +1353,16 @@ async def train_on_images(
 
         improvement_response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a strict yet supportive creative writing tutor.
-                    You must ONLY respond to requests involving essay improvement or creative writing guidance.
-                    If a request is unrelated — including recipes, factual answers, coding, or general knowledge —
-                    you MUST refuse and reply exactly: 'I can only assist with creative writing evaluation and improvement. Please provide an essay.'"
-
-                },
-                {"role": "user", "content": improvement_prompt}
-            ],
+                messages = [
+                    {
+                        "role": "system",
+                        "content": """You are a strict yet supportive creative writing tutor.
+                You must ONLY respond to requests involving essay improvement or creative writing guidance.
+                If a request is unrelated — including recipes, factual answers, coding, or general knowledge —
+                you MUST refuse and reply exactly: 'I can only assist with creative writing evaluation and improvement. Please provide an essay.'"""
+                    },
+                    {"role": "user", "content": improvement_prompt}
+                ],
             temperature=0.3
         )
         improved_text = improvement_response.choices[0].message.content.strip()
@@ -3384,6 +3383,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
