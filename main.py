@@ -176,18 +176,16 @@ class CostPerInteraction(Base):
     cost_usd = Column(Numeric(10, 6), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-class MistakePattern(Base):
-    __tablename__ = "mistake_pattern"
+class MistakePatternEssay(Base):
+    __tablename__ = "mistake_pattern_essay"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    username = Column(String(100), nullable=False)  # Who made the mistake
-    essay_id = Column(Integer, nullable=True)       # Optional link to essay if you want
-    category = Column(String(100), nullable=False)  # e.g. "Grammar", "Spelling", "Structure"
-    description = Column(Text, nullable=False)      # Detailed description of the mistake
-    example_text = Column(Text, nullable=True)      # Example from the essay
-    suggestion = Column(Text, nullable=True)        # Suggested correction
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, index=True)  # link to OCR session or essay session
+    original_text = Column(Text, nullable=False)  # original fragment from the essay
+    corrected_text = Column(Text, nullable=False)  # improved fragment
+    category = Column(String, nullable=False)  # Grammar, Punctuation, Vocabulary, etc.
+    explanation = Column(Text, nullable=True)  # optional explanation behind the correction
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class Vector(UserDefinedType):
     def __init__(self, dimension):
@@ -1327,9 +1325,97 @@ Improved Text:
 <<< END IMPROVED TEXT >>>
 """
 
-        # Step 5: Store session
+        # Step 5: Analyze mistake patterns and generate structured JSON for DB
+        analysis_prompt = f"""
+        You are an expert essay analysis assistant.
+        
+        Compare the original and improved essay.
+        For each correction, create an object with:
+        - "original_text": the exact original fragment
+        - "corrected_text": the improved fragment
+        - "category": one of ["Grammar", "Punctuation", "Vocabulary", "Sentence structure / flow", "Redundancy / conciseness"]
+        - "explanation": a concise explanation of why the change was made
+        
+        Produce ONLY a JSON array of objects, without any extra text.
+        Even if there are no corrections, return an empty array: []
+        
+        Original Essay:
+        <<< BEGIN ORIGINAL >>>
+        {combined_text.strip()}
+        <<< END ORIGINAL >>>
+        
+        Improved Essay:
+        <<< BEGIN IMPROVED >>>
+        {improved_text}
+        <<< END IMPROVED >>>
+        """
+        
+        print("[DEBUG] Sending essay analysis prompt to OpenAI...")
+        
+        try:
+            analysis_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are an assistant that outputs only clean, parsable JSON for essay mistake patterns."},
+                    {"role": "user", "content": analysis_prompt}
+                ],
+                temperature=0
+            )
+            print("[DEBUG] Received response from OpenAI.")
+        except Exception as e:
+            print(f"[ERROR] Failed to get response from OpenAI: {e}")
+            analysis_response = None
+        
+        # Safely parse AI response into Python list
+        mistake_patterns_data = []
+        if analysis_response:
+            raw_content = analysis_response.choices[0].message.content.strip()
+            print(f"[DEBUG] Raw AI response:\n{raw_content}\n")
+            try:
+                mistake_patterns_data = json.loads(raw_content)
+                print(f"[DEBUG] Parsed {len(mistake_patterns_data)} mistake patterns successfully.")
+            except json.JSONDecodeError as e:
+                print(f"[ERROR] Failed to parse AI response as JSON: {e}")
+                print("[DEBUG] Using empty list for mistake_patterns_data.")
+                mistake_patterns_data = []
+        else:
+            print("[WARNING] No response received from OpenAI, mistake_patterns_data set to empty list.")
+        
+        # Step 6: Save each mistake pattern as a separate row in the database
+        session_id_for_db = str(uuid4())
+        saved_count = 0
+        
+        for idx, mistake in enumerate(mistake_patterns_data, start=1):
+            try:
+                mistake_record = MistakePatternEssay(
+                    session_id=session_id_for_db,
+                    original_text=mistake.get("original_text", ""),
+                    corrected_text=mistake.get("corrected_text", ""),
+                    category=mistake.get("category", ""),
+                    explanation=mistake.get("explanation", ""),
+                    created_at=datetime.utcnow()
+                )
+                db.add(mistake_record)
+                saved_count += 1
+            except Exception as e:
+                print(f"[ERROR] Failed to create MistakePatternEssay record for item {idx}: {e}")
+        
+        try:
+            db.commit()
+            print(f"[INFO] Successfully saved {saved_count} mistake patterns to the database with session_id: {session_id_for_db}")
+        except SQLAlchemyError as e:
+            db.rollback()
+            print(f"[ERROR] Failed to commit mistake patterns to DB: {e}")
+        except Exception as e:
+            print(f"[ERROR] Unexpected error while committing mistake patterns: {e}")
+
+        # Step 6: Store session
         session_id = str(uuid4())
-        session_texts[session_id] = {"text": final_output, "doctorData": doctor}
+        session_texts[session_id] = {
+            "text": final_output,
+            "doctorData": doctor,
+            "mistake_patterns": mistake_patterns_data
+        }
 
         return JSONResponse(
             content={
@@ -1338,6 +1424,7 @@ Improved Text:
                 "images_processed": len(images),
                 "total_text_length": len(final_output),
                 "corrected_text": final_output,
+                "mistake_patterns": mistake_patterns_data
             },
             headers=cors_headers,
         )
@@ -1349,7 +1436,6 @@ Improved Text:
             status_code=500,
             headers=cors_headers,
         )
-
 
 # @app.post("/train-on-images")
 #previous working code for CSS_Academy1
@@ -3330,6 +3416,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
