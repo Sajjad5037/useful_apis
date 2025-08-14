@@ -1296,9 +1296,18 @@ async def train_on_images(
         # Step 2: Improve essay quality & get mistake patterns
         improvement_prompt = f"""
         Improve the following essay. Make corrections to grammar, punctuation, vocabulary, and style.
-        Highlight all corrections in **double asterisks**.
-        After the essay, provide a JSON list of mistake patterns. Essay quality is the priority; JSON is secondary.
-
+        Highlight all corrections in **double asterisks**. Essay quality is the priority; JSON is secondary.
+        
+        After the essay, provide a JSON object with the key `mistake_patterns`, which is a list of objects. 
+        Each object should contain the following fields exactly:
+        
+        - mistake_type: grammar, punctuation, vocabulary, structure, style
+        - original_text
+        - corrected_text
+        - explanation
+        
+        Wrap the JSON block in triple backticks with 'json'.
+        
         Essay:
         <<< BEGIN TEXT >>>
         {corrected_text}
@@ -3371,6 +3380,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
