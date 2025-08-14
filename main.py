@@ -177,7 +177,7 @@ class CostPerInteraction(Base):
     cost_usd = Column(Numeric(10, 6), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-class MistakePatternEssay(Base):
+class CommonMistake(Base):
     __tablename__ = "mistake_pattern_essay"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -3465,6 +3465,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
