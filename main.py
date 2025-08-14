@@ -177,16 +177,17 @@ class CostPerInteraction(Base):
     cost_usd = Column(Numeric(10, 6), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-class CommonMistake(Base):
-    __tablename__ = "mistake_pattern_essay"
+class CommonMistakeSchema(BaseModel):
+    id: int
+    session_id: str
+    original_text: str
+    corrected_text: str
+    category: Optional[str] = None
+    explanation: Optional[str] = None
+    created_at: datetime  # <- change from str to datetime
 
-    id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(String, index=True)  # link to OCR session or essay session
-    original_text = Column(Text, nullable=False)  # original fragment from the essay
-    corrected_text = Column(Text, nullable=False)  # improved fragment
-    category = Column(String, nullable=False)  # Grammar, Punctuation, Vocabulary, etc.
-    explanation = Column(Text, nullable=True)  # optional explanation behind the correction
-    created_at = Column(DateTime, default=datetime.utcnow)
+    class Config:
+        orm_mode = True
 
 class Vector(UserDefinedType):
     def __init__(self, dimension):
@@ -3465,6 +3466,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
