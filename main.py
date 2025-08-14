@@ -1208,28 +1208,40 @@ SMTP_PASS       = 'vsjv dmem twvz avhf'           # from_password
 MANAGEMENT_EMAIL = 'proactive1@live.com'     # where we send reservations
 
 #retrieving common mistake patterns from the database for css essay checker
-# Token auth dependency
+# Token auth dependency with debugging
 def get_token(request: Request, authorization: Optional[str] = Header(None)):
+    print("=== get_token called ===")
+    print("Request method:", request.method)
+    print("Authorization header:", authorization)
+
     # Skip auth for CORS preflight
     if request.method == "OPTIONS":
+        print("CORS preflight request, skipping token check")
         return None
+
     if not authorization or not authorization.startswith("Bearer "):
+        print("Authorization missing or invalid")
         raise HTTPException(status_code=401, detail="Unauthorized")
+
     token = authorization.split(" ")[1]
+    print("Extracted token:", token)
     return token
+
 
 @app.get("/css-common-mistakes", response_model=List[CommonMistakeSchema])
 def get_common_mistakes(
     token: Optional[str] = Depends(get_token),
     db: Session = Depends(get_db)
 ):
+    print("=== get_common_mistakes called ===")
+    print("Token received in endpoint:", token)
     try:
         mistakes = db.query(CommonMistake).order_by(CommonMistake.created_at.desc()).all()
+        print(f"Fetched {len(mistakes)} mistakes from database")
         return mistakes
     except Exception as e:
         print("Error fetching common mistakes:", e)
-        raise HTTPException(status_code=500, detail="Internal server error")        
-    
+        raise HTTPException(status_code=500, detail="Internal server error")    
 @app.options("/train-on-images")
 async def options_train_on_images():
     """Handle CORS preflight requests explicitly."""
@@ -3453,6 +3465,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
