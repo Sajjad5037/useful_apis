@@ -1208,6 +1208,16 @@ SMTP_PASS       = 'vsjv dmem twvz avhf'           # from_password
 MANAGEMENT_EMAIL = 'proactive1@live.com'     # where we send reservations
 
 #retrieving common mistake patterns from the database for css essay checker
+# Token auth dependency
+def get_token(request: Request, authorization: Optional[str] = Header(None)):
+    # Skip auth for CORS preflight
+    if request.method == "OPTIONS":
+        return None
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    token = authorization.split(" ")[1]
+    return token
+
 @app.get("/css-common-mistakes", response_model=List[CommonMistakeSchema])
 def get_common_mistakes(
     token: Optional[str] = Depends(get_token),
@@ -1219,15 +1229,6 @@ def get_common_mistakes(
     except Exception as e:
         print("Error fetching common mistakes:", e)
         raise HTTPException(status_code=500, detail="Internal server error")        
-# Token auth dependency
-def get_token(request: Request, authorization: Optional[str] = Header(None)):
-    # Skip auth for CORS preflight
-    if request.method == "OPTIONS":
-        return None
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    token = authorization.split(" ")[1]
-    return token
     
 @app.options("/train-on-images")
 async def options_train_on_images():
@@ -3452,6 +3453,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
