@@ -1209,6 +1209,7 @@ async def options_train_on_images():
         status_code=200,
     )
 
+
 @app.post("/train-on-images")
 async def train_on_images(
     images: List[UploadFile] = File(...),
@@ -1217,24 +1218,28 @@ async def train_on_images(
 ):
     origin = request.headers.get("origin") if request else None
     cors_headers = {
-        "Access-Control-Allow-Origin": origin or "*",
+        "Access-Control-Allow-Origin": origin if origin else "*",
         "Access-Control-Allow-Credentials": "true",
     }
 
-    # Validate uploaded files
     if not images:
-        return JSONResponse({"detail": "No images uploaded"}, status_code=400, headers=cors_headers)
+        return JSONResponse(
+            content={"detail": "No images uploaded"},
+            status_code=400,
+            headers=cors_headers,
+        )
 
-    # Parse doctor data if provided
+    # Parse doctorData JSON string to Python dict
     doctor = {}
     if doctorData:
         try:
             doctor = json.loads(doctorData)
-            print(f"[train-on-images] doctorData received: {doctor}")
         except json.JSONDecodeError:
-            return JSONResponse({"detail": "Invalid doctorData JSON"}, status_code=400, headers=cors_headers)
-    else:
-        print("[train-on-images] No doctorData provided")
+            return JSONResponse(
+                content={"detail": "Invalid doctorData JSON"},
+                status_code=400,
+                headers=cors_headers,
+            )
 
     global username_for_interactive_session
     username_for_interactive_session = doctor.get("name") if doctor else None
@@ -1243,76 +1248,88 @@ async def train_on_images(
 
     try:
         # Step 1: Extract text from images using Google Vision API
-        print(f"[train-on-images] Processing {len(images)} image(s)")
-        for idx, image in enumerate(images, start=1):
+        for image in images:
             image_bytes = await image.read()
             if not image_bytes:
-                print(f"[train-on-images] Skipping empty image #{idx}")
                 continue
-
             ocr_result = client_google_vision_api.document_text_detection(
                 image=vision.Image(content=image_bytes)
             )
-            if ocr_result.error.message:
-                return JSONResponse(
-                    {"detail": f"Google Vision API error: {ocr_result.error.message}"},
-                    status_code=500,
-                    headers=cors_headers,
-                )
-
             extracted_text = ocr_result.full_text_annotation.text if ocr_result.full_text_annotation else ""
             combined_text += extracted_text + "\n\n"
-            print(f"[train-on-images] Image #{idx} → {len(extracted_text)} chars extracted")
 
         if not combined_text.strip():
-            return JSONResponse({"detail": "No text extracted from images"}, status_code=400, headers=cors_headers)
+            return JSONResponse(
+                content={"detail": "No text extracted from images"},
+                status_code=400,
+                headers=cors_headers,
+            )
 
-        # Step 2: Correct OCR errors with GPT
+        # Step 2: Correct OCR errors
         correction_prompt = f"""
-        Correct only clear OCR errors in the text below:
-        - Missing or extra spaces
-        - Broken or merged words
-        - Confused characters (e.g., 0 → O, 1 → I)
-        Do NOT paraphrase or restructure sentences.
-        Wrap every correction in double asterisks (**).
-
-        Example:
-        Input:  "Thesis Statement: Ensuring the provision f in human rights"
-        Output: "Thesis Statement: Ensuring the provision **of** human rights"
+        Correct only clear OCR errors in the following text:
+        - Fix broken or merged words
+        - Correct misrecognized characters (0 → O, 1 → I, etc.)
+        - Fix missing or extra spaces
+        Do NOT paraphrase or change sentence structure.
 
         Text:
         <<< BEGIN TEXT >>>
         {combined_text.strip()}
         <<< END TEXT >>>
         """
-
         correction_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You fix OCR text without changing meaning or sentence structure."},
+                {"role": "system", "content": "You are an assistant that fixes OCR errors only."},
                 {"role": "user", "content": correction_prompt}
             ],
             temperature=0
         )
         corrected_text = correction_response.choices[0].message.content.strip()
 
-        # Step 3: Format output
-        final_output = f"""
-        Original Text:
-        <<< BEGIN ORIGINAL TEXT >>>
-        {combined_text.strip()}
-        <<< END ORIGINAL TEXT >>>
+        # Step 3: Improve essay quality
+        improvement_prompt = f"""
+        You are an expert creative writing coach. 
+        Evaluate the following essay and produce an improved version that demonstrates:
+        - Better structure and flow
+        - Clear grammar and punctuation
+        - Richer vocabulary
+        - Logical paragraph organization
+        Keep the meaning of the original text intact.
+        Wrap any corrections in **double asterisks** to highlight changes.
 
-        Improved Text:
-        <<< BEGIN IMPROVED TEXT >>>
+        Original OCR-corrected essay:
+        <<< BEGIN TEXT >>>
         {corrected_text}
-        <<< END IMPROVED TEXT >>>
+        <<< END TEXT >>>
         """
+        improvement_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a creative writing tutor highlighting improvements."},
+                {"role": "user", "content": improvement_prompt}
+            ],
+            temperature=0.3
+        )
+        improved_text = improvement_response.choices[0].message.content.strip()
 
-        # Step 4: Store session
+        # Step 4: Combine original and improved for final output
+        final_output = f"""
+Original Text:
+<<< BEGIN ORIGINAL TEXT >>>
+{combined_text.strip()}
+<<< END ORIGINAL TEXT >>>
+
+Improved Text:
+<<< BEGIN IMPROVED TEXT >>>
+{improved_text}
+<<< END IMPROVED TEXT >>>
+"""
+
+        # Step 5: Store session
         session_id = str(uuid4())
         session_texts[session_id] = {"text": final_output, "doctorData": doctor}
-        print(f"[train-on-images] Session {session_id} created ({len(final_output)} chars)")
 
         return JSONResponse(
             content={
@@ -1326,10 +1343,9 @@ async def train_on_images(
         )
 
     except Exception as e:
-        print(f"[train-on-images] ERROR: {e}")
-        print(traceback.format_exc())
+        tb_str = traceback.format_exc()
         return JSONResponse(
-            {"detail": f"Unexpected server error: {str(e)}"},
+            content={"detail": f"Unexpected server error: {str(e)}\n{tb_str}"},
             status_code=500,
             headers=cors_headers,
         )
@@ -3314,6 +3330,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
