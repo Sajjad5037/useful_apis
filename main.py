@@ -1194,59 +1194,180 @@ async def options_train_on_images():
         },
         status_code=200,
     )
-#start here
-# Step 3: Improve essay quality
-improvement_prompt = f"""
-You are an expert creative writing coach.  
-Your ONLY purpose is to evaluate, guide, and improve creative writing essays.  
-This will be an interactive session where the student may ask you for ongoing guidance, clarification, and tips related to their essay.  
 
-If the user's request is not related to evaluating or improving a creative writing essay,  
-politely but firmly refuse, saying:  
-"I can only assist with creative writing evaluation and improvement. Please provide an essay."
+@app.post("/train-on-images")
+async def train_on_images(
+    images: List[UploadFile] = File(...),
+    doctorData: Optional[str] = Form(None),
+    request: Request = None,
+):
+    origin = request.headers.get("origin") if request else None
+    cors_headers = {
+        "Access-Control-Allow-Origin": origin if origin else "*",
+        "Access-Control-Allow-Credentials": "true",
+    }
 
-When improving essays, produce an enhanced version that demonstrates:
-- Better structure and flow
-- Clear grammar and punctuation
-- Richer vocabulary
-- Logical paragraph organization
-- Improved creative impact without changing the intended meaning
+    try:
+        if not images:
+            return JSONResponse(
+                content={"detail": "No images uploaded"},
+                status_code=400,
+                headers=cors_headers,
+            )
 
-During the session:
-- Be encouraging yet honest about mistakes
-- Give targeted feedback on specific weaknesses
-- Offer short examples or rewrites when necessary
-- Avoid drifting to unrelated topics
+        # Parse doctorData
+        doctor = {}
+        if doctorData:
+            try:
+                doctor = json.loads(doctorData)
+            except json.JSONDecodeError:
+                return JSONResponse(
+                    content={"detail": "Invalid doctorData JSON"},
+                    status_code=400,
+                    headers=cors_headers,
+                )
 
-Wrap any corrections in **double asterisks** to highlight changes.
+        global username_for_interactive_session
+        username_for_interactive_session = doctor.get("name") if doctor else None
 
-Original OCR-corrected essay:
-<<< BEGIN TEXT >>>
-{corrected_text}
-<<< END TEXT >>>
-"""
+        combined_text = ""
 
-improvement_response = client.chat.completions.create(
-    model="gpt-4o-mini",
-    messages=[
-        {
-            "role": "system",
-            "content": "You are a strict yet supportive creative writing tutor. Only answer essay improvement and creative writing guidance requests. Politely but firmly refuse unrelated topics."
-        },
-        {"role": "user", "content": improvement_prompt}
-    ],
-    temperature=0.3
-)
-improved_text = improvement_response.choices[0].message.content.strip()
+        # OCR extraction for each image
+        for idx, image in enumerate(images, start=1):
+            image_bytes = await image.read()
+            if not image_bytes:
+                continue
 
-        #end here
-        
-        # Step 4: Combine original and improved for final output
+            image_content = vision.Image(content=image_bytes)
+            response = client_google_vision_api.document_text_detection(image=image_content)
+
+            if response.error.message:
+                return JSONResponse(
+                    content={"detail": f"Google Vision API error: {response.error.message}"},
+                    status_code=500,
+                    headers=cors_headers,
+                )
+
+            ocr_text = response.full_text_annotation.text if response.full_text_annotation else ""
+            combined_text += ocr_text + "\n\n"
+
+        if not combined_text.strip():
+            return JSONResponse(
+                content={"detail": "No text extracted from images"},
+                status_code=400,
+                headers=cors_headers,
+            )
+
+        # -------------------
+        # Step 1: Correct OCR errors
+        correction_prompt = f"""
+        The following text is extracted using OCR and contains errors such as missing spaces,
+        broken words, or misrecognized characters.
+
+        Your task is to correct only clear OCR errors:
+        - Missing or extra spaces
+        - Broken or merged words
+        - Confused characters (e.g., '0' instead of 'O', '1' instead of 'I')
+
+        Do NOT paraphrase or reword sentences or change sentence structure.
+        Wrap every corrected word or phrase in double asterisks (`**`) so corrections are visible.
+
+        Text to correct:
+        <<< BEGIN TEXT >>>
+        {combined_text.strip()}
+        <<< END TEXT >>>
+        """
+
+        correction_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an assistant dedicated to correcting only obvious OCR errors. "
+                        "Fix broken words, missing spaces, and misrecognized characters. "
+                        "Wrap all corrections in double asterisks (`**`)."
+                    )
+                },
+                {"role": "user", "content": correction_prompt}
+            ],
+            temperature=0
+        )
+        corrected_text = correction_response.choices[0].message.content.strip()
+
+        # -------------------
+        # Step 2: Produce Original + Corrected format
+        formatting_prompt = f"""
+        You are given the original OCR text and a corrected version of it.
+
+        Please produce the response exactly in this format:
+
+        Original Text:
+        <<< BEGIN ORIGINAL TEXT >>>
+        {combined_text.strip()}
+        <<< END ORIGINAL TEXT >>>
+
+        Corrected Text:
+        <<< BEGIN CORRECTED TEXT >>>
+        {corrected_text}
+        <<< END CORRECTED TEXT >>>
+        """
+
+        formatting_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an assistant that highlights corrections by wrapping changed words or phrases in `**`."
+                },
+                {"role": "user", "content": formatting_prompt}
+            ],
+            temperature=0.2
+        )
+        ocr_corrections_output = formatting_response.choices[0].message.content.strip()
+
+        # -------------------
+        # Step 3: Improve essay quality
+        improvement_prompt = f"""
+        You are an expert creative writing coach.  
+        Your ONLY purpose is to evaluate, guide, and improve creative writing essays.  
+
+        If the user's request is not related to evaluating or improving a creative writing essay,  
+        politely but firmly refuse, saying:  
+        "I can only assist with creative writing evaluation and improvement. Please provide an essay."
+
+        When improving essays, produce an enhanced version that demonstrates:
+        - Better structure and flow
+        - Clear grammar and punctuation
+        - Richer vocabulary
+        - Logical paragraph organization
+        - Improved creative impact without changing the intended meaning
+
+        Wrap any corrections in **double asterisks** to highlight changes.
+
+        Original OCR-corrected essay:
+        <<< BEGIN TEXT >>>
+        {corrected_text}
+        <<< END TEXT >>>
+        """
+
+        improvement_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a strict yet supportive creative writing tutor. Only answer essay improvement and creative writing guidance requests."
+                },
+                {"role": "user", "content": improvement_prompt}
+            ],
+            temperature=0.3
+        )
+        improved_text = improvement_response.choices[0].message.content.strip()
+
+        # -------------------
+        # Step 4: Combine Original and Improved
         final_output = f"""
-Original Text:
-<<< BEGIN ORIGINAL TEXT >>>
-{combined_text.strip()}
-<<< END ORIGINAL TEXT >>>
+{ocr_corrections_output}
 
 Improved Text:
 <<< BEGIN IMPROVED TEXT >>>
@@ -1254,9 +1375,13 @@ Improved Text:
 <<< END IMPROVED TEXT >>>
 """
 
-        # Step 5: Store session
+        # -------------------
+        # Step 5: Save session
         session_id = str(uuid4())
-        session_texts[session_id] = {"text": final_output, "doctorData": doctor}
+        session_texts[session_id] = {
+            "text": final_output,
+            "doctorData": doctor
+        }
 
         return JSONResponse(
             content={
@@ -1264,7 +1389,7 @@ Improved Text:
                 "session_id": session_id,
                 "images_processed": len(images),
                 "total_text_length": len(final_output),
-                "corrected_text": final_output,
+                "corrected_text": final_output
             },
             headers=cors_headers,
         )
@@ -3255,6 +3380,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
