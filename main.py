@@ -1285,7 +1285,7 @@ Task:
    - Broken or merged words
    - Confused characters (e.g., '0' instead of 'O', '1' instead of 'I')
 2. Improve the essay by making it **clearer, more concise, and more natural**, correcting grammar, punctuation, vocabulary, and sentence flow. Ensure logical organization and smooth readability without changing the original meaning.
-3. Highlight **all corrections** from both steps by wrapping them in **double asterisks**.
+3. Highlight **all corrections** from both step 2 by wrapping them in **double asterisks**.
 4. Do NOT add commentary or evaluation. Only return the improved essay with changes in **bold**.
 5. Output must be in this exact format:
 
@@ -3318,6 +3318,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
