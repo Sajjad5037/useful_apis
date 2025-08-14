@@ -1213,6 +1213,7 @@ async def train_on_images(
     images: List[UploadFile] = File(...),
     doctorData: Optional[str] = Form(None),
     request: Request = None,
+    db: Session = Depends(get_db),    
 ):
     origin = request.headers.get("origin") if request else None
     cors_headers = {
@@ -3416,6 +3417,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
