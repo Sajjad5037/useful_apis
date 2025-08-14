@@ -174,7 +174,20 @@ class CostPerInteraction(Base):
     total_tokens = Column(Integer, nullable=False)
     cost_usd = Column(Numeric(10, 6), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
+class MistakePattern(Base):
+    __tablename__ = "mistake_pattern"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username = Column(String(100), nullable=False)  # Who made the mistake
+    essay_id = Column(Integer, nullable=True)       # Optional link to essay if you want
+    category = Column(String(100), nullable=False)  # e.g. "Grammar", "Spelling", "Structure"
+    description = Column(Text, nullable=False)      # Detailed description of the mistake
+    example_text = Column(Text, nullable=True)      # Example from the essay
+    suggestion = Column(Text, nullable=True)        # Suggested correction
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class Vector(UserDefinedType):
     def __init__(self, dimension):
         self.dimension = dimension
@@ -1331,25 +1344,32 @@ async def train_on_images(
         improvement_prompt = f"""
         You are an expert creative writing coach.  
         Your ONLY purpose is to evaluate, guide, and improve creative writing essays.  
-
+        
         If the user's request is not related to evaluating or improving a creative writing essay,  
         politely but firmly refuse, saying:  
         "I can only assist with creative writing evaluation and improvement. Please provide an essay."
-
+        
         When improving essays, produce an enhanced version that demonstrates:
         - Better structure and flow
         - Clear grammar and punctuation
         - Richer vocabulary
         - Logical paragraph organization
         - Improved creative impact without changing the intended meaning
-
+        
         Wrap any corrections in **double asterisks** to highlight changes.
-
+        
+        After improving the essay, also output a JSON list named `mistake_patterns` where each entry contains:
+        - mistake_type (grammar, punctuation, vocabulary, structure, style)
+        - original_text
+        - corrected_text
+        - explanation
+        
         Original OCR-corrected essay:
         <<< BEGIN TEXT >>>
         {corrected_text}
         <<< END TEXT >>>
         """
+
 
         improvement_response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -1366,7 +1386,8 @@ async def train_on_images(
             temperature=0.3
         )
         improved_text = improvement_response.choices[0].message.content.strip()
-
+        # Extract patterns
+        patterns = extract_mistake_patterns(improved_text)
         # -------------------
         # Step 4: Combine Original and Improved
         final_output = f"""
@@ -1396,7 +1417,22 @@ Improved Text:
             },
             headers=cors_headers,
         )
-
+        try:
+            for p in patterns:
+                mistake_record = MistakePattern(
+                    username=username_for_interactive_session or "unknown",
+                    mistake_type=p.get("mistake_type", "Unknown"),
+                    description=p.get("explanation", ""),
+                    created_at=datetime.utcnow()
+                )
+                db.add(mistake_record)
+        
+            db.commit()
+            print("[INFO] Mistake patterns stored in database.")
+        
+        except SQLAlchemyError as e:
+            db.rollback()
+            print(f"[ERROR] Failed to store mistake patterns: {e}")
     except Exception as e:
         tb_str = traceback.format_exc()
         return JSONResponse(
@@ -1404,6 +1440,38 @@ Improved Text:
             status_code=500,
             headers=cors_headers,
         )
+
+
+
+
+def extract_mistake_patterns(improved_text):
+    """
+    Extract mistake patterns from the improved essay text.
+    Looks for a section like:
+    'Mistake Type: <type>\nExplanation: <desc>'
+    Returns a list of dicts with 'mistake_type' and 'explanation'.
+    """
+    patterns = []
+
+    # Example regex for: "Mistake Type: Spelling\nExplanation: Misspelled word 'recieve'"
+    pattern_regex = re.compile(
+        r"Mistake\s*Type\s*:\s*(?P<type>.+?)\s*(?:\n|$)"
+        r"(?:Explanation\s*:\s*(?P<explanation>.+?)(?:\n|$))?",
+        re.IGNORECASE | re.DOTALL
+    )
+
+    for match in pattern_regex.finditer(improved_text):
+        mistake_type = match.group("type").strip()
+        explanation = match.group("explanation").strip() if match.group("explanation") else ""
+        patterns.append({
+            "mistake_type": mistake_type,
+            "explanation": explanation
+        })
+
+    return patterns
+
+
+
 # @app.post("/train-on-images")
 #previous working code for CSS_Academy1
 # async def train_on_images(
@@ -3383,6 +3451,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
