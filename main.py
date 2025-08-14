@@ -200,6 +200,18 @@ class Vector(UserDefinedType):
     def column_expression(self, col):
         return col
 
+class CommonMistakeSchema(BaseModel):
+    id: int
+    session_id: str
+    original_text: str
+    corrected_text: str
+    category: Optional[str] = None
+    explanation: Optional[str] = None
+    created_at: str
+
+    class Config:
+        orm_mode = True
+
 #for database query
 class ChatRequest(BaseModel):
     message: str
@@ -1193,6 +1205,16 @@ SMTP_PORT       = 587
 SMTP_USER       = 'proactive1.san@gmail.com'      # from_email
 SMTP_PASS       = 'vsjv dmem twvz avhf'           # from_password
 MANAGEMENT_EMAIL = 'proactive1@live.com'     # where we send reservations
+
+#retrieving common mistake patterns from the database for css essay checker
+@app.get("/css-common-mistakes", response_model=List[CommonMistakeSchema])
+def get_common_mistakes(token: str = Depends(get_token), db: Session = Depends(get_db)):
+    try:
+        mistakes = db.query(CommonMistake).order_by(CommonMistake.created_at.desc()).all()
+        return mistakes
+    except Exception as e:
+        print("Error fetching common mistakes:", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.options("/train-on-images")
 async def options_train_on_images():
@@ -3417,6 +3439,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
