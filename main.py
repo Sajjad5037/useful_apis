@@ -1322,10 +1322,7 @@ async def train_on_images(
         {combined_text.strip()}
         <<< END ORIGINAL TEXT >>>
 
-        Corrected Text:
-        <<< BEGIN CORRECTED TEXT >>>
-        {corrected_text}
-        <<< END CORRECTED TEXT >>>
+        
         """
 
         formatting_response = client.chat.completions.create(
@@ -1345,18 +1342,19 @@ async def train_on_images(
         # Step 3: Improve essay quality
         improvement_prompt = f"""
         You are an expert creative writing coach.  
-        Your ONLY purpose is to evaluate, guide, and improve creative writing essays.  
-
-        If the user's request is not related to evaluating or improving a creative writing essay,  
-        politely but firmly refuse, saying:  
-        "I can only assist with creative writing evaluation and improvement. Please provide an essay."
-
+        Your ONLY purpose is to improve creative writing essays.
+        
+        Instructions:
+        
+        1. Improve the following essay by correcting grammar, punctuation, vocabulary, and style.
+        2. Highlight **all changes** by wrapping them in **double asterisks**.
+        3. Do NOT add extra evaluation, suggestions, or commentary. Only show the improved essay with corrections in **bold**.
+        
         Original OCR-corrected essay:
         <<< BEGIN TEXT >>>
         {corrected_text}
         <<< END TEXT >>>
         """
-
         improvement_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
