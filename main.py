@@ -1229,30 +1229,24 @@ def get_token(request: Request, authorization: Optional[str] = Header(None)):
     print("Extracted token:", token)
     return token
 
-
-@app.post("/css-common-mistakes", response_model=List[CommonMistakeSchema])
+@app.get("/css-common-mistakes", response_model=List[CommonMistakeSchema])
 def get_common_mistakes(
-    payload: dict = Body(...),  # read JSON body
+    name: str = Query(..., description="Doctor name to filter results"),
     token: Optional[str] = Depends(get_token),
     db: Session = Depends(get_db)
 ):
-    doctor_name = payload.get("name")
-    
     print("=== get_common_mistakes called ===")
     print("Token received in endpoint:", token)
-    print("Doctor name received:", doctor_name)
-
-    if not doctor_name:
-        raise HTTPException(status_code=400, detail="Doctor name is required")
+    print("Doctor name received:", name)
 
     try:
         mistakes = (
             db.query(CommonMistake)
-            .filter(CommonMistake.doctor_name == doctor_name)
+            .filter(CommonMistake.doctor_name == name)
             .order_by(CommonMistake.created_at.desc())
             .all()
         )
-        print(f"Fetched {len(mistakes)} mistakes for doctor '{doctor_name}'")
+        print(f"Fetched {len(mistakes)} mistakes for doctor '{name}'")
         return mistakes
     except Exception as e:
         print("Error fetching common mistakes:", e)
@@ -3499,6 +3493,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
