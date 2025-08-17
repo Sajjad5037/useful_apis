@@ -1,4 +1,4 @@
-from docx import Document
+import docx2txt
 import os
 import sys
 import fitz 
@@ -1277,41 +1277,34 @@ sessions = {}
 @app.post("/process-assignment")
 async def process_assignment(file: UploadFile = File(...)):
     print("=== /process-assignment called ===")
-
-    # Generate a unique session ID for this student/chat
-    session_id = str(uuid.uuid4())
-    print(f"Generated session_id: {session_id}")
-
-    response_data = {"session_id": session_id}
-
+    
     try:
-        # Check file type
+        # Validate file type
         if not file.filename.endswith(".docx"):
-            response_data["initialMessage"] = "Please upload a valid Word (.docx) file."
-            return JSONResponse(content=response_data, status_code=400)
+            print("Invalid file type")
+            return JSONResponse(content={"error": "Please upload a .docx file"}, status_code=400)
 
-        # Read the file contents
+        # Read file contents
         contents = await file.read()
         temp_filename = f"temp_{file.filename}"
         with open(temp_filename, "wb") as f:
             f.write(contents)
         print(f"File saved as {temp_filename}, size: {len(contents)} bytes")
 
-        # Extract text from docx
-        doc = Document(temp_filename)
-        combined_text = "\n".join([para.text for para in doc.paragraphs])
+        # Extract text using docx2txt
+        combined_text = docx2txt.process(temp_filename)
         print("Extracted text (first 300 chars):")
         print(combined_text[:300] + "..." if len(combined_text) > 300 else combined_text)
 
-        # Delete temp file to keep server clean
-        os.remove(temp_filename)
+        # Generate a session ID for the student
+        session_id = str(uuid.uuid4())
+        print(f"Generated session_id: {session_id}")
 
-        # Prepare OpenAI prompt
+        # Create prompt for OpenAI
         assignment_prompt = f"""
 You are a teacher-assistant bot interacting with a student about their MPhil-level linguistics assignment.
-The student has submitted the following assignment. Your job is to start the conversation with a greeting and
-your first question to check if the student understands their own work.
-Do NOT provide full evaluation yet.
+The student has submitted the following assignment. Start the conversation with a greeting and your first question
+to check if the student understands their work. Do NOT provide full evaluation yet.
 
 Assignment text:
 <<< BEGIN TEXT >>>
@@ -1320,7 +1313,7 @@ Assignment text:
 """
         print("Sending prompt to OpenAI...")
 
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are an assistant helping a student discuss their assignment with a teacher."},
@@ -1333,13 +1326,11 @@ Assignment text:
         print("Received response from OpenAI (first 300 chars):")
         print(bot_message[:300] + "..." if len(bot_message) > 300 else bot_message)
 
-        response_data["initialMessage"] = bot_message
-        return JSONResponse(content=response_data)
+        return {"initialMessage": bot_message, "session_id": session_id}
 
     except Exception as e:
         print("Error processing file or calling OpenAI:", e)
-        response_data["initialMessage"] = "Internal server error while processing document."
-        return JSONResponse(content=response_data, status_code=500)
+        return JSONResponse(content={"error": "Internal server error"}, status_code=500)
 
 @app.post("/continue-chat")
 async def continue_chat(session_id: str = Form(...), message: str = Form(...)):
@@ -3595,6 +3586,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
