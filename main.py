@@ -1230,6 +1230,37 @@ def get_token(request: Request, authorization: Optional[str] = Header(None)):
     return token
 
 
+@app.post("/css-common-mistakes", response_model=List[CommonMistakeSchema])
+def get_common_mistakes(
+    payload: dict = Body(...),  # read JSON body
+    token: Optional[str] = Depends(get_token),
+    db: Session = Depends(get_db)
+):
+    doctor_name = payload.get("name")
+    
+    print("=== get_common_mistakes called ===")
+    print("Token received in endpoint:", token)
+    print("Doctor name received:", doctor_name)
+
+    if not doctor_name:
+        raise HTTPException(status_code=400, detail="Doctor name is required")
+
+    try:
+        mistakes = (
+            db.query(CommonMistake)
+            .filter(CommonMistake.doctor_name == doctor_name)
+            .order_by(CommonMistake.created_at.desc())
+            .all()
+        )
+        print(f"Fetched {len(mistakes)} mistakes for doctor '{doctor_name}'")
+        return mistakes
+    except Exception as e:
+        print("Error fetching common mistakes:", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+"""
+previous css mistake
 @app.get("/css-common-mistakes", response_model=List[CommonMistakeSchema])
 def get_common_mistakes(
     token: Optional[str] = Depends(get_token),
@@ -1244,6 +1275,7 @@ def get_common_mistakes(
     except Exception as e:
         print("Error fetching common mistakes:", e)
         raise HTTPException(status_code=500, detail="Internal server error")    
+        """
 @app.options("/train-on-images")
 async def options_train_on_images():
     """Handle CORS preflight requests explicitly."""
@@ -3467,6 +3499,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
