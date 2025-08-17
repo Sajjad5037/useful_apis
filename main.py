@@ -1231,27 +1231,26 @@ def get_token(request: Request, authorization: Optional[str] = Header(None)):
 
 @app.get("/css-common-mistakes", response_model=List[CommonMistakeSchema])
 def get_common_mistakes(
-    name: str = Query(..., description="Doctor name to filter results"),
+    username: str = Query(..., description="Doctor username to filter results"),  # frontend sends doctor name here
     token: Optional[str] = Depends(get_token),
     db: Session = Depends(get_db)
 ):
     print("=== get_common_mistakes called ===")
     print("Token received in endpoint:", token)
-    print("Doctor name received:", name)
+    print("Username received:", username)
 
     try:
         mistakes = (
             db.query(CommonMistake)
-            .filter(CommonMistake.doctor_name == name)
+            .filter(CommonMistake.session_id == username)  # filter by session_id
             .order_by(CommonMistake.created_at.desc())
             .all()
         )
-        print(f"Fetched {len(mistakes)} mistakes for doctor '{name}'")
+        print(f"Fetched {len(mistakes)} mistakes for username '{username}'")
         return mistakes
     except Exception as e:
         print("Error fetching common mistakes:", e)
         raise HTTPException(status_code=500, detail="Internal server error")
-
 
 """
 previous css mistake
@@ -3493,6 +3492,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
