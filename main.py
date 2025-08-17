@@ -1274,48 +1274,45 @@ def get_common_mistakes(
 # In-memory session store
 sessions = {}
 
+from docx import Document
+from fastapi.responses import JSONResponse
+
 @app.post("/process-assignment")
 async def process_assignment(file: UploadFile = File(...)):
+    print("=== /process-assignment called ===")
+    print(f"Received file: {file.filename}, content type: {file.content_type}")
+
     try:
         if not file.filename.endswith(".docx"):
+            print("Invalid file type")
             return JSONResponse(content={"error": "Please upload a .docx file"}, status_code=400)
 
-        # Read the file contents
         contents = await file.read()
         temp_filename = f"temp_{file.filename}"
         with open(temp_filename, "wb") as f:
             f.write(contents)
+        print(f"File saved as {temp_filename}, size: {len(contents)} bytes")
 
-        # Extract text from docx
-        doc = Document(temp_filename)
+        # Try opening with python-docx and catch exceptions
+        try:
+            doc = Document(temp_filename)
+        except Exception as e:
+            print(f"Error opening .docx with python-docx: {e}")
+            return JSONResponse(content={"error": "Failed to read Word document"}, status_code=500)
+
+        # Check if paragraphs exist
+        if not hasattr(doc, "paragraphs"):
+            print(f"Document object has no attribute 'paragraphs'. Type: {type(doc)}")
+            return JSONResponse(content={"error": "Invalid document structure"}, status_code=500)
+
         combined_text = "\n".join([para.text for para in doc.paragraphs])
+        print("Extracted text (first 300 chars):")
+        print(combined_text[:300] + "..." if len(combined_text) > 300 else combined_text)
 
-        # Create a new session ID
-        session_id = str(uuid.uuid4())
-
-        # Initialize conversation history
-        sessions[session_id] = [
-            {"role": "system", "content": "You are an assistant helping a student discuss their assignment with a teacher. Your goal is to ask questions to check the student's understanding and engage them in conversation."},
-            {"role": "user", "content": f"The student submitted the following assignment text:\n<<< BEGIN TEXT >>>\n{combined_text.strip()}\n<<< END TEXT >>>"}
-        ]
-
-        # Call OpenAI
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=sessions[session_id],
-            temperature=0.7
-        )
-
-        bot_message = response.choices[0].message.content.strip()
-        # Append bot's message to session history
-        sessions[session_id].append({"role": "assistant", "content": bot_message})
-
-        return {"session_id": session_id, "initialMessage": bot_message}
-
+        # continue with OpenAI call...
     except Exception as e:
         print("Error processing file or calling OpenAI:", e)
         return JSONResponse(content={"error": "Internal server error"}, status_code=500)
-
 
 @app.post("/continue-chat")
 async def continue_chat(session_id: str = Form(...), message: str = Form(...)):
@@ -3571,6 +3568,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
