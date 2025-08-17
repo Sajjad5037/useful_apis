@@ -26,7 +26,7 @@ from langchain.vectorstores import FAISS,VectorStore
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import logging
 from typing import Optional,List,Union
-from fastapi import FastAPI, HTTPException, Depends, Form, File, UploadFile, Request, Header
+from fastapi import FastAPI, HTTPException, Depends, Form, File, UploadFile, Request, Header,Body
 
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -3499,6 +3499,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
