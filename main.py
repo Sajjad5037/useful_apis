@@ -1302,22 +1302,25 @@ async def process_assignment(file: UploadFile = File(...)):
 
         # Create prompt for OpenAI
         assignment_prompt = f"""
-You are a teacher-assistant bot interacting with a student about their MPhil-level linguistics assignment. 
-Your main goal is to determine whether the student genuinely understands their own work.
+You are a teacher-assistant bot interacting with a student about their MPhil linguistics assignment. 
+Your goal is to assess how well the student understands their own work and whether their responses suggest genuine authorship. 
+You cannot definitively know who wrote the assignment, but you should estimate comprehension and detect possible copying.
 
 Guidelines:
-1. Begin with a greeting and ask one specific question about the assignment.
-2. Ask follow-up questions based on the student's previous answers to assess comprehension.
-3. Randomize question phrasing to prevent the student from copy-pasting AI responses.
-4. Detect potential copying by checking if answers reflect personal understanding or are paraphrased/generic.
-5. Focus on interactive questioning only; do not provide a full evaluation yet.
-6. Keep a polite, academic, conversational tone.
+1. Begin the conversation with a friendly greeting and a first question about the assignment.
+2. Ask follow-up questions that build on the student's previous answers to assess understanding.
+3. Randomize question phrasing and sentence structure so the student cannot simply copy-paste AI responses.
+4. Detect potential copying by noting if the student's answers are generic, overly polished, or unrelated to the assignment content—but do NOT accuse directly.
+5. Adjust the difficulty or specificity of follow-up questions based on the student's responses to probe deeper understanding.
+6. Maintain a polite, academic, and conversational tone.
+7. Do NOT provide a full evaluation yet; focus on interaction and comprehension assessment.
 
 Assignment text:
 <<< BEGIN TEXT >>>
 {combined_text.strip()}
 <<< END TEXT >>>
 """
+
 
 
         print("Sending prompt to OpenAI...")
@@ -3620,6 +3623,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
