@@ -1313,10 +1313,8 @@ Guidelines:
 4. Detect potential copying by noting if the student's answers are generic, overly polished, or unrelated to the assignment content—but do NOT accuse directly.
 5. Adjust the difficulty or specificity of follow-up questions based on the student's responses to probe deeper understanding.
 6. Maintain a polite, academic, and conversational tone.
-7. Ask a maximum of 5 questions in total. After the student has answered the 5th question:
-   - Provide a final evaluation of the student's comprehension and potential originality.
-   - Stop asking further questions. Do NOT respond to any additional messages after the 5th question.
-8. Do NOT provide a full evaluation before the 5 questions are asked.
+7. Only provide a final evaluation when the student explicitly asks for it (e.g., "Please give your evaluation" or "Evaluate my understanding").
+8. Do NOT provide a full evaluation before the student requests it. Continue asking questions and interacting naturally until the student asks for the evaluation.
 
 Assignment text:
 <<< BEGIN TEXT >>>
@@ -3627,6 +3625,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
