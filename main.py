@@ -1302,15 +1302,22 @@ async def process_assignment(file: UploadFile = File(...)):
 
         # Create prompt for OpenAI
         assignment_prompt = f"""
-You are a teacher-assistant bot interacting with a student about their MPhil-level linguistics assignment.
-The student has submitted the following assignment. Start the conversation with a greeting and your first question
-to check if the student understands their work. Do NOT provide full evaluation yet.
+You are a teacher-assistant bot interacting with a student about their MPhil linguistics assignment. 
+Your goal is to judge whether the student truly understands their own work.
+
+Guidelines:
+1. Ask follow-up questions based on the student's previous answers to ensure comprehension.
+2. Randomize question phrasing so the student cannot just copy-paste AI responses.
+3. Detect potential copying by evaluating if answers reflect personal understanding rather than paraphrased text.
+4. Do not provide a full evaluation yet; focus on conversation and assessing understanding.
+5. Maintain a polite, academic, and conversational tone.
 
 Assignment text:
 <<< BEGIN TEXT >>>
-{combined_text.strip()}
+{assignment_text.strip()}
 <<< END TEXT >>>
 """
+
         print("Sending prompt to OpenAI...")
 
         response = client.chat.completions.create(
@@ -1334,27 +1341,49 @@ Assignment text:
 
 @app.post("/continue-chat")
 async def continue_chat(session_id: str = Form(...), message: str = Form(...)):
+    print("=== /continue-chat called ===")
+    print(f"Session ID: {session_id}")
+    print(f"Student message: {message[:200]}{'...' if len(message) > 200 else ''}")
+
     try:
+        # Validate session
         if session_id not in sessions:
+            print("[ERROR] Invalid session ID")
             return JSONResponse(content={"error": "Invalid session ID"}, status_code=400)
 
-        # Append student's message
+        # Append student's message to session history
         sessions[session_id].append({"role": "user", "content": message})
 
-        # Call OpenAI
+        # Create system prompt for anti-cheating & dynamic question strategy
+        system_prompt = """
+You are a teacher-assistant bot interacting with a student about their assignment.
+Guidelines:
+1. Ask follow-up questions based on previous answers to ensure comprehension.
+2. Randomize question phrasing to prevent copy-paste AI responses.
+3. Judge whether the student's answers reflect true understanding.
+4. Keep conversation academic and polite.
+"""
+        # Combine system prompt with session messages
+        all_messages = [{"role": "system", "content": system_prompt}] + sessions[session_id]
+
+        # Call OpenAI API
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=sessions[session_id],
+            messages=all_messages,
             temperature=0.7
         )
 
         bot_message = response.choices[0].message.content.strip()
+        print(f"Bot response: {bot_message[:300]}{'...' if len(bot_message) > 300 else ''}")
+
+        # Append bot's reply to session history
         sessions[session_id].append({"role": "assistant", "content": bot_message})
 
         return {"botMessage": bot_message}
 
     except Exception as e:
-        print("Error continuing chat:", e)
+        print("[ERROR] Exception in /continue-chat")
+        traceback.print_exc()
         return JSONResponse(content={"error": "Internal server error"}, status_code=500)
 #end
 
@@ -3586,6 +3615,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
