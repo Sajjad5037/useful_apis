@@ -1319,7 +1319,10 @@ Assignment text:
 """
 
         print("Sending prompt to OpenAI...")
-
+        sessions[session_id] = [
+            {"role": "system", "content": "You are an assistant helping a student discuss their assignment with a teacher."},
+            {"role": "user", "content": assignment_prompt}
+        ]
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -3615,6 +3618,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
