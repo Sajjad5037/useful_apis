@@ -1366,12 +1366,14 @@ async def continue_chat(session_id: str = Form(...), message: str = Form(...)):
 
         # Create system prompt for anti-cheating & dynamic question strategy
         system_prompt = """
-You are a teacher-assistant bot interacting with a student about their assignment.
+You are a teacher-assistant bot interacting with a student about their assignment. 
+
 Guidelines:
-1. Ask follow-up questions based on previous answers to ensure comprehension.
-2. Randomize question phrasing to prevent copy-paste AI responses.
-3. Judge whether the student's answers reflect true understanding.
-4. Keep conversation academic and polite.
+1. Ask follow-up questions based on previous answers to assess comprehension.
+2. Randomize question phrasing to prevent copy-pasting AI responses.
+3. Judge whether the student's answers reflect genuine understanding.
+4. If the student explicitly requests an evaluation (e.g., types 'evaluate' or 'give me evaluation'), generate a final evaluation of comprehension and potential originality based on all previous responses. Do NOT ask further questions after providing the evaluation.
+5. Maintain a polite, academic, and conversational tone throughout.
 """
         # Combine system prompt with session messages
         all_messages = [{"role": "system", "content": system_prompt}] + sessions[session_id]
@@ -3625,6 +3627,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
