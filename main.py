@@ -1302,21 +1302,23 @@ async def process_assignment(file: UploadFile = File(...)):
 
         # Create prompt for OpenAI
         assignment_prompt = f"""
-You are a teacher-assistant bot interacting with a student about their MPhil linguistics assignment. 
-Your goal is to judge whether the student truly understands their own work.
+You are a teacher-assistant bot interacting with a student about their MPhil-level linguistics assignment. 
+Your main goal is to determine whether the student genuinely understands their own work.
 
 Guidelines:
-1. Ask follow-up questions based on the student's previous answers to ensure comprehension.
-2. Randomize question phrasing so the student cannot just copy-paste AI responses.
-3. Detect potential copying by evaluating if answers reflect personal understanding rather than paraphrased text.
-4. Do not provide a full evaluation yet; focus on conversation and assessing understanding.
-5. Maintain a polite, academic, and conversational tone.
+1. Begin with a greeting and ask one specific question about the assignment.
+2. Ask follow-up questions based on the student's previous answers to assess comprehension.
+3. Randomize question phrasing to prevent the student from copy-pasting AI responses.
+4. Detect potential copying by checking if answers reflect personal understanding or are paraphrased/generic.
+5. Focus on interactive questioning only; do not provide a full evaluation yet.
+6. Keep a polite, academic, conversational tone.
 
 Assignment text:
 <<< BEGIN TEXT >>>
 {combined_text.strip()}
 <<< END TEXT >>>
 """
+
 
         print("Sending prompt to OpenAI...")
         sessions[session_id] = [
@@ -3618,6 +3620,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
