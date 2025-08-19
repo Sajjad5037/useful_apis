@@ -81,7 +81,8 @@ USAGE_LIMIT_INCREASE = 5.0  # dollars
 
 # Suppose you have a baseline cost stored somewhere or passed in, for demo let's hardcode:
 BASELINE_COST = 0.0  # Replace this with your actual baseline cost or fetch it from DB/config
-
+bucket_name_anz_way = "sociology_anz_way"
+VECTORSTORE_FOLDER_IN_BUCKET = "vectorstore"
 
 #for text extractor from image 
 # Load the JSON string from the environment variable
@@ -1401,6 +1402,136 @@ Guidelines:
         traceback.print_exc()
         return JSONResponse(content={"error": "Internal server error"}, status_code=500)
 #end
+def download_vectorstore_from_gcs(bucket_name: str, folder_in_bucket: str):
+    print("[DEBUG] Starting download of vector store from GCS...")
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    temp_dir = tempfile.mkdtemp()
+    try:
+        for filename in ["index.faiss", "index.pkl"]:
+            blob = bucket.blob(f"{folder_in_bucket}/{filename}")
+            local_path = os.path.join(temp_dir, filename)
+            blob.download_to_filename(local_path)
+            print(f"[DEBUG] Successfully downloaded {filename} to {local_path}")
+    except Exception as e:
+        print(f"[ERROR] Failed to download vector store from GCS: {e}")
+        traceback.print_exc()
+    print("[DEBUG] Vector store download complete")
+    return temp_dir
+
+async def evaluate_student_response_from_images(
+    images: List[UploadFile],
+    question_text: str,
+    total_marks: int,
+    qa_chain: RetrievalQA,
+    minimum_word_count: int = 80
+):
+    """
+    Extracts text from images using Google Vision, evaluates it using the QA chain,
+    and returns structured evaluation results.
+    """
+    try:
+        print("[DEBUG] Starting OCR on uploaded images...")
+        combined_text = ""
+
+        for idx, image in enumerate(images, start=1):
+            image_bytes = await image.read()
+            if not image_bytes:
+                print(f"[WARNING] Image {idx} is empty, skipping...")
+                continue
+
+            ocr_result = client_google_vision_api.document_text_detection(vision.Image(content=image_bytes))
+            extracted_text = ocr_result.full_text_annotation.text if ocr_result.full_text_annotation else ""
+            combined_text += extracted_text + "\n\n"
+            print(f"[DEBUG] Extracted text from image {idx}: {len(extracted_text)} characters")
+
+        if not combined_text.strip():
+            print("[ERROR] No text extracted from any image")
+            return {"status": "error", "detail": "No text extracted from images"}
+
+        student_response = combined_text.strip()
+        print(f"[DEBUG] Total extracted student response length: {len(student_response)} characters")
+
+        # Prepare evaluation prompt
+        evaluation_prompt = f"""
+You are an expert sociology examiner. Using ONLY the instructions retrieved from the vector store QA chain,
+evaluate the following student response. Do NOT use any knowledge outside the vector store.
+
+Question:
+{question_text}
+
+Student Response:
+{student_response}
+
+Task:
+1. Rewrite the student response to receive the maximum marks strictly based on retrieved instructions.
+   - Include only points explicitly in instructions.
+   - Keep concise but complete.
+   - Ensure the response meets minimum word count of {minimum_word_count} words.
+
+2. Line-by-line analysis:
+   - Correctness, missing elements, suggestions.
+   - Assign marks based on total marks ({total_marks}).
+
+3. Overall assessment:
+   - Summary referencing retrieved instructions.
+   - Indicate if minimum word count is met.
+   - Give overall mark strictly based on retrieved instructions.
+
+Output Format:
+
+Improved Response:
+<your improved response here>
+
+Line-by-Line Analysis:
+Line 1: <analysis with references, mark>
+Line 2: <analysis with references, mark>
+...
+
+Overall Assessment:
+<summary referencing features and word count>
+Overall Mark: <score/{total_marks}>
+"""
+
+        print("[DEBUG] Sending evaluation prompt to QA chain...")
+        evaluation_result = qa_chain.run(evaluation_prompt)
+        print("[DEBUG] Received evaluation result from QA chain")
+
+        return {
+            "status": "success",
+            "evaluation": evaluation_result,
+            "total_marks": total_marks,
+            "minimum_word_count": minimum_word_count,
+            "student_response": student_response
+        }
+
+    except Exception as e:
+        print(f"[ERROR] Failed to evaluate student response: {e}")
+        traceback.print_exc()
+        return {"status": "error", "detail": str(e)}
+
+@app.post("/train-on-images-anz-way")
+async def train_on_images(
+    images: List[UploadFile] = File(...),
+    question_text: str = Form(...),
+    total_marks: int = Form(...),  # from frontend
+    request: Request = None
+):
+    origin = request.headers.get("origin") if request else "*"
+    cors_headers = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true"}
+
+    if qa_chain is None:
+        return JSONResponse(content={"status": "error", "detail": "QA chain not initialized"}, headers=cors_headers)
+
+    result = await evaluate_student_response_from_images(
+        images=images,
+        question_text=question_text,
+        total_marks=total_marks,
+        qa_chain=qa_chain,
+        minimum_word_count=80
+    )
+
+    return JSONResponse(content=result, headers=cors_headers)
 
 
 
@@ -3764,6 +3895,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
