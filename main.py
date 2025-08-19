@@ -1500,6 +1500,8 @@ Overall Mark: <score/{total_marks}>
         # Print or log retrieved docs
         for i, doc in enumerate(retrieved_docs, 1):
             print(f"[DEBUG] Retrieved doc {i}: {doc.page_content[:500]}...\n")
+        if not retrieved_docs:
+            print("[DEBUG] No docs retrieved for this query")
         print("[DEBUG] Sending evaluation prompt to QA chain...")
         evaluation_result = qa_chain.run(evaluation_prompt)
         print("[DEBUG] Received evaluation result from QA chain")
@@ -3989,6 +3991,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
