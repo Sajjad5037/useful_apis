@@ -2716,30 +2716,37 @@ async def evaluate_assignment(
 
         # --- Construct authorship-only evaluation prompt ---
         evaluation_prompt = f"""
-        You are an academic evaluator. Your job is to judge whether the student is the likely author of the submitted assignment text.
+        You are an academic examiner. Your job is to award marks strictly according to the 2×2 mark scheme below.
         
-        Use BOTH:
-        1. The student's written assignment.
-        2. The conversation history where the student was asked questions about the text.
+        Marking scheme:
+        - Up to 2 marks per feature of laboratory experiments.
+        - 1 mark for correctly identifying a feature.
+        - +1 mark (total 2) if the student also clearly describes/explains that feature.
+        - Maximum of 2 distinct features may be credited.
+        - Maximum total = 4 marks.
         
-        Decision rules:
-        - If the student can explain the text clearly, expand on ideas, or answer related questions well → "Student Wrote It".
-        - If the student avoids, struggles, or shows little understanding of their own text → "Likely Copied".
-        - Only use "Uncertain" if BOTH the text AND the conversation provide almost no evidence.
+        Instructions:
+        1. Extract the student’s points from their answer.
+        2. Match each point against the mark scheme.
+        3. Award marks mechanically: identify = 1, identify+describe = 2.
+        4. Do not give more than 2 marks per feature or more than 4 overall.
+        5. Be strict: if description is vague or absent, do not award the second mark.
         
-        Assignment:
+        Assignment (student answer):
         <<< BEGIN TEXT >>>
         {assignment_text}
         <<< END TEXT >>>
         
-        Conversation history:
-        {chat_history}
+        Now output in this exact format:
         
-        Now, give your judgment in this exact format:
+        Extracted Features:
+        - [Feature 1: …] → [Marks awarded: X/2]
+        - [Feature 2: …] → [Marks awarded: X/2]
         
-        Authorship Decision: [Student Wrote It / Likely Copied / Uncertain]
-        Reasoning: [short, clear explanation that uses BOTH the text and conversation as evidence]
+        Total Mark: [X/4]
+        Reasoning: [short explanation of why marks were given or withheld]
         """
+
         print("[DEBUG] Evaluation prompt constructed successfully")
 
         # --- Call OpenAI (authorship-only, low temperature) ---
@@ -3991,6 +3998,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
