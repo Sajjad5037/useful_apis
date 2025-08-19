@@ -2444,8 +2444,7 @@ async def extract_text(image: UploadFile = File(...)):
 @app.post("/evaluate-assignment")
 async def evaluate_assignment(
     session_id: str = Form(...),
-    recipient_email: str = Form(...),
-    file: UploadFile = File(None)   # <-- optional file
+    recipient_email: str = Form(...)    
 ):
     try:
         print("\n[DEBUG] ---------------- New Evaluation Request ----------------")
@@ -3727,6 +3726,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
