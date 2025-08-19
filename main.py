@@ -1567,31 +1567,29 @@ async def train_on_images_anz_way(
     global qa_chain_anz_way
 
     # ✅ Lazy fallback: initialize if not ready
-   if qa_chain_anz_way is None:
-    try:
-        qa_chain_anz_way = initialize_qa_chain_anz_way(
-            bucket_name="sociology_anz_way",
-            folder_in_bucket="sociology_instructions.faiss"
-        )
-    except Exception as e:
-        return JSONResponse(
-            content={
-                "status": "error",
-                "detail": f"Failed to initialize QA chain: {str(e)}"
-            },
-            headers=cors_headers
-        )
+    if qa_chain_anz_way is None:
+        try:
+            qa_chain_anz_way = initialize_qa_chain_anz_way(
+                bucket_name="sociology_anz_way",
+                folder_in_bucket="sociology_instructions.faiss"
+            )
+        except Exception as e:
+            return JSONResponse(
+                content={
+                    "status": "error",
+                    "detail": f"Failed to initialize QA chain: {str(e)}"
+                },
+                headers=cors_headers
+            )
 
-
-
-    # Now qa_chain_anz_way should exist
+    # ✅ Double-check if still None
     if qa_chain_anz_way is None:
         return JSONResponse(
             content={"status": "error", "detail": "QA chain still not initialized"},
             headers=cors_headers
         )
 
-    # ✅ Define your mapping dictionary
+    # ✅ Define mapping dictionary
     word_count_map = {
         4: 50,
         10: 80,
@@ -1602,7 +1600,11 @@ async def train_on_images_anz_way(
     # ✅ Validate total_marks
     if total_marks not in word_count_map:
         return JSONResponse(
-            content={"status": "error", "detail": f"Invalid total_marks: {total_marks}. Allowed values are {list(word_count_map.keys())}"},
+            content={
+                "status": "error",
+                "detail": f"Invalid total_marks: {total_marks}. "
+                          f"Allowed values are {list(word_count_map.keys())}"
+            },
             headers=cors_headers
         )
 
@@ -1618,7 +1620,6 @@ async def train_on_images_anz_way(
     )
 
     return JSONResponse(content=result, headers=cors_headers)
-
 
 
 
@@ -3981,6 +3982,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
