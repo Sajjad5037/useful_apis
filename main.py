@@ -2457,8 +2457,13 @@ async def evaluate_assignment(
             return JSONResponse({"error": "Invalid session"}, status_code=400)
 
         # Retrieve data from session
-        assignment_text = sessions[session_id].get("assignment_text", "")
-        chat_history = sessions[session_id].get("messages", [])
+        chat_history = sessions.get(session_id, [])
+        assignment_text = ""
+        if chat_history:
+            for msg in chat_history:
+                if msg["role"] == "user":
+                    assignment_text = msg["content"]
+                    break
         print(f"[DEBUG] Assignment text length: {len(assignment_text)} characters")
         print(f"[DEBUG] Chat history messages count: {len(chat_history)}")
 
@@ -3726,6 +3731,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
