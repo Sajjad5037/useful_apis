@@ -1569,6 +1569,7 @@ async def train_on_images_anz_way(
     # ✅ Lazy fallback: initialize if not ready
     if qa_chain_anz_way is None:
         try:
+            global qa_chain_anz_way
             qa_chain_anz_way = initialize_qa_chain_anz_way(
                 bucket_name="sociology_anz_way",
                 folder_in_bucket="sociology_instructions.faiss"
@@ -3982,6 +3983,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
