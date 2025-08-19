@@ -2441,6 +2441,99 @@ async def extract_text(image: UploadFile = File(...)):
         traceback.print_exc()
         return {"error": str(e)}
 
+@app.post("/evaluate-assignment")
+async def evaluate_assignment(session_id: str = Form(...), recipient_email: str = Form(...)):
+    try:
+        print("\n[DEBUG] ---------------- New Evaluation Request ----------------")
+        print(f"[DEBUG] Session ID received: {session_id}")
+        print(f"[DEBUG] Recipient email received: {recipient_email}")
+
+        # Validate session
+        if session_id not in sessions:
+            print(f"[ERROR] Invalid session ID: {session_id}")
+            return JSONResponse({"error": "Invalid session"}, status_code=400)
+
+        # Retrieve data from session
+        assignment_text = sessions[session_id].get("assignment_text", "")
+        chat_history = sessions[session_id].get("messages", [])
+        print(f"[DEBUG] Assignment text length: {len(assignment_text)} characters")
+        print(f"[DEBUG] Chat history messages count: {len(chat_history)}")
+
+        # Construct evaluation prompt
+        evaluation_prompt = f"""
+You are a teacher-assistant bot evaluating a student's MPhil-level linguistics assignment.
+Use the assignment text and conversation history to determine:
+
+- If the student understands the assignment
+- Key mistakes or areas to improve
+- A short evaluation summary
+
+Assignment:
+<<< BEGIN TEXT >>>
+{assignment_text}
+<<< END TEXT >>>
+
+Conversation history:
+{chat_history}
+"""
+        print("[DEBUG] Evaluation prompt constructed successfully")
+
+        # Call OpenAI API
+        print("[DEBUG] Sending request to OpenAI API...")
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an assistant providing a teacher-friendly evaluation."},
+                {"role": "user", "content": evaluation_prompt}
+            ],
+            temperature=0.7
+        )
+        print("[DEBUG] Response received from OpenAI API")
+
+        # Extract assessment
+        assessment = response.choices[0].message.content.strip()
+        print("[DEBUG] Assessment extracted successfully")
+        print(f"[DEBUG] Assessment length: {len(assessment)} characters")
+
+        # Prepare email content
+        subject = "Your Assignment Evaluation Report"
+        body = f"""
+        <h2>Assignment Evaluation Report</h2>
+        <p>Dear Teacher,</p>
+        <p><strong>Student Submission:</strong></p>
+        <pre style="white-space: pre-wrap;">{assignment_text}</pre>
+        <p><strong>Evaluation:</strong></p>
+        <pre style="white-space: pre-wrap;">{assessment}</pre>
+        <p>Regards,<br/>Assignment Checker Bot</p>
+        """
+        print("[DEBUG] Email body prepared successfully")
+
+        # Build email message
+        msg = MIMEMultipart()
+        msg['From'] = SMTP_USER
+        msg['To'] = recipient_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'html'))
+        print(f"[DEBUG] Email message constructed: Subject='{subject}', From='{SMTP_USER}', To='{recipient_email}'")
+
+        # Send email via SMTP
+        print(f"[DEBUG] Connecting to SMTP server {SMTP_HOST}:{SMTP_PORT}...")
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            print("[DEBUG] SMTP connection secured with STARTTLS")
+            server.login(SMTP_USER, SMTP_PASS)
+            print("[DEBUG] SMTP login successful")
+            server.send_message(msg)
+        print(f"[DEBUG] Email sent successfully to {recipient_email}")
+
+        print("[DEBUG] ---------------- Evaluation Request Completed ----------------\n")
+        return {"reportMessage": "✅ Evaluation report has been sent to the teacher."}
+
+    except Exception as e:
+        print("[ERROR] Exception occurred during evaluation process")
+        print(f"[ERROR] Exception details: {repr(e)}")
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
+
 
 @app.post("/extract_text_essayChecker")
 async def extract_text_essay_checker(
@@ -3630,6 +3723,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
