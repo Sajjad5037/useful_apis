@@ -83,6 +83,7 @@ USAGE_LIMIT_INCREASE = 5.0  # dollars
 BASELINE_COST = 0.0  # Replace this with your actual baseline cost or fetch it from DB/config
 bucket_name_anz_way = "sociology_anz_way"
 VECTORSTORE_FOLDER_IN_BUCKET = "vectorstore"
+qa_chain_anz_way = None
 
 #for text extractor from image 
 # Load the JSON string from the environment variable
@@ -1509,9 +1510,47 @@ Overall Mark: <score/{total_marks}>
         print(f"[ERROR] Failed to evaluate student response: {e}")
         traceback.print_exc()
         return {"status": "error", "detail": str(e)}
+# -----------------------------
+# Initialize QA chain
+# -----------------------------
+def initialize_qa_chain_anz_way(bucket_name: str, folder_in_bucket: str):
+    global qa_chain_anz_way
+
+    print("[DEBUG] Initializing QA Chain (anz way)...")
+
+    try:
+        # Step 1: Download vector store from GCS
+        temp_dir = download_vectorstore_from_gcs(bucket_name, folder_in_bucket)
+
+        # Step 2: Recreate embeddings (must match original used in training)
+        embeddings = OpenAIEmbeddings(
+            model="text-embedding-3-small",
+            openai_api_key=OPENAI_API_KEY
+        )
+
+        # Step 3: Load FAISS index with embeddings
+        vectorstore = FAISS.load_local(
+            temp_dir,
+            embeddings,
+            allow_dangerous_deserialization=True
+        )
+
+        # Step 4: Create retriever and QA chain
+        retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 3})
+        qa_chain_anz_way = RetrievalQA.from_chain_type(
+            llm=ChatOpenAI(model="gpt-4o-mini", openai_api_key=openai_api_key),
+            retriever=retriever,
+            chain_type="stuff"
+        )
+
+        print("[DEBUG] QA Chain (anz way) initialized successfully.")
+
+    except Exception as e:
+        print(f"[ERROR] Failed to initialize QA Chain (anz way): {e}")
+        traceback.print_exc()
 
 @app.post("/train-on-images-anz-way")
-async def train_on_images(
+async def train_on_images_anz_way(
     images: List[UploadFile] = File(...),
     question_text: str = Form(...),
     total_marks: int = Form(...),  # from frontend
@@ -1520,19 +1559,38 @@ async def train_on_images(
     origin = request.headers.get("origin") if request else "*"
     cors_headers = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true"}
 
-    if qa_chain is None:
-        return JSONResponse(content={"status": "error", "detail": "QA chain not initialized"}, headers=cors_headers)
+    global qa_chain_anz_way
 
+    # ✅ Lazy fallback: initialize if not ready
+    if qa_chain_anz_way is None:
+        try:
+            initialize_qa_chain_anz_way(
+                bucket_name="bucket_name_anz_way",
+                folder_in_bucket="your/vectorstore/folder"
+            )
+        except Exception as e:
+            return JSONResponse(
+                content={"status": "error", "detail": f"Failed to initialize QA chain: {str(e)}"},
+                headers=cors_headers
+            )
+
+    # Now qa_chain_anz_way should exist
+    if qa_chain_anz_way is None:
+        return JSONResponse(
+            content={"status": "error", "detail": "QA chain still not initialized"},
+            headers=cors_headers
+        )
+
+    # ✅ Run evaluation
     result = await evaluate_student_response_from_images(
         images=images,
         question_text=question_text,
         total_marks=total_marks,
-        qa_chain=qa_chain,
+        qa_chain=qa_chain_anz_way,
         minimum_word_count=80
     )
 
     return JSONResponse(content=result, headers=cors_headers)
-
 
 
 
@@ -3895,6 +3953,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
