@@ -1495,7 +1495,11 @@ Overall Assessment:
 <summary referencing features and word count>
 Overall Mark: <score/{total_marks}>
 """
+        retrieved_docs = qa_chain.retriever.get_relevant_documents(evaluation_prompt)
 
+        # Print or log retrieved docs
+        for i, doc in enumerate(retrieved_docs, 1):
+            print(f"[DEBUG] Retrieved doc {i}: {doc.page_content[:500]}...\n")
         print("[DEBUG] Sending evaluation prompt to QA chain...")
         evaluation_result = qa_chain.run(evaluation_prompt)
         print("[DEBUG] Received evaluation result from QA chain")
@@ -3985,6 +3989,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
