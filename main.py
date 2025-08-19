@@ -2444,7 +2444,7 @@ async def extract_text(image: UploadFile = File(...)):
 @app.post("/evaluate-assignment")
 async def evaluate_assignment(
     session_id: str = Form(...),
-    recipient_email: str = Form(...)    
+    recipient_email: str = Form(...)
 ):
     try:
         print("\n[DEBUG] ---------------- New Evaluation Request ----------------")
@@ -2456,69 +2456,93 @@ async def evaluate_assignment(
             print(f"[ERROR] Invalid session ID: {session_id}")
             return JSONResponse({"error": "Invalid session"}, status_code=400)
 
-        # Retrieve data from session
-        chat_history = sessions.get(session_id, [])
-        assignment_text = ""
-        if chat_history:
-            for msg in chat_history:
-                if msg["role"] == "user":
-                    assignment_text = msg["content"]
-                    break
-        print(f"[DEBUG] Assignment text length: {len(assignment_text)} characters")
-        print(f"[DEBUG] Chat history messages count: {len(chat_history)}")
+        # --- Normalize session data (supports both list or dict storage) ---
+        raw = sessions[session_id]
+        if isinstance(raw, dict):
+            chat_history = raw.get("messages", [])
+            print("[DEBUG] Session storage detected: dict with 'messages' key")
+        elif isinstance(raw, list):
+            chat_history = raw
+            print("[DEBUG] Session storage detected: plain list of messages")
+        else:
+            print(f"[ERROR] Unexpected session data type: {type(raw)}")
+            return JSONResponse({"error": "Corrupt session data"}, status_code=500)
 
-        # Construct evaluation prompt
+        # --- Extract the latest USER message as the assignment text ---
+        assignment_text = ""
+        for msg in reversed(chat_history):
+            try:
+                if msg.get("role") == "user":
+                    assignment_text = msg.get("content", "")
+                    if assignment_text:
+                        break
+            except AttributeError:
+                # In case a non-dict item sneaks into the list
+                continue
+
+        print(f"[DEBUG] Chat history messages count: {len(chat_history)}")
+        print(f"[DEBUG] Assignment text length (last user msg): {len(assignment_text)} characters")
+
+        if not assignment_text.strip():
+            print("[ERROR] No user assignment text found in session")
+            return JSONResponse({"error": "No student assignment found in session"}, status_code=400)
+
+        # --- Construct authorship-only evaluation prompt ---
         evaluation_prompt = f"""
-        You are a teacher-assistant bot. 
-        Your only job is to evaluate the authorship of a student's MPhil-level linguistics assignment. 
-        Determine whether the work appears to be:
-        
-        - Authored independently by the student
-        - Copied/plagiarized (partially or fully)
-        - Unclear/inconclusive
-        
-        Provide a concise explanation (max 5 sentences). 
-        Do not include irrelevant details.
-        
-        Assignment:
-        <<< BEGIN TEXT >>>
-        {assignment_text}
-        <<< END TEXT >>>
-        
-        Conversation history (if relevant):
-        {chat_history}
-        """
+You are an academic integrity assistant. 
+Your ONLY task is to evaluate the authorship of the student's assignment text below.
+
+Decide ONE of:
+- "Likely authored by student"
+- "Likely copied / written by someone else"
+- "Inconclusive"
+
+Then provide a brief justification (max 5 sentences). 
+Do NOT include suggestions, rewrites, or unrelated feedback.
+
+Assignment:
+<<< BEGIN TEXT >>>
+{assignment_text}
+<<< END TEXT >>>
+""".strip()
         print("[DEBUG] Evaluation prompt constructed successfully")
-        
-        # Call OpenAI API
+
+        # --- Call OpenAI (authorship-only, low temperature) ---
         print("[DEBUG] Sending request to OpenAI API...")
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an assistant providing a concise authorship evaluation."},
+                {"role": "system", "content": "You are an assistant providing a concise authorship evaluation only."},
                 {"role": "user", "content": evaluation_prompt}
             ],
-            temperature=0.3  # lower temperature = more focused answer
+            temperature=0.2
         )
         print("[DEBUG] Response received from OpenAI API")
-        
-        # Extract assessment
-        assessment = response.choices[0].message.content.strip()
+
+        # --- Extract assessment safely ---
+        try:
+            assessment = response.choices[0].message.content.strip()
+        except Exception:
+            print("[ERROR] Failed to extract assessment from OpenAI response")
+            print("[DEBUG] Raw OpenAI response:", response)
+            return JSONResponse({"error": "LLM response parsing error"}, status_code=500)
+
         print("[DEBUG] Authorship assessment extracted successfully")
-        print(f"[DEBUG] Assessment length: {len(assessment)} characters")
-        
-        # Prepare email content
-        subject = "Assignment Authorship Evaluation Report"
+        print(f"[DEBUG] Assessment preview: {assessment[:200]}{'...' if len(assessment) > 200 else ''}")
+
+        # --- Compose minimal email (authorship verdict ONLY) ---
+        subject = "Assignment Authorship Evaluation"
         body = f"""
         <h2>Assignment Authorship Evaluation</h2>
-        <p>Dear Teacher,</p>
-        <p><strong>Authorship Evaluation:</strong></p>
-        <pre style="white-space: pre-wrap;">{assessment}</pre>
-        <p>Regards,<br/>Assignment Checker Bot</p>
-        """
+        <p><strong>Verdict & Rationale:</strong></p>
+        <pre style="white-space: pre-wrap; font-family: inherit;">{assessment}</pre>
+        <p style="color:#666; font-size: 12px; margin-top: 16px;">
+          Note: This is an AI-assisted authorship signal and should be used alongside teacher judgment and any formal plagiarism tools.
+        </p>
+        """.strip()
         print("[DEBUG] Email body prepared successfully")
 
-        # Build email message
+        # --- Send email ---
         msg = MIMEMultipart()
         msg['From'] = SMTP_USER
         msg['To'] = recipient_email
@@ -2526,7 +2550,6 @@ async def evaluate_assignment(
         msg.attach(MIMEText(body, 'html'))
         print(f"[DEBUG] Email message constructed: Subject='{subject}', From='{SMTP_USER}', To='{recipient_email}'")
 
-        # Send email via SMTP
         print(f"[DEBUG] Connecting to SMTP server {SMTP_HOST}:{SMTP_PORT}...")
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
             server.starttls()
@@ -2541,9 +2564,9 @@ async def evaluate_assignment(
 
     except Exception as e:
         print("[ERROR] Exception occurred during evaluation process")
-        print(f"[ERROR] Exception details: {repr(e)}")
+        traceback.print_exc()
         return JSONResponse({"error": "Internal server error"}, status_code=500)
-
+        
 
 @app.post("/extract_text_essayChecker")
 async def extract_text_essay_checker(
@@ -3733,6 +3756,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
