@@ -2469,48 +2469,50 @@ async def evaluate_assignment(
 
         # Construct evaluation prompt
         evaluation_prompt = f"""
-You are a teacher-assistant bot evaluating a student's MPhil-level linguistics assignment.
-Use the assignment text and conversation history to determine:
-
-- If the student understands the assignment
-- Key mistakes or areas to improve
-- A short evaluation summary
-
-Assignment:
-<<< BEGIN TEXT >>>
-{assignment_text}
-<<< END TEXT >>>
-
-Conversation history:
-{chat_history}
-"""
+        You are a teacher-assistant bot. 
+        Your only job is to evaluate the authorship of a student's MPhil-level linguistics assignment. 
+        Determine whether the work appears to be:
+        
+        - Authored independently by the student
+        - Copied/plagiarized (partially or fully)
+        - Unclear/inconclusive
+        
+        Provide a concise explanation (max 5 sentences). 
+        Do not include irrelevant details.
+        
+        Assignment:
+        <<< BEGIN TEXT >>>
+        {assignment_text}
+        <<< END TEXT >>>
+        
+        Conversation history (if relevant):
+        {chat_history}
+        """
         print("[DEBUG] Evaluation prompt constructed successfully")
-
+        
         # Call OpenAI API
         print("[DEBUG] Sending request to OpenAI API...")
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an assistant providing a teacher-friendly evaluation."},
+                {"role": "system", "content": "You are an assistant providing a concise authorship evaluation."},
                 {"role": "user", "content": evaluation_prompt}
             ],
-            temperature=0.7
+            temperature=0.3  # lower temperature = more focused answer
         )
         print("[DEBUG] Response received from OpenAI API")
-
+        
         # Extract assessment
         assessment = response.choices[0].message.content.strip()
-        print("[DEBUG] Assessment extracted successfully")
+        print("[DEBUG] Authorship assessment extracted successfully")
         print(f"[DEBUG] Assessment length: {len(assessment)} characters")
-
+        
         # Prepare email content
-        subject = "Your Assignment Evaluation Report"
+        subject = "Assignment Authorship Evaluation Report"
         body = f"""
-        <h2>Assignment Evaluation Report</h2>
+        <h2>Assignment Authorship Evaluation</h2>
         <p>Dear Teacher,</p>
-        <p><strong>Student Submission:</strong></p>
-        <pre style="white-space: pre-wrap;">{assignment_text}</pre>
-        <p><strong>Evaluation:</strong></p>
+        <p><strong>Authorship Evaluation:</strong></p>
         <pre style="white-space: pre-wrap;">{assessment}</pre>
         <p>Regards,<br/>Assignment Checker Bot</p>
         """
@@ -3731,6 +3733,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
