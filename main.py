@@ -1527,7 +1527,7 @@ def initialize_qa_chain_anz_way(bucket_name: str, folder_in_bucket: str):
         # Step 2: Recreate embeddings (must match original used in training)
         embeddings = OpenAIEmbeddings(
             model="text-embedding-3-small",
-            openai_api_key=OPENAI_API_KEY
+            openai_api_key=openai_api_key
         )
 
         # Step 3: Load FAISS index with embeddings
@@ -1559,7 +1559,10 @@ async def train_on_images_anz_way(
     request: Request = None
 ):
     origin = request.headers.get("origin") if request else "*"
-    cors_headers = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true"}
+    cors_headers = {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true"
+    }
 
     global qa_chain_anz_way
 
@@ -1583,16 +1586,34 @@ async def train_on_images_anz_way(
             headers=cors_headers
         )
 
+    # ✅ Define your mapping dictionary
+    word_count_map = {
+        5: 50,
+        10: 80,
+        15: 120,
+        20: 150
+    }
+
+    # ✅ Validate total_marks
+    if total_marks not in word_count_map:
+        return JSONResponse(
+            content={"status": "error", "detail": f"Invalid total_marks: {total_marks}. Allowed values are {list(word_count_map.keys())}"},
+            headers=cors_headers
+        )
+
+    minimum_word_count = word_count_map[total_marks]
+
     # ✅ Run evaluation
     result = await evaluate_student_response_from_images(
         images=images,
         question_text=question_text,
         total_marks=total_marks,
         qa_chain=qa_chain_anz_way,
-        minimum_word_count=80
+        minimum_word_count=minimum_word_count
     )
 
     return JSONResponse(content=result, headers=cors_headers)
+
 
 
 
@@ -3955,6 +3976,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
