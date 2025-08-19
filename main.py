@@ -1568,16 +1568,17 @@ async def train_on_images_anz_way(
 
     # ✅ Lazy fallback: initialize if not ready
     if qa_chain_anz_way is None:
-        try:
-            initialize_qa_chain_anz_way(
-                bucket_name="bucket_name_anz_way",
-                folder_in_bucket="your/vectorstore/folder"
-            )
-        except Exception as e:
-            return JSONResponse(
-                content={"status": "error", "detail": f"Failed to initialize QA chain: {str(e)}"},
-                headers=cors_headers
-            )
+       try:
+        initialize_qa_chain_anz_way(
+            bucket_name="sociology_anz_way",
+            folder_in_bucket="sociology_instructions.faiss"
+        )
+    except Exception as e:
+        return JSONResponse(
+            content={"status": "error", "detail": f"Failed to initialize QA chain: {str(e)}"},
+            headers=cors_headers
+        )
+
 
     # Now qa_chain_anz_way should exist
     if qa_chain_anz_way is None:
@@ -3976,6 +3977,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
