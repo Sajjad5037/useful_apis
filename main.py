@@ -1600,10 +1600,11 @@ async def train_on_images_anz_way(
 
     # ✅ Define mapping dictionary
     word_count_map = {
-        4: 50,
-        10: 80,
-        15: 120,
-        20: 150
+    4: 100,    # full short-answer question (e.g., 2 reasons with explanations)
+    6: 150,    # multi-part short answer / detailed paragraph
+    8: 200,    # longer answer / mini-essay
+    10: 250,   # extended answer / mini-essay with examples
+    26: 450    # long essay-style answer / evaluation question
     }
 
     # ✅ Validate total_marks
@@ -3998,6 +3999,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
