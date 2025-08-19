@@ -2489,22 +2489,30 @@ async def evaluate_assignment(
 
         # --- Construct authorship-only evaluation prompt ---
         evaluation_prompt = f"""
-You are an academic integrity assistant. 
-Your ONLY task is to evaluate the authorship of the student's assignment text below.
-
-Decide ONE of:
-- "Likely authored by student"
-- "Likely copied / written by someone else"
-- "Inconclusive"
-
-Then provide a brief justification (max 5 sentences). 
-Do NOT include suggestions, rewrites, or unrelated feedback.
-
-Assignment:
-<<< BEGIN TEXT >>>
-{assignment_text}
-<<< END TEXT >>>
-""".strip()
+        You are an academic evaluator. Your job is to judge whether the student is the likely author of the submitted assignment text.
+        
+        Use BOTH:
+        1. The student's written assignment.
+        2. The conversation history where the student was asked questions about the text.
+        
+        Decision rules:
+        - If the student can explain the text clearly, expand on ideas, or answer related questions well → "Student Wrote It".
+        - If the student avoids, struggles, or shows little understanding of their own text → "Likely Copied".
+        - Only use "Uncertain" if BOTH the text AND the conversation provide almost no evidence.
+        
+        Assignment:
+        <<< BEGIN TEXT >>>
+        {assignment_text}
+        <<< END TEXT >>>
+        
+        Conversation history:
+        {chat_history}
+        
+        Now, give your judgment in this exact format:
+        
+        Authorship Decision: [Student Wrote It / Likely Copied / Uncertain]
+        Reasoning: [short, clear explanation that uses BOTH the text and conversation as evidence]
+        """
         print("[DEBUG] Evaluation prompt constructed successfully")
 
         # --- Call OpenAI (authorship-only, low temperature) ---
@@ -3756,6 +3764,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
