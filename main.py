@@ -1468,33 +1468,36 @@ Student Response:
 {student_response}
 
 Task:
+
 1. Improved Response:
-   - Rewrite the student response into a stronger version that would receive maximum marks based strictly on the retrieved instructions. 
-   - Use ONLY features, points, or examples explicitly found in the instructions. 
-   - Keep concise but complete. 
+   - Rewrite the student response into the strongest possible version that would receive maximum marks strictly based on the retrieved instructions.
+   - Use ONLY points, features, or examples explicitly mentioned in the instructions.
+   - Keep the response concise but complete.
    - Ensure the response meets the minimum word count of {minimum_word_count} words.
 
 2. Marking (STRICT Scheme Compliance):
-   - Award marks ONLY if the point is explicitly supported by the retrieved instructions. 
-   - Every awarded mark must be justified with a QUOTED phrase from the instructions. 
-   - If no exact scheme phrase justifies a point, award 0 marks even if the idea seems correct. 
-   - Follow the marking method exactly as written (e.g., “up to 2 marks per feature” or “Level descriptors 6–8 marks”). 
+   - Award marks ONLY if a point is explicitly supported by the retrieved instructions.
+   - EVERY awarded mark MUST be justified by quoting the exact phrase from the retrieved mark scheme.
+   - If no scheme phrase supports a point, award 0 marks.
+   - Follow the marking rules exactly as written (e.g., “up to 2 marks per feature” or “level descriptors 6–8 marks”).
    - Maximum marks = {total_marks}.
+   - Do NOT give additional credit for repetition or interpretation.
 
 3. Line-by-Line Analysis:
    For each line in the student response:
-       • State what is correct or relevant according to the retrieved instructions.  
-       • QUOTE the exact phrase from the mark scheme that justifies awarding or denying the mark.  
-       • Point out what is missing or unclear compared to the instructions.  
-       • Explicitly link feedback to the marking criteria (e.g., “feature identified,” “feature described,” “AO2 application”).  
-       • Show the exact mark contribution (e.g., +1, +0).  
-   IMPORTANT: If the same response is re-evaluated, it must ALWAYS receive the same marks, since marks are tied to quoted scheme text.
+       • State what is correct or relevant according to the retrieved instructions.
+       • QUOTE the exact phrase from the mark scheme that justifies awarding or denying the mark.
+       • Clearly identify the feature being credited (e.g., “controlled environment,” “replicability”).
+       • Point out what is missing or unclear compared to the instructions.
+       • Explicitly link feedback to the marking criteria (e.g., “feature identified,” “feature described,” “AO2 application”).
+       • Show the exact mark contribution for each line (e.g., +1, +0).
+   IMPORTANT: If the same response is re-evaluated, it MUST always receive the same marks, since marks are strictly tied to quoted scheme text.
 
 4. Overall Assessment:
-   - Summarize how well the response met the retrieved instructions.  
-   - Confirm whether the minimum word count was achieved.  
-   - Give practical advice on how to improve for full marks next time.  
-   - Clearly state the final mark as: Overall Mark: <score/{total_marks}>
+   - Summarize how well the response met the retrieved instructions.
+   - Confirm whether the minimum word count was achieved.
+   - Give practical advice on how to improve to reach full marks next time.
+   - Clearly state the final mark as: Overall Mark: <score/{total_marks}>.
 
 Output Format:
 
@@ -1502,14 +1505,15 @@ Improved Response:
 <your improved response here>
 
 Line-by-Line Analysis:
-Line 1: <positive + improvement + QUOTED scheme justification + mark contribution>
-Line 2: <positive + improvement + QUOTED scheme justification + mark contribution>
+Line 1: <positive + improvement + QUOTED scheme phrase + feature credited + mark contribution>
+Line 2: <positive + improvement + QUOTED scheme phrase + feature credited + mark contribution>
 ...
 
 Overall Assessment:
 <summary referencing retrieved instructions, word count, and advice>
 Overall Mark: <score/{total_marks}>
 """
+
 
 
 
@@ -4058,6 +4062,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
