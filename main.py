@@ -1468,19 +1468,28 @@ Student Response:
 
 Task:
 1. Rewrite the student response into an improved version that would receive maximum marks strictly based on the retrieved instructions.
-   - Include only points explicitly in the instructions.
+   - Use only points explicitly mentioned in the instructions.
    - Keep concise but complete.
    - Ensure the response meets the minimum word count of {minimum_word_count} words.
 
-2. Line-by-line analysis:
-   - For each line, highlight BOTH what the student did well and what could be improved.
-   - Phrase feedback in a constructive, student-friendly way (encouraging, but precise).
-   - Assign marks based on total marks ({total_marks}), with a short justification.
+2. Marking (STRICTLY follow retrieved instructions):
+   - Read the retrieved mark scheme carefully.
+   - Award marks only in the way the scheme specifies (e.g., identify + describe, levels, bands, etc.).
+   - Do NOT invent your own marking system. 
+   - Maximum marks = {total_marks} (from the instructions).
+   - If instructions say “up to 2 marks per feature,” apply exactly that. If instructions say “level descriptors for 6–8 marks,” apply that instead.
 
-3. Overall assessment:
-   - Summarize how well the response matches the retrieved instructions.
+3. Line-by-line analysis:
+   - For each line in the student response:
+       • Identify what is correct or relevant according to the retrieved instructions.
+       • Point out what is missing or unclear compared to the instructions.
+       • Link feedback explicitly to the marking criteria (e.g., feature identified, feature described, use of concept, AO2 application, etc.).
+   - Assign marks only according to the retrieved scheme.
+
+4. Overall assessment:
+   - Summarize how well the response met the retrieved instructions.
    - State clearly if the minimum word count is met.
-   - Give specific suggestions on how the student can reach full marks next time.
+   - Give practical advice on how the student could improve to reach full marks next time.
    - Provide the overall mark strictly based on the retrieved instructions.
 
 Output Format:
@@ -1489,14 +1498,15 @@ Improved Response:
 <your improved response here>
 
 Line-by-Line Analysis:
-Line 1: <positive note + improvement + mark>
-Line 2: <positive note + improvement + mark>
+Line 1: <positive + improvement + link to scheme + mark contribution>
+Line 2: <positive + improvement + link to scheme + mark contribution>
 ...
 
 Overall Assessment:
-<summary referencing features, word count, and practical advice>
+<summary referencing retrieved instructions, word count, and advice>
 Overall Mark: <score/{total_marks}>
 """
+
 
 # Prepare evaluation prompt (strict examiner)
 # evaluation_prompt = f"""
@@ -4043,6 +4053,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
