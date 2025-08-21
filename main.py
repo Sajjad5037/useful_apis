@@ -977,7 +977,11 @@ def create_or_load_vectorstore(
         global vectorstore
 
         print("[INFO] Initializing RecursiveCharacterTextSplitter...")
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,      # larger chunks to keep instructions together
+            chunk_overlap=100,   # overlap to prevent cutting important lines
+            separators=["\n\n", "\n", ".", " "]
+        )
         print("[INFO] Text splitter initialized.")
 
         documents_with_page_info = []
@@ -4040,6 +4044,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
