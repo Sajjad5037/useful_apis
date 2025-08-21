@@ -1457,8 +1457,9 @@ async def evaluate_student_response_from_images(
 
 #prepare evaluation prompt(encouraging teacher)
         evaluation_prompt = f"""
-You are an expert sociology examiner and supportive teacher. Using ONLY the instructions retrieved from the vector store QA chain,
-evaluate the following student response. Do NOT use any knowledge outside the vector store.
+You are an expert sociology examiner and supportive teacher. 
+Your evaluation must rely ONLY on the instructions retrieved from the vector store QA chain. 
+Do NOT use any outside knowledge, interpretation, or assumptions. 
 
 Question:
 {question_text}
@@ -1467,31 +1468,33 @@ Student Response:
 {student_response}
 
 Task:
-1. Rewrite the student response into an improved version that would receive maximum marks strictly based on the retrieved instructions.
-   - Use only points explicitly mentioned in the instructions.
-   - Keep concise but complete.
+1. Improved Response:
+   - Rewrite the student response into a stronger version that would receive maximum marks based strictly on the retrieved instructions. 
+   - Use ONLY features, points, or examples explicitly found in the instructions. 
+   - Keep concise but complete. 
    - Ensure the response meets the minimum word count of {minimum_word_count} words.
 
-2. Marking (STRICTLY follow retrieved instructions):
-   - Read the retrieved mark scheme carefully.
-   - Award marks only in the way the scheme specifies (e.g., identify + describe, levels, bands, etc.).
-   - Do NOT invent your own marking system. 
-   - Maximum marks = {total_marks} (from the instructions).
-   - If instructions say “up to 2 marks per feature,” apply exactly that. If instructions say “level descriptors for 6–8 marks,” apply that instead.
+2. Marking (STRICT Scheme Compliance):
+   - Award marks ONLY if the point is explicitly supported by the retrieved instructions. 
+   - Every awarded mark must be justified with a QUOTED phrase from the instructions. 
+   - If no exact scheme phrase justifies a point, award 0 marks even if the idea seems correct. 
+   - Follow the marking method exactly as written (e.g., “up to 2 marks per feature” or “Level descriptors 6–8 marks”). 
+   - Maximum marks = {total_marks}.
 
-3. Line-by-line analysis:
-   - For each line in the student response:
-       • Identify what is correct or relevant according to the retrieved instructions.
-       • QUOTE the exact phrase from the mark scheme that justifies awarding or denying the mark.
-       • Point out what is missing or unclear compared to the instructions.
-       • Link feedback explicitly to the marking criteria (e.g., feature identified, feature described, use of concept, AO2 application, etc.).
-   - Assign marks only according to the retrieved scheme.
+3. Line-by-Line Analysis:
+   For each line in the student response:
+       • State what is correct or relevant according to the retrieved instructions.  
+       • QUOTE the exact phrase from the mark scheme that justifies awarding or denying the mark.  
+       • Point out what is missing or unclear compared to the instructions.  
+       • Explicitly link feedback to the marking criteria (e.g., “feature identified,” “feature described,” “AO2 application”).  
+       • Show the exact mark contribution (e.g., +1, +0).  
+   IMPORTANT: If the same response is re-evaluated, it must ALWAYS receive the same marks, since marks are tied to quoted scheme text.
 
-4. Overall assessment:
-   - Summarize how well the response met the retrieved instructions.
-   - State clearly if the minimum word count is met.
-   - Give practical advice on how the student could improve to reach full marks next time.
-   - Provide the overall mark strictly based on the retrieved instructions.
+4. Overall Assessment:
+   - Summarize how well the response met the retrieved instructions.  
+   - Confirm whether the minimum word count was achieved.  
+   - Give practical advice on how to improve for full marks next time.  
+   - Clearly state the final mark as: Overall Mark: <score/{total_marks}>
 
 Output Format:
 
@@ -4055,6 +4058,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
