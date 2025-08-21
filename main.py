@@ -1482,6 +1482,7 @@ Task:
 3. Line-by-line analysis:
    - For each line in the student response:
        • Identify what is correct or relevant according to the retrieved instructions.
+       • QUOTE the exact phrase from the mark scheme that justifies awarding or denying the mark.
        • Point out what is missing or unclear compared to the instructions.
        • Link feedback explicitly to the marking criteria (e.g., feature identified, feature described, use of concept, AO2 application, etc.).
    - Assign marks only according to the retrieved scheme.
@@ -1498,14 +1499,15 @@ Improved Response:
 <your improved response here>
 
 Line-by-Line Analysis:
-Line 1: <positive + improvement + link to scheme + mark contribution>
-Line 2: <positive + improvement + link to scheme + mark contribution>
+Line 1: <positive + improvement + QUOTED scheme justification + mark contribution>
+Line 2: <positive + improvement + QUOTED scheme justification + mark contribution>
 ...
 
 Overall Assessment:
 <summary referencing retrieved instructions, word count, and advice>
 Overall Mark: <score/{total_marks}>
 """
+
 
 
 # Prepare evaluation prompt (strict examiner)
@@ -4053,6 +4055,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
