@@ -1504,6 +1504,7 @@ Task:
    - EVERY awarded mark MUST be justified by quoting the EXACT phrase from the retrieved instructions, e.g., "1 mark for identifying a feature of a laboratory experiment" or "1 mark for describing the feature of a laboratory experiment".
    - If no scheme phrase explicitly supports a point, award 0 marks.
    - Follow the marking rules exactly as written (e.g., “up to 2 marks per feature” or “level descriptors 6–8 marks”).
+   - **Award marks for a maximum of two features only, even if more features are mentioned.**
    - Maximum marks = {total_marks}.
    - Do NOT award additional credit for repetition, generalization, or interpretation.
    - Marks must be consistent: repeated evaluation of the same response should yield the same marks.
@@ -1516,6 +1517,7 @@ Task:
        • Indicate what is missing or unclear compared to the instructions.
        • Explicitly link feedback to the marking criteria (e.g., "feature identified," "feature described," "AO2 application").
        • Show the exact mark contribution for each line (e.g., +1, +0).
+       • Ensure that no more than two features are awarded marks in total; if multiple features appear, select the two most relevant according to the instructions.
 
 4. Overall Assessment:
    - Summarize how well the response met the retrieved instructions.
@@ -1537,6 +1539,7 @@ Overall Assessment:
 <summary referencing retrieved instructions, word count, and advice>
 Overall Mark: <score/{total_marks}>
 """
+
 
         # --- Step 4: Run evaluation ---
         print("[DEBUG] Sending evaluation prompt to QA chain...")
@@ -4038,6 +4041,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
