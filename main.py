@@ -1455,9 +1455,9 @@ async def evaluate_student_response_from_images(
         student_response = combined_text.strip()
         print(f"[DEBUG] Total extracted student response length: {len(student_response)} characters")
 
-        # Prepare evaluation prompt
+#prepare evaluation prompt(encouraging teacher)
         evaluation_prompt = f"""
-You are an expert sociology examiner. Using ONLY the instructions retrieved from the vector store QA chain,
+You are an expert sociology examiner and supportive teacher. Using ONLY the instructions retrieved from the vector store QA chain,
 evaluate the following student response. Do NOT use any knowledge outside the vector store.
 
 Question:
@@ -1467,19 +1467,21 @@ Student Response:
 {student_response}
 
 Task:
-1. Rewrite the student response to receive the maximum marks strictly based on retrieved instructions.
-   - Include only points explicitly in instructions.
+1. Rewrite the student response into an improved version that would receive maximum marks strictly based on the retrieved instructions.
+   - Include only points explicitly in the instructions.
    - Keep concise but complete.
-   - Ensure the response meets minimum word count of {minimum_word_count} words.
+   - Ensure the response meets the minimum word count of {minimum_word_count} words.
 
 2. Line-by-line analysis:
-   - Correctness, missing elements, suggestions.
-   - Assign marks based on total marks ({total_marks}).
+   - For each line, highlight BOTH what the student did well and what could be improved.
+   - Phrase feedback in a constructive, student-friendly way (encouraging, but precise).
+   - Assign marks based on total marks ({total_marks}), with a short justification.
 
 3. Overall assessment:
-   - Summary referencing retrieved instructions.
-   - Indicate if minimum word count is met.
-   - Give overall mark strictly based on retrieved instructions.
+   - Summarize how well the response matches the retrieved instructions.
+   - State clearly if the minimum word count is met.
+   - Give specific suggestions on how the student can reach full marks next time.
+   - Provide the overall mark strictly based on the retrieved instructions.
 
 Output Format:
 
@@ -1487,14 +1489,56 @@ Improved Response:
 <your improved response here>
 
 Line-by-Line Analysis:
-Line 1: <analysis with references, mark>
-Line 2: <analysis with references, mark>
+Line 1: <positive note + improvement + mark>
+Line 2: <positive note + improvement + mark>
 ...
 
 Overall Assessment:
-<summary referencing features and word count>
+<summary referencing features, word count, and practical advice>
 Overall Mark: <score/{total_marks}>
 """
+
+# Prepare evaluation prompt (strict examiner)
+# evaluation_prompt = f"""
+# You are an expert sociology examiner. Using ONLY the instructions retrieved from the vector store QA chain,
+# evaluate the following student response. Do NOT use any knowledge outside the vector store.
+#
+# Question:
+# {question_text}
+#
+# Student Response:
+# {student_response}
+#
+# Task:
+# 1. Rewrite the student response to receive the maximum marks strictly based on retrieved instructions.
+#    - Include only points explicitly in instructions.
+#    - Keep concise but complete.
+#    - Ensure the response meets minimum word count of {minimum_word_count} words.
+#
+# 2. Line-by-line analysis:
+#    - Correctness, missing elements, suggestions.
+#    - Assign marks based on total marks ({total_marks}).
+#
+# 3. Overall assessment:
+#    - Summary referencing retrieved instructions.
+#    - Indicate if minimum word count is met.
+#    - Give overall mark strictly based on retrieved instructions.
+#
+# Output Format:
+#
+# Improved Response:
+# <your improved response here>
+#
+# Line-by-Line Analysis:
+# Line 1: <analysis with references, mark>
+# Line 2: <analysis with references, mark>
+# ...
+#
+# Overall Assessment:
+# <summary referencing features and word count>
+# Overall Mark: <score/{total_marks}>
+# """
+
         retrieved_docs = qa_chain.retriever.get_relevant_documents(evaluation_prompt)
 
         # Print or log retrieved docs
@@ -3999,6 +4043,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
