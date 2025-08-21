@@ -1464,7 +1464,7 @@ async def evaluate_student_response_from_images(
         retriever = qa_chain.retriever
         
         # Retrieve documents with increased k
-        retrieved_docs = retriever.get_relevant_documents(retrieval_query, k=10)  # increase k from default 3 to 10
+        retrieved_docs = retriever.get_relevant_documents(retrieval_query)  # increase k from default 3 to 10
         
         if not retrieved_docs:
             print("[WARNING] No instructions retrieved from vector store")
@@ -1472,6 +1472,8 @@ async def evaluate_student_response_from_images(
         else:
             retrieved_context = "\n".join([doc.page_content for doc in retrieved_docs])
             print(f"[DEBUG] Retrieved {len(retrieved_docs)} documents, total length: {len(retrieved_context)} chars")
+        # ✅ Print the actual retrieved context for debugging
+        print(f"[DEBUG] Retrieved context:\n{retrieved_context}\n{'-'*80}")
 
         # --- Step 3: Construct strict evaluation prompt ---
         evaluation_prompt = f"""
@@ -4036,6 +4038,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
