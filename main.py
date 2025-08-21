@@ -1458,7 +1458,7 @@ async def evaluate_student_response_from_images(
 #prepare evaluation prompt(encouraging teacher)
         evaluation_prompt = f"""
 You are an expert sociology examiner and supportive teacher. 
-Your evaluation must rely ONLY on the instructions retrieved from the vector store QA chain. 
+Your evaluation MUST rely ONLY on the instructions retrieved from the vector store QA chain. 
 Do NOT use any outside knowledge, interpretation, or assumptions. 
 
 Question:
@@ -1470,34 +1470,34 @@ Student Response:
 Task:
 
 1. Improved Response:
-   - Rewrite the student response into the strongest possible version that would receive maximum marks strictly based on the retrieved instructions.
-   - Use ONLY points, features, or examples explicitly mentioned in the instructions.
+   - Rewrite the student response into the strongest possible version that would receive maximum marks STRICTLY based on the retrieved instructions.
+   - Include ONLY points, features, or examples explicitly mentioned in the instructions.
    - Keep the response concise but complete.
    - Ensure the response meets the minimum word count of {minimum_word_count} words.
 
 2. Marking (STRICT Scheme Compliance):
    - Award marks ONLY if a point is explicitly supported by the retrieved instructions.
-   - EVERY awarded mark MUST be justified by quoting the exact phrase from the retrieved mark scheme, for example: "1 mark for identifying a feature of a laboratory experiment" or "1 mark for describing the feature of a laboratory experiment".
-   - If no scheme phrase supports a point, award 0 marks.
+   - EVERY awarded mark MUST be justified by quoting the EXACT phrase from the retrieved mark scheme, for example: "1 mark for identifying a feature of a laboratory experiment" or "1 mark for describing the feature of a laboratory experiment".
+   - If no scheme phrase explicitly supports a point, award 0 marks.
    - Follow the marking rules exactly as written (e.g., “up to 2 marks per feature” or “level descriptors 6–8 marks”).
    - Maximum marks = {total_marks}.
-   - Do NOT give additional credit for repetition or interpretation.
+   - Do NOT award additional credit for repetition, generalization, or interpretation.
+   - Marks must be consistent: repeated evaluation of the same response should yield the same marks.
 
 3. Line-by-Line Analysis:
    For each line in the student response:
-       • State what is correct or relevant according to the retrieved instructions.
+       • Identify what is correct or relevant according to the retrieved instructions.
        • QUOTE the exact phrase from the mark scheme that justifies awarding or denying the mark.
-       • Clearly identify the feature being credited (e.g., “controlled environment,” “replicability”).
-       • Point out what is missing or unclear compared to the instructions.
-       • Explicitly link feedback to the marking criteria (e.g., “feature identified,” “feature described,” “AO2 application”).
+       • Clearly specify the feature being credited (e.g., "controlled environment," "replicability").
+       • Indicate what is missing or unclear compared to the instructions.
+       • Explicitly link feedback to the marking criteria (e.g., "feature identified," "feature described," "AO2 application").
        • Show the exact mark contribution for each line (e.g., +1, +0).
-   IMPORTANT: If the same response is re-evaluated, it MUST always receive the same marks, since marks are strictly tied to quoted scheme text.
 
 4. Overall Assessment:
    - Summarize how well the response met the retrieved instructions.
    - Confirm whether the minimum word count was achieved.
-   - Give practical advice on how to improve to reach full marks next time.
-   - Clearly state the final mark as: Overall Mark: <score/{total_marks}>.
+   - Provide practical advice on how to improve to reach full marks next time.
+   - Clearly state the final mark in the format: Overall Mark: <score/{total_marks}>.
 
 Output Format:
 
@@ -1513,6 +1513,7 @@ Overall Assessment:
 <summary referencing retrieved instructions, word count, and advice>
 Overall Mark: <score/{total_marks}>
 """
+
 
 
 
@@ -4062,6 +4063,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
