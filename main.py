@@ -1456,12 +1456,16 @@ async def evaluate_student_response_from_images(
         student_response = combined_text.strip()
         print(f"[DEBUG] Total extracted student response length: {len(student_response)} characters")
 
-        # --- Step 2: Retrieve instructions ---
+        # --- Step 2: Retrieve instructions with dynamic k ---
         print("[DEBUG] Retrieving relevant instructions from vector store...")
         retrieval_query = f"Instructions for answering: {question_text}"
-        retrieved_docs = retriever.get_relevant_documents(retrieval_query, k=10)  # increase k to fetch more instructions
-
-
+        
+        # Assign retriever from qa_chain
+        retriever = qa_chain.retriever
+        
+        # Retrieve documents with increased k
+        retrieved_docs = retriever.get_relevant_documents(retrieval_query, k=10)  # increase k from default 3 to 10
+        
         if not retrieved_docs:
             print("[WARNING] No instructions retrieved from vector store")
             retrieved_context = "No instructions retrieved. Model should give 0 marks for all features."
@@ -4032,6 +4036,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
