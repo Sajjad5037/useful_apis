@@ -1477,7 +1477,7 @@ Task:
 
 2. Marking (STRICT Scheme Compliance):
    - Award marks ONLY if a point is explicitly supported by the retrieved instructions.
-   - EVERY awarded mark MUST be justified by quoting the exact phrase from the retrieved mark scheme.
+   - EVERY awarded mark MUST be justified by quoting the exact phrase from the retrieved mark scheme, for example: "1 mark for identifying a feature of a laboratory experiment" or "1 mark for describing the feature of a laboratory experiment".
    - If no scheme phrase supports a point, award 0 marks.
    - Follow the marking rules exactly as written (e.g., “up to 2 marks per feature” or “level descriptors 6–8 marks”).
    - Maximum marks = {total_marks}.
@@ -1505,7 +1505,7 @@ Improved Response:
 <your improved response here>
 
 Line-by-Line Analysis:
-Line 1: <positive + improvement + QUOTED scheme phrase + feature credited + mark contribution>
+Line 1: <positive + improvement + QUOTED scheme phrase (e.g., "1 mark for identifying a feature of a laboratory experiment") + feature credited + mark contribution>
 Line 2: <positive + improvement + QUOTED scheme phrase + feature credited + mark contribution>
 ...
 
@@ -4062,6 +4062,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
