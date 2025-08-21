@@ -1421,7 +1421,6 @@ def download_vectorstore_from_gcs(bucket_name: str, folder_in_bucket: str):
         traceback.print_exc()
     print("[DEBUG] Vector store download complete")
     return temp_dir
-
 async def evaluate_student_response_from_images(
     images: List[UploadFile],
     question_text: str,
@@ -1430,10 +1429,11 @@ async def evaluate_student_response_from_images(
     minimum_word_count: int = 80
 ):
     """
-    Extracts text from images using Google Vision, evaluates it using the QA chain,
-    and returns structured evaluation results.
+    Extract text from images, retrieve relevant instructions from vector store,
+    and evaluate the student's response consistently.
     """
     try:
+        # --- Step 1: OCR ---
         print("[DEBUG] Starting OCR on uploaded images...")
         combined_text = ""
 
@@ -1443,23 +1443,41 @@ async def evaluate_student_response_from_images(
                 print(f"[WARNING] Image {idx} is empty, skipping...")
                 continue
 
-            ocr_result = client_google_vision_api.document_text_detection(vision.Image(content=image_bytes))
+            ocr_result = client_google_vision_api.document_text_detection(
+                vision.Image(content=image_bytes)
+            )
             extracted_text = ocr_result.full_text_annotation.text if ocr_result.full_text_annotation else ""
             combined_text += extracted_text + "\n\n"
             print(f"[DEBUG] Extracted text from image {idx}: {len(extracted_text)} characters")
 
         if not combined_text.strip():
-            print("[ERROR] No text extracted from any image")
             return {"status": "error", "detail": "No text extracted from images"}
 
         student_response = combined_text.strip()
         print(f"[DEBUG] Total extracted student response length: {len(student_response)} characters")
 
-#prepare evaluation prompt(encouraging teacher)
+        # --- Step 2: Retrieve instructions ---
+        print("[DEBUG] Retrieving relevant instructions from vector store...")
+        retrieval_query = f"Instructions for answering: {question_text}"
+        retrieved_docs = retriever.get_relevant_documents(retrieval_query, k=10)  # increase k to fetch more instructions
+
+
+        if not retrieved_docs:
+            print("[WARNING] No instructions retrieved from vector store")
+            retrieved_context = "No instructions retrieved. Model should give 0 marks for all features."
+        else:
+            retrieved_context = "\n".join([doc.page_content for doc in retrieved_docs])
+            print(f"[DEBUG] Retrieved {len(retrieved_docs)} documents, total length: {len(retrieved_context)} chars")
+
+        # --- Step 3: Construct strict evaluation prompt ---
         evaluation_prompt = f"""
 You are an expert sociology examiner and supportive teacher. 
-Your evaluation MUST rely ONLY on the instructions retrieved from the vector store QA chain. 
-Do NOT use any outside knowledge, interpretation, or assumptions. 
+Your evaluation MUST rely ONLY on the instructions below. 
+Do NOT use any outside knowledge, interpretation, or assumptions.
+
+--- Retrieved Instructions ---
+{retrieved_context}
+---------------------------
 
 Question:
 {question_text}
@@ -1477,7 +1495,7 @@ Task:
 
 2. Marking (STRICT Scheme Compliance):
    - Award marks ONLY if a point is explicitly supported by the retrieved instructions.
-   - EVERY awarded mark MUST be justified by quoting the EXACT phrase from the retrieved mark scheme, for example: "1 mark for identifying a feature of a laboratory experiment" or "1 mark for describing the feature of a laboratory experiment".
+   - EVERY awarded mark MUST be justified by quoting the EXACT phrase from the retrieved instructions, e.g., "1 mark for identifying a feature of a laboratory experiment" or "1 mark for describing the feature of a laboratory experiment".
    - If no scheme phrase explicitly supports a point, award 0 marks.
    - Follow the marking rules exactly as written (e.g., “up to 2 marks per feature” or “level descriptors 6–8 marks”).
    - Maximum marks = {total_marks}.
@@ -1487,7 +1505,7 @@ Task:
 3. Line-by-Line Analysis:
    For each line in the student response:
        • Identify what is correct or relevant according to the retrieved instructions.
-       • QUOTE the exact phrase from the mark scheme that justifies awarding or denying the mark.
+       • QUOTE the exact phrase from the instructions that justifies awarding or denying the mark.
        • Clearly specify the feature being credited (e.g., "controlled environment," "replicability").
        • Indicate what is missing or unclear compared to the instructions.
        • Explicitly link feedback to the marking criteria (e.g., "feature identified," "feature described," "AO2 application").
@@ -1505,7 +1523,7 @@ Improved Response:
 <your improved response here>
 
 Line-by-Line Analysis:
-Line 1: <positive + improvement + QUOTED scheme phrase (e.g., "1 mark for identifying a feature of a laboratory experiment") + feature credited + mark contribution>
+Line 1: <positive + improvement + QUOTED scheme phrase + feature credited + mark contribution>
 Line 2: <positive + improvement + QUOTED scheme phrase + feature credited + mark contribution>
 ...
 
@@ -1514,58 +1532,7 @@ Overall Assessment:
 Overall Mark: <score/{total_marks}>
 """
 
-
-
-
-
-# Prepare evaluation prompt (strict examiner)
-# evaluation_prompt = f"""
-# You are an expert sociology examiner. Using ONLY the instructions retrieved from the vector store QA chain,
-# evaluate the following student response. Do NOT use any knowledge outside the vector store.
-#
-# Question:
-# {question_text}
-#
-# Student Response:
-# {student_response}
-#
-# Task:
-# 1. Rewrite the student response to receive the maximum marks strictly based on retrieved instructions.
-#    - Include only points explicitly in instructions.
-#    - Keep concise but complete.
-#    - Ensure the response meets minimum word count of {minimum_word_count} words.
-#
-# 2. Line-by-line analysis:
-#    - Correctness, missing elements, suggestions.
-#    - Assign marks based on total marks ({total_marks}).
-#
-# 3. Overall assessment:
-#    - Summary referencing retrieved instructions.
-#    - Indicate if minimum word count is met.
-#    - Give overall mark strictly based on retrieved instructions.
-#
-# Output Format:
-#
-# Improved Response:
-# <your improved response here>
-#
-# Line-by-Line Analysis:
-# Line 1: <analysis with references, mark>
-# Line 2: <analysis with references, mark>
-# ...
-#
-# Overall Assessment:
-# <summary referencing features and word count>
-# Overall Mark: <score/{total_marks}>
-# """
-
-        retrieved_docs = qa_chain.retriever.get_relevant_documents(evaluation_prompt)
-
-        # Print or log retrieved docs
-        for i, doc in enumerate(retrieved_docs, 1):
-            print(f"[DEBUG] Retrieved doc {i}: {doc.page_content[:500]}...\n")
-        if not retrieved_docs:
-            print("[DEBUG] No docs retrieved for this query")
+        # --- Step 4: Run evaluation ---
         print("[DEBUG] Sending evaluation prompt to QA chain...")
         evaluation_result = qa_chain.run(evaluation_prompt)
         print("[DEBUG] Received evaluation result from QA chain")
@@ -1582,6 +1549,8 @@ Overall Mark: <score/{total_marks}>
         print(f"[ERROR] Failed to evaluate student response: {e}")
         traceback.print_exc()
         return {"status": "error", "detail": str(e)}
+
+
 # -----------------------------
 # Initialize QA chain
 # -----------------------------
@@ -4063,6 +4032,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
