@@ -1462,12 +1462,10 @@ async def evaluate_student_response_from_images(
 
         # --- Step 2: Retrieve instructions with dynamic k ---
         print("[DEBUG] Retrieving relevant instructions from vector store...")
-       retrieval_query = (
+        retrieval_query = (
            f"Provide all instructions, features, and marking rules relevant for answering: "
            f"{question_text}"
         )
-
-
         
  #       retrieval_query = f"""
   #      Instructions for evaluating student responses: 
@@ -4057,6 +4055,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
