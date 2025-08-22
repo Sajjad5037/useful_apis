@@ -1484,9 +1484,9 @@ async def evaluate_student_response_from_images(
 
         # --- Step 3: Construct strict evaluation prompt ---
         evaluation_prompt = f"""
-You are an expert sociology examiner and a supportive teacher. 
+You are an expert sociology examiner and supportive teacher. 
 Your evaluation MUST rely ONLY on the instructions below. 
-Do NOT use any outside knowledge or assumptions beyond the retrieved instructions.
+Do NOT use any outside knowledge, interpretation, or assumptions.
 
 --- Retrieved Instructions ---
 {retrieved_context}
@@ -1501,26 +1501,24 @@ Student Response:
 Task:
 
 1. Improved Response:
-   - Rewrite the student response into the strongest possible version that would achieve maximum marks strictly based on the retrieved instructions.
+   - Rewrite the student response into the strongest possible version that would receive maximum marks STRICTLY based on the retrieved instructions.
    - Include ONLY points, features, or examples explicitly mentioned in the instructions.
-   - Keep the response concise yet complete.
+   - Keep the response concise but complete.
    - Ensure the response meets the minimum word count of {minimum_word_count} words.
 
-2. Line-by-Line Analysis:
-   - For each line in the student response, identify the feature/point the student is attempting to address.
-   - Compare the student phrase to the retrieved instructions **conceptually**:  
-       - Award marks if the meaning of the student phrase correctly reflects a point or feature in the instructions, even if the wording is different.
-       - Minor wording differences, paraphrasing, or synonyms should not prevent marks if the concept is correct.
-       - Only award marks if the concept matches the instructions; do not invent new points.
+2. Line-by-Line Analysis (STRICT Scheme Compliance):
+   - For each line in the student response, identify the feature/point attempted.
    - Quote the closest matching phrase from the retrieved instructions.
-   - Notes may include spelling, grammar, or clarity issues.
-   - Do not double-count features; each feature contributes marks only once.
+   - Assign marks strictly according to the instructions.
+   - Provide optional notes (e.g., spelling, grammar, minor clarity issues).
+   - Use semantic/fuzzy matching: minor wording differences that do not change meaning count as a match.
+   - Features cannot be double-counted: each feature can contribute marks only once.
    - Maximum marks = {total_marks}, and marks must not exceed this value.
 
 3. Overall Assessment:
-   - Summarize how well the response conceptually meets the retrieved instructions.
+   - Summarize how well the response meets the retrieved instructions.
    - Confirm whether the minimum word count was achieved.
-   - Provide practical advice strictly tied to the instructions to reach full marks.
+   - Provide practical advice strictly tied to instructions to reach full marks.
    - State the final mark in the format: Overall Mark: <score/{total_marks}>.
 
 Output Format:
@@ -1543,7 +1541,7 @@ Return a valid JSON object with the following structure ONLY:
   "final_total_marks": <number between 0 and {total_marks}>
 }}
 
-Strictly follow this JSON format. Do NOT include any text outside the JSON.
+Strictly follow this JSON format. Do NOT include any extra text outside the JSON.
 """
 
         # --- Step 4: Run evaluation ---
@@ -4046,6 +4044,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
