@@ -1484,61 +1484,64 @@ async def evaluate_student_response_from_images(
 
         # --- Step 3: Construct strict evaluation prompt ---
         evaluation_prompt = f"""
-You are an expert sociology examiner and automated evaluator strictly marking against the Cambridge marking scheme. 
+You are an expert sociology examiner and supportive teacher. 
 Your evaluation MUST rely ONLY on the instructions below. 
 Do NOT use any outside knowledge, interpretation, or assumptions.
 
---- Question ---
-{question_text}
-
---- Retrieved Marking Instructions ---
+--- Retrieved Instructions ---
 {retrieved_context}
 ---------------------------
 
---- Student Response ---
+Question:
+{question_text}
+
+Student Response:
 {student_response}
 
---- Marking Task ---
-1. Identify features/points in the student’s response that attempt to answer the question.
-2. Improved Response:
+Task:
+
+1. Improved Response:
    - Rewrite the student response into the strongest possible version that would receive maximum marks STRICTLY based on the retrieved instructions.
    - Include ONLY points, features, or examples explicitly mentioned in the instructions.
-   - Keep it concise but complete.
-   - Ensure the improved response meets the minimum word count of {minimum_word_count} words.
+   - Keep the response concise but complete.
+   - Ensure the response meets the minimum word count of {minimum_word_count} words.
 
-3. Marking (STRICT Scheme Compliance):
-   - Award marks if the student’s wording closely matches, semantically aligns, or is a valid **synonym or rephrasing** of a phrase in the retrieved instructions.
-     Examples:
-       * “replicable” should match “designed to be replicated”
-       * “test hypotheses” should match “used to test a hypothesis”
-       * “control and experimental groups” should match “manipulates independent and dependent variables using groups”
-   - Always QUOTE the closest matching instruction phrase that justifies awarding the mark.
-   - Do NOT award marks for points unrelated to any instruction.
+2. Line-by-Line Analysis (STRICT Scheme Compliance):
+   - For each line in the student response, identify the feature/point attempted.
+   - Quote the closest matching phrase from the retrieved instructions.
+   - Assign marks strictly according to the instructions.
+   - Provide optional notes (e.g., spelling, grammar, minor clarity issues).
+   - Use semantic/fuzzy matching: minor wording differences that do not change meaning count as a match.
    - Features cannot be double-counted: each feature can contribute marks only once.
    - Maximum marks = {total_marks}, and marks must not exceed this value.
-   - Marks must be consistent: repeated evaluation of the same response MUST yield the same marks.
 
-4. Line-by-Line Analysis:
-   For each line in the student response:
-       • Identify if the line exactly matches, semantically aligns, or is a valid synonym/rephrasing of a feature from the retrieved instructions.
-       • QUOTE the instruction phrase that justifies awarding or denying the mark.
-       • Clearly specify the feature being credited (e.g., "controlled environment," "replicability").
-       • If no match, alignment, or valid rephrasing exists, explicitly state: "No instruction phrase found for this line" and award +0.
-       • Show the exact mark contribution for each line (e.g., +1, +0).
-
-5. Overall Assessment:
-   - Summarize how well the response met the retrieved instructions.
-   - Confirm whether the minimum word count ({minimum_word_count}) was achieved.
+3. Overall Assessment:
+   - Summarize how well the response meets the retrieved instructions.
+   - Confirm whether the minimum word count was achieved.
    - Provide practical advice strictly tied to instructions to reach full marks.
-   - Clearly state the final mark in the format: Overall Mark: <score/{total_marks}>.
+   - State the final mark in the format: Overall Mark: <score/{total_marks}>.
 
---- Output Format ---
-For EACH identified point:
-- Student phrase
-- Closest matching instruction phrase (from context)
-- Marks awarded (e.g., 0, 1, 2)
+Output Format:
 
-Final total: X/{total_marks}
+Return a valid JSON object with the following structure ONLY:
+
+{{
+  "lines": [
+    {{
+      "line_number": 1,
+      "student_phrase": "<exact text from student response>",
+      "matched_instruction": "<closest matching phrase from retrieved instructions, or 'No match found'>",
+      "marks_awarded": 0 or 1 or 2,
+      "notes": "<optional notes>"
+    }},
+    ...
+  ],
+  "improved_response": "<rewritten response meeting maximum marks>",
+  "overall_assessment": "<summary referencing retrieved instructions and word count>",
+  "final_total_marks": <number between 0 and {total_marks}>
+}}
+
+Strictly follow this JSON format. Do NOT include any extra text outside the JSON.
 """
 
         # --- Step 4: Run evaluation ---
@@ -4041,6 +4044,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
