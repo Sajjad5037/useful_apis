@@ -1483,31 +1483,63 @@ async def evaluate_student_response_from_images(
         print(f"[DEBUG] Retrieved context:\n{retrieved_context}\n{'-'*80}")
 
         # --- Step 3: Construct strict evaluation prompt ---
-        evaluation_prompt = (
-    f"You are an automated examiner strictly marking against the Cambridge marking scheme.\n\n"
-    f"--- Question ---\n"
-    f"{question_text}\n\n"
-    f"--- Retrieved Marking Instructions ---\n"
-    f"{retrieved_context}\n\n"
-    f"--- Student Response ---\n"
-    f"{student_response}\n\n"
-    f"--- Marking Task ---\n"
-    f"1. Identify features/points in the student’s response that attempt to answer the question.\n"
-    f"2. Marking (STRICT Scheme Compliance):\n"
-    f"   - Award marks if the student’s wording closely matches (even if not identical) a phrase in the retrieved instructions.\n"
-    f"   - Always QUOTE the closest matching phrase from the retrieved instructions for every awarded mark.\n"
-    f"   - Use semantic/fuzzy matching: small wording differences (e.g., “test hypotheses” vs. “used to test a hypothesis”) should still count as a match.\n"
-    f"   - Do NOT award marks for completely unrelated or invented points.\n"
-    f"   - Features cannot be double-counted: each feature can contribute marks only once.\n"
-    f"   - Maximum marks = {total_marks}, and marks must not exceed this value.\n\n"
-    f"--- Output Format ---\n"
-    f"For EACH identified point:\n"
-    f"- Student phrase\n"
-    f"- Closest matching instruction phrase (from context)\n"
-    f"- Marks awarded (e.g., 0, 1, 2)\n\n"
-    f"Final total: X/{total_marks}\n"
-)
+        evaluation_prompt = f"""
+You are an expert sociology examiner and automated evaluator strictly marking against the Cambridge marking scheme. 
+Your evaluation MUST rely ONLY on the instructions below. 
+Do NOT use any outside knowledge, interpretation, or assumptions.
 
+--- Question ---
+{question_text}
+
+--- Retrieved Marking Instructions ---
+{retrieved_context}
+---------------------------
+
+--- Student Response ---
+{student_response}
+
+--- Marking Task ---
+1. Identify features/points in the student’s response that attempt to answer the question.
+2. Improved Response:
+   - Rewrite the student response into the strongest possible version that would receive maximum marks STRICTLY based on the retrieved instructions.
+   - Include ONLY points, features, or examples explicitly mentioned in the instructions.
+   - Keep it concise but complete.
+   - Ensure the improved response meets the minimum word count of {minimum_word_count} words.
+
+3. Marking (STRICT Scheme Compliance):
+   - Award marks if the student’s wording closely matches, semantically aligns, or is a valid **synonym or rephrasing** of a phrase in the retrieved instructions.
+     Examples:
+       * “replicable” should match “designed to be replicated”
+       * “test hypotheses” should match “used to test a hypothesis”
+       * “control and experimental groups” should match “manipulates independent and dependent variables using groups”
+   - Always QUOTE the closest matching instruction phrase that justifies awarding the mark.
+   - Do NOT award marks for points unrelated to any instruction.
+   - Features cannot be double-counted: each feature can contribute marks only once.
+   - Maximum marks = {total_marks}, and marks must not exceed this value.
+   - Marks must be consistent: repeated evaluation of the same response MUST yield the same marks.
+
+4. Line-by-Line Analysis:
+   For each line in the student response:
+       • Identify if the line exactly matches, semantically aligns, or is a valid synonym/rephrasing of a feature from the retrieved instructions.
+       • QUOTE the instruction phrase that justifies awarding or denying the mark.
+       • Clearly specify the feature being credited (e.g., "controlled environment," "replicability").
+       • If no match, alignment, or valid rephrasing exists, explicitly state: "No instruction phrase found for this line" and award +0.
+       • Show the exact mark contribution for each line (e.g., +1, +0).
+
+5. Overall Assessment:
+   - Summarize how well the response met the retrieved instructions.
+   - Confirm whether the minimum word count ({minimum_word_count}) was achieved.
+   - Provide practical advice strictly tied to instructions to reach full marks.
+   - Clearly state the final mark in the format: Overall Mark: <score/{total_marks}>.
+
+--- Output Format ---
+For EACH identified point:
+- Student phrase
+- Closest matching instruction phrase (from context)
+- Marks awarded (e.g., 0, 1, 2)
+
+Final total: X/{total_marks}
+"""
 
         # --- Step 4: Run evaluation ---
         print("[DEBUG] Sending evaluation prompt to QA chain...")
@@ -4009,6 +4041,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
