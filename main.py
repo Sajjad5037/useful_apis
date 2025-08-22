@@ -1483,68 +1483,30 @@ async def evaluate_student_response_from_images(
         print(f"[DEBUG] Retrieved context:\n{retrieved_context}\n{'-'*80}")
 
         # --- Step 3: Construct strict evaluation prompt ---
-        evaluation_prompt = f"""
-You are an expert sociology examiner and supportive teacher. 
-Your evaluation MUST rely ONLY on the instructions below. 
-Do NOT use any outside knowledge, interpretation, or assumptions.
-
---- Retrieved Instructions ---
-{retrieved_context}
----------------------------
-
-Question:
-{question_text}
-
-Student Response:
-{student_response}
-
-Task:
-
-1. Improved Response:
-   - Rewrite the student response into the strongest possible version that would receive maximum marks STRICTLY based on the retrieved instructions.
-   - Include ONLY points, features, or examples explicitly mentioned in the instructions.
-   - Keep the response concise but complete.
-   - Ensure the response meets the minimum word count of {minimum_word_count} words.
-
-2. Marking (STRICT Scheme Compliance):
-   - Award marks ONLY if the exact phrase in the retrieved instructions supports it.
-   - EVERY awarded mark MUST be justified by quoting the EXACT phrase from the retrieved instructions.
-     Example: "1 mark for identifying a feature of a laboratory experiment" or 
-              "1 mark for describing the feature of a laboratory experiment".
-   - Do NOT award marks for inference, generalization, or partial matches.
-   - Features cannot be double-counted: each feature can contribute marks only once.
-   - Maximum marks = {total_marks}, and marks must not exceed this value.
-   - Marks must be consistent: repeated evaluation of the same response MUST yield the same marks.
-
-3. Line-by-Line Analysis:
-   For each line in the student response:
-       • Identify if the line exactly matches or cites a feature from the retrieved instructions.
-       • QUOTE the exact phrase from the instructions that justifies awarding or denying the mark.
-       • Clearly specify the feature being credited (e.g., "controlled environment," "replicability").
-       • If the line does not directly match a phrase in the instructions, explicitly state: "No instruction phrase found for this line" and award +0.
-       • Show the exact mark contribution for each line (e.g., +1, +0).
-
-4. Overall Assessment:
-   - Summarize how well the response met the retrieved instructions.
-   - Confirm whether the minimum word count was achieved.
-   - Provide practical advice strictly tied to instructions to reach full marks.
-   - Clearly state the final mark in the format: Overall Mark: <score/{total_marks}>.
-
-Output Format:
-
-Improved Response:
-<your improved response here>
-
-Line-by-Line Analysis:
-Line 1: <exact match quote OR "No instruction phrase found for this line" + feature credited + mark contribution>
-Line 2: <exact match quote OR "No instruction phrase found for this line" + feature credited + mark contribution>
-...
-
-Overall Assessment:
-<summary referencing retrieved instructions, word count, and advice>
-Overall Mark: <score/{total_marks}>
-"""
-
+        evaluation_prompt = (
+    f"You are an automated examiner strictly marking against the Cambridge marking scheme.\n\n"
+    f"--- Question ---\n"
+    f"{question_text}\n\n"
+    f"--- Retrieved Marking Instructions ---\n"
+    f"{retrieved_instructions}\n\n"
+    f"--- Student Response ---\n"
+    f"{student_response}\n\n"
+    f"--- Marking Task ---\n"
+    f"1. Identify features/points in the student’s response that attempt to answer the question.\n"
+    f"2. Marking (STRICT Scheme Compliance):\n"
+    f"   - Award marks if the student’s wording closely matches (even if not identical) a phrase in the retrieved instructions.\n"
+    f"   - Always QUOTE the closest matching phrase from the retrieved instructions for every awarded mark.\n"
+    f"   - Use semantic/fuzzy matching: small wording differences (e.g., “test hypotheses” vs. “used to test a hypothesis”) should still count as a match.\n"
+    f"   - Do NOT award marks for completely unrelated or invented points.\n"
+    f"   - Features cannot be double-counted: each feature can contribute marks only once.\n"
+    f"   - Maximum marks = {total_marks}, and marks must not exceed this value.\n\n"
+    f"--- Output Format ---\n"
+    f"For EACH identified point:\n"
+    f"- Student phrase\n"
+    f"- Closest matching instruction phrase (from context)\n"
+    f"- Marks awarded (e.g., 0, 1, 2)\n\n"
+    f"Final total: X/{total_marks}\n"
+)
 
 
         # --- Step 4: Run evaluation ---
@@ -4047,6 +4009,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
