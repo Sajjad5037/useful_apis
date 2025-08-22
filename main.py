@@ -1430,7 +1430,7 @@ async def evaluate_student_response_from_images(
     images: List[UploadFile],
     question_text: str,
     total_marks: int,
-    qa_chain: RetrievalQA,
+    qa_chain,  # RetrievalQA
     minimum_word_count: int = 80
 ):
     """
@@ -1441,6 +1441,7 @@ async def evaluate_student_response_from_images(
         # --- Step 1: OCR ---
         print("[DEBUG] Starting OCR on uploaded images...")
         combined_text = ""
+        ocr_texts = []
 
         for idx, image in enumerate(images, start=1):
             image_bytes = await image.read()
@@ -1452,13 +1453,38 @@ async def evaluate_student_response_from_images(
                 vision.Image(content=image_bytes)
             )
             extracted_text = ocr_result.full_text_annotation.text if ocr_result.full_text_annotation else ""
+            ocr_texts.append(extracted_text)
             combined_text += extracted_text + "\n\n"
-            print(f"[DEBUG] Extracted text from image {idx}: {len(extracted_text)} characters")
+            print(f"[DEBUG][OCR] Extracted text from image {idx}:")
+            print(extracted_text)
+            print("-" * 40)
 
         if not combined_text.strip():
+            print("[ERROR] No text extracted from images")
             return {"status": "error", "detail": "No text extracted from images"}
 
+        print("[DEBUG][OCR] Combined extracted text from all images:")
+        print(combined_text)
+        print("=" * 80)
+
         student_response = combined_text.strip()
+
+        # Optional: Clean up common OCR artifacts (multiple newlines, spaces)
+        cleaned_response = ' '.join(student_response.split())
+        print("[DEBUG][OCR] Cleaned-up student response (spaces normalized):")
+        print(cleaned_response)
+        print("=" * 80)
+
+        # Optional: Sentence splitting preview (before passing to model)
+        try:
+            from nltk.tokenize import sent_tokenize
+            sentences = sent_tokenize(student_response)
+            print(f"[DEBUG][OCR] Sentences detected from NLTK sent_tokenize: {len(sentences)}")
+            for i, sent in enumerate(sentences, 1):
+                print(f"  {i}: {sent}")
+        except Exception as e:
+            print("[WARNING] NLTK sent_tokenize not available or failed.")
+        
         print(f"[DEBUG] Total extracted student response length: {len(student_response)} characters")
 
         # --- Step 2: Retrieve instructions with dynamic k (two-pass, context-aware) ---
@@ -1468,10 +1494,8 @@ async def evaluate_student_response_from_images(
            f"{question_text}"
         )       
  
-        # Assign retriever from qa_chain
         retriever = qa_chain.retriever
-        
-        # Retrieve documents with increased k
+        print("[DEBUG] Retrieval query:", retrieval_query)
         retrieved_docs = retriever.get_relevant_documents(retrieval_query)  # increase k from default 3 to 10
         
         if not retrieved_docs:
@@ -1545,13 +1569,21 @@ Return a valid JSON object with the following structure ONLY:
 Strictly follow this JSON format. Do NOT include any extra text outside the JSON.
 """
 
+        print("[DEBUG][PROMPT] Evaluation prompt sent to LLM:")
+        print(evaluation_prompt)
+        print("=" * 80)
+
         # --- Step 4: Run evaluation ---
         print("[DEBUG] Sending evaluation prompt to QA chain...")
         evaluation_result = qa_chain.run(evaluation_prompt)
-        print("[DEBUG] Received evaluation result from QA chain")
+        print("[DEBUG] Received evaluation result from QA chain (raw):")
+        print(evaluation_result)
+        print("=" * 80)
         
         try:
             evaluation_json = json.loads(evaluation_result)
+            print("[DEBUG] Parsed evaluation JSON:")
+            print(json.dumps(evaluation_json, indent=2))
         except Exception as e:
             print(f"[ERROR] Failed to parse evaluation result as JSON: {e}")
             traceback.print_exc()
@@ -4055,6 +4087,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
