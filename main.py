@@ -1425,6 +1425,7 @@ def download_vectorstore_from_gcs(bucket_name: str, folder_in_bucket: str):
         traceback.print_exc()
     print("[DEBUG] Vector store download complete")
     return temp_dir
+
 async def evaluate_student_response_from_images(
     images: List[UploadFile],
     question_text: str,
@@ -1561,7 +1562,6 @@ Strictly follow this JSON format. Do NOT include any extra text outside the JSON
         print(f"[ERROR] Failed to evaluate student response: {e}")
         traceback.print_exc()
         return {"status": "error", "detail": str(e)}
-
 
 # -----------------------------
 # Initialize QA chain
@@ -4044,6 +4044,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
