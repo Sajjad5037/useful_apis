@@ -1488,7 +1488,7 @@ async def evaluate_student_response_from_images(
     f"--- Question ---\n"
     f"{question_text}\n\n"
     f"--- Retrieved Marking Instructions ---\n"
-    f"{retrieved_instructions}\n\n"
+    f"{retrieved_context}\n\n"
     f"--- Student Response ---\n"
     f"{student_response}\n\n"
     f"--- Marking Task ---\n"
@@ -4009,6 +4009,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
