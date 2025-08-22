@@ -1569,12 +1569,7 @@ Format your answer as clear, structured text, using sections and bullet points i
             "student_response": student_response
         }
         
-        # Optionally, you might want to catch exceptions only for the QA chain run itself:
-        except Exception as e:
-            print(f"[ERROR] Failed to evaluate student response: {e}")
-            traceback.print_exc()
-            return {"status": "error", "detail": str(e)}
-
+        
 # -----------------------------
 # Initialize QA chain
 # -----------------------------
@@ -4056,6 +4051,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
