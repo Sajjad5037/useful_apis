@@ -1460,35 +1460,60 @@ async def evaluate_student_response_from_images(
         student_response = combined_text.strip()
         print(f"[DEBUG] Total extracted student response length: {len(student_response)} characters")
 
-        # --- Step 2: Retrieve instructions with dynamic k ---
+        # --- Step 2: Retrieve instructions with dynamic k (two-pass, context-aware) ---
         print("[DEBUG] Retrieving relevant instructions from vector store...")
-        retrieval_query = (
-           f"Provide all instructions, features, and marking rules relevant for answering: "
-           f"{question_text}"
-        )
         
- #       retrieval_query = f"""
-  #      Instructions for evaluating student responses: 
-   #     Include all marking rules, features, and point allocation guidelines. 
-    #    Question: {question_text}
-     #   """
-
-
-        
-        # Assign retriever from qa_chain
         retriever = qa_chain.retriever
         
-        # Retrieve documents with increased k
-        retrieved_docs = retriever.get_relevant_documents(retrieval_query)  # increase k from default 3 to 10
+        # Pass 1 — broad question-only retrieval
+        base_query = (
+            f"Provide all instructions, features, and marking rules relevant for answering: "
+            f"{question_text}"
+        )
+        first_pass_docs = retriever.get_relevant_documents(base_query)
+        
+        if not first_pass_docs:
+            print("[WARNING] First pass returned no documents")
+            first_context = ""
+        else:
+            first_context = "\n\n".join([doc.page_content for doc in first_pass_docs])
+            print(f"[DEBUG] First pass: {len(first_pass_docs)} docs, context length: {len(first_context)} chars")
+        
+        # Pass 2 — refine using the context from pass 1
+        retrieval_query = f"""
+        You are evaluating answers using the Cambridge marking scheme.
+        
+        Question:
+        {question_text}
+        
+        Relevant marking scheme context (from initial retrieval):
+        {first_context}
+        
+        Now provide all instructions, features, and marking rules relevant for answering.
+        """.strip()
+        
+        second_pass_docs = retriever.get_relevant_documents(retrieval_query)
+        
+        # Merge & deduplicate (by content)
+        all_docs = (first_pass_docs or []) + (second_pass_docs or [])
+        seen = set()
+        retrieved_docs = []
+        for d in all_docs:
+            key = d.page_content.strip()
+            if key and key not in seen:
+                seen.add(key)
+                retrieved_docs.append(d)
         
         if not retrieved_docs:
-            print("[WARNING] No instructions retrieved from vector store")
+            print("[WARNING] No instructions retrieved from vector store after refinement")
             retrieved_context = "No instructions retrieved. Model should give 0 marks for all features."
         else:
-            retrieved_context = "\n".join([doc.page_content for doc in retrieved_docs])
-            print(f"[DEBUG] Retrieved {len(retrieved_docs)} documents, total length: {len(retrieved_context)} chars")
+            retrieved_context = "\n\n".join([doc.page_content for doc in retrieved_docs])
+            print(f"[DEBUG] After refinement: {len(retrieved_docs)} unique docs")
+            print(f"[DEBUG] Total retrieved context length: {len(retrieved_context)} chars")
+        
         # ✅ Print the actual retrieved context for debugging
-        print(f"[DEBUG] Retrieved context:\n{retrieved_context}\n{'-'*80}")
+        print(f"[DEBUG] Retrieved context (final):\n{retrieved_context}\n{'-'*80}")
 
         # --- Step 3: Construct strict evaluation prompt ---
         evaluation_prompt = f"""
@@ -1600,7 +1625,7 @@ def initialize_qa_chain_anz_way(bucket_name: str, folder_in_bucket: str):
         )
 
         # Step 4: Create retriever and QA chain
-        retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 3})
+        retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 6})
         qa_chain_anz_way = RetrievalQA.from_chain_type(
             llm=ChatOpenAI(model="gpt-4o-mini", openai_api_key=openai_api_key),
             retriever=retriever,
@@ -4055,6 +4080,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
