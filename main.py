@@ -1501,8 +1501,8 @@ async def evaluate_student_response_from_images(
         # --- Step 3: Construct strict evaluation prompt ---
         evaluation_prompt = f"""
 You are an expert sociology examiner and a supportive teacher.
-Your evaluation MUST rely ONLY on the instructions below.
-Do NOT use any outside knowledge, interpretation, or assumptions.
+Use ONLY the retrieved instructions below to evaluate the student's response.
+Treat the instructions as authoritative. Do NOT use any outside knowledge.
 
 --- Retrieved Instructions ---
 {retrieved_context}
@@ -1523,22 +1523,23 @@ Task:
    - Ensure the response meets the minimum word count of {minimum_word_count} words.
 
 2. Detailed Marking and Feedback (STRICT Scheme Compliance):
-   - For each major idea or claim in the student response, identify the feature/point attempted.
+   - Identify all attempted features or points in the response.
    - Quote the closest matching phrase from the retrieved instructions for each point.
-   - Assign marks strictly according to the instructions, and explain your reasoning.
+   - Assign marks strictly based on the retrieved instructions.
+   - Do NOT reward more features than allowed by the instructions.
+   - Features cannot be double-counted.
+   - Ensure total marks do not exceed {total_marks}.
    - Provide optional notes (e.g., spelling, grammar, minor clarity issues).
-   - Use semantic/fuzzy matching: minor wording differences that do not change meaning count as a match.
-   - Features cannot be double-counted: each feature can contribute marks only once.
-   - Maximum marks = {total_marks}, and marks must not exceed this value.
 
 3. Overall Assessment:
-   - Summarize how well the response meets the retrieved instructions.
+   - Summarize how well the response meets the instructions.
    - Confirm whether the minimum word count was achieved.
    - Provide practical advice strictly tied to instructions to reach full marks.
    - State the final mark in the format: Overall Mark: <score/{total_marks}>.
 
-Format your answer as clear, structured text, using sections and bullet points if helpful. Do NOT use JSON or any structured data format.
+Format your answer as clear, structured text using bullet points if helpful. Do NOT use JSON or any structured data format.
 """
+
 
         print("[DEBUG][PROMPT] Evaluation prompt sent to LLM:")
         print(evaluation_prompt)
@@ -4044,6 +4045,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
