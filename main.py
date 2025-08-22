@@ -1532,10 +1532,10 @@ Task:
    - Provide optional notes (e.g., spelling, grammar, minor clarity issues).
 
 3. Overall Assessment:
-   - Summarize how well the response meets the instructions.
-   - Confirm whether the minimum word count was achieved.
-   - Provide practical advice strictly tied to instructions to reach full marks.
-   - State the final mark in the format: Overall Mark: <score/{total_marks}>.
+- Summarize how well the response meets the retrieved instructions.
+- Confirm whether the minimum word count was achieved.
+- Provide practical advice strictly tied to instructions **only if the response did not achieve the maximum marks**. 
+- State the final mark in the format: Overall Mark: <score/{total_marks}>.
 
 Format your answer as clear, structured text using bullet points if helpful. Do NOT use JSON or any structured data format.
 """
@@ -4045,6 +4045,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
