@@ -1475,15 +1475,6 @@ async def evaluate_student_response_from_images(
         print(cleaned_response)
         print("=" * 80)
 
-        # Optional: Sentence splitting preview (before passing to model)
-        try:
-            from nltk.tokenize import sent_tokenize
-            sentences = sent_tokenize(student_response)
-            print(f"[DEBUG][OCR] Sentences detected from NLTK sent_tokenize: {len(sentences)}")
-            for i, sent in enumerate(sentences, 1):
-                print(f"  {i}: {sent}")
-        except Exception as e:
-            print("[WARNING] NLTK sent_tokenize not available or failed.")
         
         print(f"[DEBUG] Total extracted student response length: {len(student_response)} characters")
 
@@ -1568,7 +1559,9 @@ Format your answer as clear, structured text, using sections and bullet points i
             "minimum_word_count": minimum_word_count,
             "student_response": student_response
         }
-        
+    except Exception as e:
+        print(f"[ERROR] Exception occurred during evaluation: {e}")
+        return {"status": "error", "detail": str(e)}
         
 # -----------------------------
 # Initialize QA chain
@@ -4051,6 +4044,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
