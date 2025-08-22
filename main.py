@@ -1549,10 +1549,21 @@ Strictly follow this JSON format. Do NOT include any extra text outside the JSON
         print("[DEBUG] Sending evaluation prompt to QA chain...")
         evaluation_result = qa_chain.run(evaluation_prompt)
         print("[DEBUG] Received evaluation result from QA chain")
-
+        
+        try:
+            evaluation_json = json.loads(evaluation_result)
+        except Exception as e:
+            print(f"[ERROR] Failed to parse evaluation result as JSON: {e}")
+            traceback.print_exc()
+            return {
+                "status": "error",
+                "detail": f"Failed to parse evaluation result as JSON: {e}",
+                "raw_result": evaluation_result
+            }
+        
         return {
             "status": "success",
-            "evaluation": evaluation_result,
+            "evaluation": evaluation_json,
             "total_marks": total_marks,
             "minimum_word_count": minimum_word_count,
             "student_response": student_response
@@ -4044,6 +4055,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
