@@ -1509,8 +1509,8 @@ async def evaluate_student_response_from_images(
 
         # --- Step 3: Construct strict evaluation prompt ---
         evaluation_prompt = f"""
-You are an expert sociology examiner and supportive teacher. 
-Your evaluation MUST rely ONLY on the instructions below. 
+You are an expert sociology examiner and a supportive teacher.
+Your evaluation MUST rely ONLY on the instructions below.
 Do NOT use any outside knowledge, interpretation, or assumptions.
 
 --- Retrieved Instructions ---
@@ -1531,10 +1531,10 @@ Task:
    - Keep the response concise but complete.
    - Ensure the response meets the minimum word count of {minimum_word_count} words.
 
-2. Line-by-Line Analysis (STRICT Scheme Compliance):
-   - For each line in the student response, identify the feature/point attempted.
-   - Quote the closest matching phrase from the retrieved instructions.
-   - Assign marks strictly according to the instructions.
+2. Detailed Marking and Feedback (STRICT Scheme Compliance):
+   - For each major idea or claim in the student response, identify the feature/point attempted.
+   - Quote the closest matching phrase from the retrieved instructions for each point.
+   - Assign marks strictly according to the instructions, and explain your reasoning.
    - Provide optional notes (e.g., spelling, grammar, minor clarity issues).
    - Use semantic/fuzzy matching: minor wording differences that do not change meaning count as a match.
    - Features cannot be double-counted: each feature can contribute marks only once.
@@ -1546,27 +1546,7 @@ Task:
    - Provide practical advice strictly tied to instructions to reach full marks.
    - State the final mark in the format: Overall Mark: <score/{total_marks}>.
 
-Output Format:
-
-Return a valid JSON object with the following structure ONLY:
-
-{{
-  "lines": [
-    {{
-      "line_number": 1,
-      "student_phrase": "<exact text from student response>",
-      "matched_instruction": "<closest matching phrase from retrieved instructions, or 'No match found'>",
-      "marks_awarded": 0 or 1 or 2,
-      "notes": "<optional notes>"
-    }},
-    ...
-  ],
-  "improved_response": "<rewritten response meeting maximum marks>",
-  "overall_assessment": "<summary referencing retrieved instructions and word count>",
-  "final_total_marks": <number between 0 and {total_marks}>
-}}
-
-Strictly follow this JSON format. Do NOT include any extra text outside the JSON.
+Format your answer as clear, structured text, using sections and bullet points if helpful. Do NOT use JSON or any structured data format.
 """
 
         print("[DEBUG][PROMPT] Evaluation prompt sent to LLM:")
@@ -1580,31 +1560,20 @@ Strictly follow this JSON format. Do NOT include any extra text outside the JSON
         print(evaluation_result)
         print("=" * 80)
         
-        try:
-            evaluation_json = json.loads(evaluation_result)
-            print("[DEBUG] Parsed evaluation JSON:")
-            print(json.dumps(evaluation_json, indent=2))
-        except Exception as e:
-            print(f"[ERROR] Failed to parse evaluation result as JSON: {e}")
-            traceback.print_exc()
-            return {
-                "status": "error",
-                "detail": f"Failed to parse evaluation result as JSON: {e}",
-                "raw_result": evaluation_result
-            }
-        
+        # No JSON parsing attempt, just return the text
         return {
             "status": "success",
-            "evaluation": evaluation_json,
+            "evaluation_text": evaluation_result,   # The full free-form feedback and assessment
             "total_marks": total_marks,
             "minimum_word_count": minimum_word_count,
             "student_response": student_response
         }
-
-    except Exception as e:
-        print(f"[ERROR] Failed to evaluate student response: {e}")
-        traceback.print_exc()
-        return {"status": "error", "detail": str(e)}
+        
+        # Optionally, you might want to catch exceptions only for the QA chain run itself:
+        except Exception as e:
+            print(f"[ERROR] Failed to evaluate student response: {e}")
+            traceback.print_exc()
+            return {"status": "error", "detail": str(e)}
 
 # -----------------------------
 # Initialize QA chain
@@ -4087,6 +4056,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
