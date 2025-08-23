@@ -1704,8 +1704,10 @@ async def train_on_images(
     images: List[UploadFile] = File(...),
     doctorData: Optional[str] = Form(None),
     request: Request = None,
-    db: Session = Depends(get_db),    
+    db: Session = Depends(get_db),
 ):
+    """Endpoint: Upload essay images -> OCR -> Correction -> Improvement -> Mistake analysis -> Save to DB"""
+    
     origin = request.headers.get("origin") if request else None
     cors_headers = {
         "Access-Control-Allow-Origin": origin if origin else "*",
@@ -1719,7 +1721,7 @@ async def train_on_images(
             headers=cors_headers,
         )
 
-    # Parse doctorData JSON string to Python dict
+    # Parse doctorData JSON
     doctor = {}
     if doctorData:
         try:
@@ -1737,15 +1739,22 @@ async def train_on_images(
     combined_text = ""
 
     try:
-        # Step 1: Extract text from images using Google Vision API
+        # ------------------------------------------------
+        # STEP 1: OCR Extraction from uploaded images
+        # ------------------------------------------------
         for image in images:
             image_bytes = await image.read()
             if not image_bytes:
                 continue
+
             ocr_result = client_google_vision_api.document_text_detection(
                 image=vision.Image(content=image_bytes)
             )
-            extracted_text = ocr_result.full_text_annotation.text if ocr_result.full_text_annotation else ""
+            extracted_text = (
+                ocr_result.full_text_annotation.text
+                if ocr_result.full_text_annotation
+                else ""
+            )
             combined_text += extracted_text + "\n\n"
 
         if not combined_text.strip():
@@ -1755,7 +1764,9 @@ async def train_on_images(
                 headers=cors_headers,
             )
 
-        # Step 2: Correct OCR errors
+        # ------------------------------------------------
+        # STEP 2: Correct OCR errors (light-touch only)
+        # ------------------------------------------------
         correction_prompt = f"""
         Correct only clear OCR errors in the following text:
         - Fix broken or merged words
@@ -1772,148 +1783,144 @@ async def train_on_images(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are an assistant that fixes OCR errors only."},
-                {"role": "user", "content": correction_prompt}
+                {"role": "user", "content": correction_prompt},
             ],
-            temperature=0
+            temperature=0,
         )
         corrected_text = correction_response.choices[0].message.content.strip()
 
-        # Step 3: Improve essay quality
-# Step 3: Improve essay quality with learning-focused feedback
-improvement_prompt = f"""
-You are an expert creative writing tutor. Your goal is to help a student improve their writing skills. 
+        # ------------------------------------------------
+        # STEP 3: Improve essay quality with feedback
+        # ------------------------------------------------
+        improvement_prompt = f"""
+        You are an expert creative writing tutor. Your goal is to help a student improve their writing skills.
 
-1. Evaluate the following essay and produce an improved version that demonstrates:
-   - Better overall structure and paragraph flow
-   - Clear grammar, punctuation, and sentence construction
-   - Richer and more precise vocabulary
-   - Logical organization and smooth transitions between ideas
-   - Formal academic style appropriate for A-level essays
+        1. Rewrite the following essay with:
+           - Better overall structure and flow
+           - Clear grammar, punctuation, and sentence construction
+           - Richer and more precise vocabulary
+           - Logical organization and smooth transitions
+           - Formal academic style appropriate for A-level essays
 
-2. Keep the original meaning intact. Do not add new ideas that were not in the student's essay.
+        2. Keep the original meaning intact. Do not add new ideas.
 
-3. Highlight any **changes, corrections, or improvements** by wrapping them in **double asterisks**. This will allow the student to see what was improved and learn from it.
+        3. Wrap changes in **double asterisks** to highlight improvements.
 
-4. Optionally, after the improved essay, provide a **brief explanatory note** (2-3 sentences) summarizing the key improvements made, so the student understands what to focus on in future writing.
+        4. After the essay, provide a short note (2–3 sentences) summarizing key improvements.
 
-Original OCR-corrected essay:
-<<< BEGIN TEXT >>>
-{corrected_text}
-<<< END TEXT >>>
-"""
-improvement_response = client.chat.completions.create(
-    model="gpt-4o-mini",
-    messages=[
-        {"role": "system", "content": "You are a creative writing tutor helping a student improve their essay."},
-        {"role": "user", "content": improvement_prompt}
-    ],
-    temperature=0.3
-)
-improved_text = improvement_response.choices[0].message.content.strip()
+        Original OCR-corrected essay:
+        <<< BEGIN TEXT >>>
+        {corrected_text}
+        <<< END TEXT >>>
+        """
+        improvement_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a creative writing tutor helping a student improve their essay."},
+                {"role": "user", "content": improvement_prompt},
+            ],
+            temperature=0.3,
+        )
+        improved_text = improvement_response.choices[0].message.content.strip()
 
-# Step 4: Combine original and improved for final output
-final_output = f"""
-Original Text:
-<<< BEGIN ORIGINAL TEXT >>>
-{combined_text.strip()}
-<<< END ORIGINAL TEXT >>>
+        # ------------------------------------------------
+        # STEP 4: Merge original + improved essay
+        # ------------------------------------------------
+        final_output = f"""
+        Original Text:
+        <<< BEGIN ORIGINAL TEXT >>>
+        {combined_text.strip()}
+        <<< END ORIGINAL TEXT >>>
 
-Improved Text:
-<<< BEGIN IMPROVED TEXT >>>
-{improved_text}
-<<< END IMPROVED TEXT >>>
-"""
+        Improved Text:
+        <<< BEGIN IMPROVED TEXT >>>
+        {improved_text}
+        <<< END IMPROVED TEXT >>>
+        """
 
-        # Step 5: Analyze mistake patterns and generate structured JSON for DB
+        # ------------------------------------------------
+        # STEP 5: Mistake analysis (AI -> JSON format)
+        # ------------------------------------------------
         analysis_prompt = f"""
         You are an expert essay analysis assistant.
-        
+
         Compare the original and improved essay.
         For each correction, create an object with:
         - "original_text": the exact original fragment
         - "corrected_text": the improved fragment
         - "category": one of ["Grammar", "Punctuation", "Vocabulary", "Sentence structure / flow", "Redundancy / conciseness"]
         - "explanation": a concise explanation of why the change was made
-        
-        Produce ONLY a JSON array of objects, without any extra text.
-        Even if there are no corrections, return an empty array: []
-        
+
+        Produce ONLY a JSON array of objects.
+        If there are no corrections, return [].
+
         Original Essay:
         <<< BEGIN ORIGINAL >>>
         {combined_text.strip()}
         <<< END ORIGINAL >>>
-        
+
         Improved Essay:
         <<< BEGIN IMPROVED >>>
         {improved_text}
         <<< END IMPROVED >>>
         """
-        
-        print("[DEBUG] Sending essay analysis prompt to OpenAI...")
-        
+
+        analysis_response = None
         try:
             analysis_response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are an assistant that outputs only clean, parsable JSON for essay mistake patterns."},
-                    {"role": "user", "content": analysis_prompt}
+                    {"role": "system", "content": "You output only clean, parsable JSON for essay mistake patterns."},
+                    {"role": "user", "content": analysis_prompt},
                 ],
-                temperature=0
+                temperature=0,
             )
-            print("[DEBUG] Received response from OpenAI.")
         except Exception as e:
-            print(f"[ERROR] Failed to get response from OpenAI: {e}")
-            analysis_response = None
-        
-        # Safely parse AI response into Python list
+            print(f"[ERROR] Failed to get essay analysis: {e}")
+
+        # Parse JSON safely
         mistake_patterns_data = []
         if analysis_response:
             raw_content = analysis_response.choices[0].message.content.strip()
-            print(f"[DEBUG] Raw AI response:\n{raw_content}\n")
             try:
                 mistake_patterns_data = json.loads(raw_content)
-                print(f"[DEBUG] Parsed {len(mistake_patterns_data)} mistake patterns successfully.")
             except json.JSONDecodeError as e:
-                print(f"[ERROR] Failed to parse AI response as JSON: {e}")
-                print("[DEBUG] Using empty list for mistake_patterns_data.")
+                print(f"[ERROR] Failed to parse AI JSON: {e}")
                 mistake_patterns_data = []
-        else:
-            print("[WARNING] No response received from OpenAI, mistake_patterns_data set to empty list.")
-        
-        # Step 6: Save each mistake pattern as a separate row in the database
-        session_id_for_db = str(uuid4())
+
+        # ------------------------------------------------
+        # STEP 6: Save mistakes into DB
+        # ------------------------------------------------
         saved_count = 0
-        
         for idx, mistake in enumerate(mistake_patterns_data, start=1):
             try:
                 mistake_record = CommonMistake(
-                    session_id=username_for_interactive_session, # i do not need the session id so i am using this column to store the value of username instead
+                    session_id=username_for_interactive_session,  # Using username instead of session_id
                     original_text=mistake.get("original_text", ""),
                     corrected_text=mistake.get("corrected_text", ""),
                     category=mistake.get("category", ""),
                     explanation=mistake.get("explanation", ""),
-                    created_at=datetime.utcnow()
+                    created_at=datetime.utcnow(),
                 )
                 db.add(mistake_record)
                 saved_count += 1
             except Exception as e:
-                print(f"[ERROR] Failed to create MistakePatternEssay record for item {idx}: {e}")
-        
+                print(f"[ERROR] Failed to create mistake record {idx}: {e}")
+
         try:
             db.commit()
-            print(f"[INFO] Successfully saved {saved_count} mistake patterns to the database with session_id: {session_id_for_db}")
-        except SQLAlchemyError as e:
-            db.rollback()
-            print(f"[ERROR] Failed to commit mistake patterns to DB: {e}")
         except Exception as e:
-            print(f"[ERROR] Unexpected error while committing mistake patterns: {e}")
+            db.rollback()
+            print(f"[ERROR] Failed to commit mistake patterns: {e}")
 
-        # Step 6: Store session
+        # ------------------------------------------------
+        # STEP 7: Save session + Return response
+        # ------------------------------------------------
         session_id = str(uuid4())
         session_texts[session_id] = {
             "text": final_output,
             "doctorData": doctor,
-            "mistake_patterns": mistake_patterns_data
+            "mistake_patterns": mistake_patterns_data,
         }
 
         return JSONResponse(
@@ -1923,7 +1930,7 @@ Improved Text:
                 "images_processed": len(images),
                 "total_text_length": len(final_output),
                 "corrected_text": final_output,
-                "mistake_patterns": mistake_patterns_data
+                "mistake_patterns": mistake_patterns_data,
             },
             headers=cors_headers,
         )
@@ -1935,6 +1942,7 @@ Improved Text:
             status_code=500,
             headers=cors_headers,
         )
+
 
 # @app.post("/train-on-images")
 #previous working code for CSS_Academy1
@@ -4056,6 +4064,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
