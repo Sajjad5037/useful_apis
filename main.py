@@ -1779,7 +1779,7 @@ async def train_on_images(
         corrected_text = correction_response.choices[0].message.content.strip()
 
         # Step 3: Improve essay quality
-        # Step 3: Improve essay quality with learning-focused feedback
+# Step 3: Improve essay quality with learning-focused feedback
 improvement_prompt = f"""
 You are an expert creative writing tutor. Your goal is to help a student improve their writing skills. 
 
@@ -1823,7 +1823,6 @@ Improved Text:
 {improved_text}
 <<< END IMPROVED TEXT >>>
 """
-
 
         # Step 5: Analyze mistake patterns and generate structured JSON for DB
         analysis_prompt = f"""
@@ -4057,6 +4056,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
