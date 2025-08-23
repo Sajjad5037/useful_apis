@@ -1779,33 +1779,40 @@ async def train_on_images(
         corrected_text = correction_response.choices[0].message.content.strip()
 
         # Step 3: Improve essay quality
-        improvement_prompt = f"""
-        You are an expert creative writing coach. 
-        Evaluate the following essay and produce an improved version that demonstrates:
-        - Better structure and flow
-        - Clear grammar and punctuation
-        - Richer vocabulary
-        - Logical paragraph organization
-        Keep the meaning of the original text intact.
-        Wrap any corrections in **double asterisks** to highlight changes.
+        # Step 3: Improve essay quality with learning-focused feedback
+improvement_prompt = f"""
+You are an expert creative writing tutor. Your goal is to help a student improve their writing skills. 
 
-        Original OCR-corrected essay:
-        <<< BEGIN TEXT >>>
-        {corrected_text}
-        <<< END TEXT >>>
-        """
-        improvement_response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a creative writing tutor highlighting improvements."},
-                {"role": "user", "content": improvement_prompt}
-            ],
-            temperature=0.3
-        )
-        improved_text = improvement_response.choices[0].message.content.strip()
+1. Evaluate the following essay and produce an improved version that demonstrates:
+   - Better overall structure and paragraph flow
+   - Clear grammar, punctuation, and sentence construction
+   - Richer and more precise vocabulary
+   - Logical organization and smooth transitions between ideas
+   - Formal academic style appropriate for A-level essays
 
-        # Step 4: Combine original and improved for final output
-        final_output = f"""
+2. Keep the original meaning intact. Do not add new ideas that were not in the student's essay.
+
+3. Highlight any **changes, corrections, or improvements** by wrapping them in **double asterisks**. This will allow the student to see what was improved and learn from it.
+
+4. Optionally, after the improved essay, provide a **brief explanatory note** (2-3 sentences) summarizing the key improvements made, so the student understands what to focus on in future writing.
+
+Original OCR-corrected essay:
+<<< BEGIN TEXT >>>
+{corrected_text}
+<<< END TEXT >>>
+"""
+improvement_response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[
+        {"role": "system", "content": "You are a creative writing tutor helping a student improve their essay."},
+        {"role": "user", "content": improvement_prompt}
+    ],
+    temperature=0.3
+)
+improved_text = improvement_response.choices[0].message.content.strip()
+
+# Step 4: Combine original and improved for final output
+final_output = f"""
 Original Text:
 <<< BEGIN ORIGINAL TEXT >>>
 {combined_text.strip()}
@@ -1816,6 +1823,7 @@ Improved Text:
 {improved_text}
 <<< END IMPROVED TEXT >>>
 """
+
 
         # Step 5: Analyze mistake patterns and generate structured JSON for DB
         analysis_prompt = f"""
@@ -4049,6 +4057,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
