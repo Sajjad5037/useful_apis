@@ -5,6 +5,7 @@ import fitz
 from google.cloud import storage
 
 from uuid import uuid4
+
 from rapidfuzz import fuzz
 import joblib
 import sympy
@@ -1804,7 +1805,7 @@ async def train_on_images(
         
         2. Keep the original meaning intact. Do not add new ideas.
         
-        3. Wrap changes in **double asterisks** to highlight improvements.
+        3. Wrap **only the words, phrases, or sentences that are changed or improved** in double asterisks to highlight the actual improvements. Do NOT wrap the parts that remain unchanged.
         
         4. After the essay, provide a short note (2–3 sentences) summarizing key improvements.
         
@@ -4112,6 +4113,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
