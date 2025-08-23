@@ -1516,29 +1516,33 @@ Student Response:
 
 Task:
 
-1. Improved Response:
+1. **Improved Response:**
    - Rewrite the student response into the strongest possible version that would receive maximum marks STRICTLY based on the retrieved instructions.
    - Include ONLY points, features, or examples explicitly mentioned in the instructions.
    - Keep the response concise but complete.
    - Ensure the response meets the minimum word count of {minimum_word_count} words.
 
-2. Detailed Marking and Feedback (STRICT Scheme Compliance):
+2. **Detailed Marking and Feedback (STRICT Scheme Compliance):**
    - Identify all attempted features or points in the response.
-   - Quote the closest matching phrase from the retrieved instructions for each point.
+   - For each attempted feature, present it in the following format:
+     - **Attempted Feature:** <text>
+     - **Closest matching phrase:** <text from instructions>
+     - **Marks awarded:** <marks>
    - Assign marks strictly based on the retrieved instructions.
    - Do NOT reward more features than allowed by the instructions.
    - Features cannot be double-counted.
    - Ensure total marks do not exceed {total_marks}.
    - Provide optional notes (e.g., spelling, grammar, minor clarity issues).
 
-3. Overall Assessment:
-- Summarize how well the response meets the retrieved instructions.
-- Confirm whether the minimum word count was achieved.
-- Provide practical advice strictly tied to instructions **only if the response did not achieve the maximum marks**. 
-- State the final mark in the format: Overall Mark: <score/{total_marks}>.
+3. **Overall Assessment:**
+   - Summarize how well the response meets the retrieved instructions.
+   - Confirm whether the minimum word count was achieved.
+   - Provide practical advice strictly tied to instructions **only if the response did not achieve the maximum marks**.
+   - State the final mark in the format: **Overall Mark: <score/{total_marks}>**.
 
-Format your answer as clear, structured text using bullet points if helpful. Do NOT use JSON or any structured data format.
+Format your answer as clear, structured text using bullet points if helpful. Do NOT use JSON or any structured data format. Make sure to wrap the main headings and subheadings in `**` so that they render as bold on the front end.
 """
+
 
 
         print("[DEBUG][PROMPT] Evaluation prompt sent to LLM:")
@@ -4045,6 +4049,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
