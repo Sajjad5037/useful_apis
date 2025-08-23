@@ -1794,25 +1794,74 @@ async def train_on_images(
         # ------------------------------------------------
         improvement_prompt = f"""
         You are an expert creative writing tutor. Your goal is to help a student improve their writing skills.
-
+        
         1. Rewrite the following essay with:
            - Better overall structure and flow
            - Clear grammar, punctuation, and sentence construction
            - Richer and more precise vocabulary
            - Logical organization and smooth transitions
            - Formal academic style appropriate for A-level essays
-
+        
         2. Keep the original meaning intact. Do not add new ideas.
-
+        
         3. Wrap changes in **double asterisks** to highlight improvements.
-
+        
         4. After the essay, provide a short note (2–3 sentences) summarizing key improvements.
-
+        
         Original OCR-corrected essay:
         <<< BEGIN TEXT >>>
         {corrected_text}
         <<< END TEXT >>>
+        
+        --- Annotated Examples for Guidance ---
+        
+        --- Introduction ---
+        Good:
+        "This essay examines how social media affects adolescent mental health by analyzing current studies and expert opinions."
+        Why good:
+        - Clearly states the topic and scope.
+        - Uses formal academic language.
+        - Signals what the essay will cover (thesis statement).
+        
+        Bad:
+        "Social media is everywhere and people use it a lot. It has many effects."
+        Why bad:
+        - Vague and general.
+        - Lacks clear focus or thesis statement.
+        - Informal and simplistic language.
+        
+        --- Body Paragraph ---
+        Good:
+        "Research indicates that heavy social media use correlates with anxiety in teenagers. For instance, a 2022 survey showed 70% of participants reported stress after prolonged usage. This suggests that social media can negatively impact mental well-being."
+        Why good:
+        - Presents a clear topic sentence.
+        - Supports point with evidence and examples.
+        - Explains implications of the evidence.
+        - Maintains formal academic tone and clear flow.
+        
+        Bad:
+        "Social media can make teens sad. Many teens use it a lot."
+        Why bad:
+        - Topic sentence is weak and vague.
+        - Lacks supporting evidence or examples.
+        - Simplistic language and unstructured flow.
+        
+        --- Conclusion ---
+        Good:
+        "In conclusion, social media usage has measurable effects on adolescent mental health, with evidence showing increased anxiety. Understanding these effects helps in developing better interventions for teens."
+        Why good:
+        - Summarizes key points clearly.
+        - Reinforces thesis without introducing new ideas.
+        - Uses formal, structured language.
+        
+        Bad:
+        "Social media is bad for teens. They should use it less."
+        Why bad:
+        - Oversimplified and informal.
+        - Fails to summarize or reinforce main points.
+        - Does not demonstrate analysis or insight.
         """
+
         improvement_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -4064,6 +4113,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
