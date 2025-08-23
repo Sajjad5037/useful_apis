@@ -1507,6 +1507,19 @@ Treat the instructions as authoritative. Do NOT use any outside knowledge.
 --- Retrieved Instructions ---
 {retrieved_context}
 ---------------------------
+--- Annotated Exemplars (Laboratory Experiments) ---
+Low-mark response (1/4):
+"Laboratory experiments are done in science labs. They can show cause and effect and test ideas. They are also accurate."
+Annotation: Vague, lacks sociological terminology. Mentions cause-effect but fails to explain control of variables or replication. Awarded 1 mark.
+
+Medium-mark response (2/4):
+"In sociology, laboratory experiments are where variables are controlled. The researcher changes the independent variable and sees the effect on the dependent variable. This makes the results more accurate."
+Annotation: Identifies control of variables and IV/DV manipulation. Lacks detail on replication/reliability and artificial environment. Awarded 2 marks.
+
+High-mark response (4/4):
+"Laboratory experiments in sociology are carried out in an artificial environment where researchers control conditions. The researcher manipulates the independent variable while keeping other factors constant, then observes changes in the dependent variable through comparison of control and experimental groups. These experiments are designed to be replicated by other researchers, which ensures reliability of the findings."
+Annotation: Clearly covers artificial environment, manipulation of variables, control vs. experimental groups, and replication for reliability. Awarded full 4 marks.
+---------------------------
 
 Question:
 {question_text}
@@ -4064,6 +4077,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
