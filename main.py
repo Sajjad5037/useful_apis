@@ -262,6 +262,11 @@ class ReservationBase(BaseModel):
     class Config:
         orm_mode = True
 
+class ParaphraseRequest(BaseModel):
+    original: str
+    paraphrase: str
+    level: str = "O-Level"  # default if not provided
+
 class ReservationModel_new(Base):
     __tablename__ = "reservations_new"
 
@@ -3937,6 +3942,84 @@ async def chat_with_database(request: ChatRequest, db: Session = Depends(get_db_
 
     return ChatResponse(reply=answer)
 
+@app.get("/api/get-ai-sentence")
+async def get_ai_sentence():
+    try:
+        print("Received request for AI sentence...")  # Debug
+
+        # Call your AI model (GPT) to generate an O-Level appropriate sentence
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a teacher for O-Level students. "
+                        "Generate clear, simple, grammatically correct sentences suitable for O-Level English students "
+                        "to practice paraphrasing. The sentences should be 1-2 lines long and easy to understand."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": "Please generate a sentence to paraphrase."
+                }
+            ],
+            temperature=0.5
+        )
+
+        print("AI response received:", response)  # Debug
+        sentence = response.choices[0].message.content.strip()
+        print("Extracted sentence:", sentence)  # Debug
+
+        return {"sentence": sentence}
+
+    except Exception as e:
+        print("Error generating sentence:", e)  # Debug
+        return {"sentence": "Failed to generate sentence."}
+
+
+@app.post("/api/evaluate-paraphrase")
+async def evaluate_paraphrase(request: ParaphraseRequest):
+    print("Received paraphrase evaluation request:", request)
+
+    try:
+        # Construct the system message for GPT
+        system_prompt = (
+            f"You are an English teacher for {request.level} students. "
+            "Evaluate the student's paraphrase based on clarity, grammar, and faithfulness to the original sentence. "
+            "Provide concise feedback and suggest improvements if necessary."
+        )
+        print("System prompt sent to GPT:", system_prompt)
+
+        # Call GPT to evaluate the paraphrase
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Original sentence: {request.original}\n"
+                        f"Student paraphrase: {request.paraphrase}\n"
+                        "Please provide evaluation and suggestions."
+                    )
+                }
+            ],
+            temperature=0.2
+        )
+
+        feedback = response.choices[0].message.content.strip()
+        print("GPT feedback:", feedback)
+
+        return {"feedback": feedback}
+
+    except Exception as e:
+        print("Error in evaluate_paraphrase:", e)
+        raise HTTPException(status_code=500, detail="Failed to evaluate paraphrase.")
+
+
+
+
 @app.post("/api/chatwebsite_ShahRukh")
 async def chat_website(msg: Message):
     try:
@@ -4086,6 +4169,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
