@@ -3942,13 +3942,23 @@ async def chat_with_database(request: ChatRequest, db: Session = Depends(get_db_
 
     return ChatResponse(reply=answer)
 
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import openai
+
+app = FastAPI()
+
+openai.api_key = "YOUR_API_KEY"  # or use environment variable
+
+class AIRequest(BaseModel):
+    message: str
+
 @app.get("/api/get-ai-sentence")
 async def get_ai_sentence():
+    print("Received request for AI sentence...")
     try:
-        print("Received request for AI sentence...")  # Debug
-
-        # Call your AI model (GPT) to generate an O-Level appropriate sentence
-        response = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model="gpt-4",
             messages=[
                 {
@@ -3956,7 +3966,7 @@ async def get_ai_sentence():
                     "content": (
                         "You are a teacher for O-Level students. "
                         "Generate clear, simple, grammatically correct sentences suitable for O-Level English students "
-                        "to practice paraphrasing. The sentences should be 1-2 lines long and easy to understand."
+                        "to practice paraphrasing. Sentences should be 1-2 lines long and easy to understand."
                     )
                 },
                 {
@@ -3966,15 +3976,12 @@ async def get_ai_sentence():
             ],
             temperature=0.5
         )
-
-        print("AI response received:", response)  # Debug
         sentence = response.choices[0].message.content.strip()
-        print("Extracted sentence:", sentence)  # Debug
-
+        print("Generated sentence:", sentence)
         return {"sentence": sentence}
 
     except Exception as e:
-        print("Error generating sentence:", e)  # Debug
+        print("Error generating sentence:", e)
         return {"sentence": "Failed to generate sentence."}
 
 
@@ -3992,18 +3999,11 @@ async def evaluate_paraphrase(request: ParaphraseRequest):
         print("System prompt sent to GPT:", system_prompt)
 
         # Call GPT to evaluate the paraphrase
-        response = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Original sentence: {request.original}\n"
-                        f"Student paraphrase: {request.paraphrase}\n"
-                        "Please provide evaluation and suggestions."
-                    )
-                }
+                {"role": "user", "content": f"Original sentence: {request.original}\nStudent paraphrase: {request.paraphrase}\nPlease provide evaluation and suggestions."}
             ],
             temperature=0.2
         )
@@ -4169,6 +4169,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
