@@ -1739,101 +1739,101 @@ async def train_on_images(
 
     combined_text = ""
 
-    try:
-             # ------------------------------------------------
-    # STEP 1: OCR Extraction from uploaded images
+    try:    # STEP 1: OCR Extraction from uploaded images
     # ------------------------------------------------
-        for image in images:
-            image_bytes = await image.read()
-            if not image_bytes:
-                continue
-    
-            ocr_result = client_google_vision_api.document_text_detection(
-                image=vision.Image(content=image_bytes)
-            )
-            extracted_text = (
-                ocr_result.full_text_annotation.text
-                if ocr_result.full_text_annotation
-                else ""
-            )
-            combined_text += extracted_text + "\n\n"
-    
-        if not combined_text.strip():
-            return JSONResponse(
-                content={"detail": "No text extracted from images"},
-                status_code=400,
-                headers=cors_headers,
-            )
-    
-        # ------------------------------------------------
-        # STEP 2: Correct OCR errors (light-touch only)
-        # ------------------------------------------------
-        correction_prompt = f"""
-        The following text was extracted by an OCR system and may contain mistakes.
-        Please fix only obvious OCR errors:
-        - Correct misrecognized characters (0 → O, 1 → I, etc.)
-        - Fix broken or merged words
-        - Fix missing or extra spaces
-        Do NOT paraphrase, summarize, or reword sentences.
-        
-        Text:
-        <<< BEGIN TEXT >>>
-        {combined_text.strip()}
-        <<< END TEXT >>>
-        """
-        correction_response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an AI assistant that only fixes OCR errors such as incorrect word splits, "
-                            "misread letters (0 → O, 1 → I, etc.), and misplaced line breaks. "
-                            "Preserve the original grammar, wording, punctuation, and sentence structure exactly as in the OCR. "
-                            "Do not paraphrase, summarize, or reword sentences."
-                        ),
-                    },
-                    {"role": "user", "content": correction_prompt},
-                ],
-                temperature=0.2,
-            )    
-    
-        corrected_text = correction_response.choices[0].message.content.strip()
-        # ------------------------------------------------
-        # STEP 3: Improve essay quality with feedback
-        # ------------------------------------------------
-        improvement_prompt = f"""
-        You are an expert creative writing tutor. Your goal is to help a student improve their writing skills.
-    
-        1. Rewrite the following essay with:
-           - Better overall structure and flow
-           - Clear grammar, punctuation, and sentence construction
-           - Richer and more precise vocabulary
-           - Logical organization and smooth transitions
-           - Formal academic style appropriate for A-level essays
-    
-        2. Keep the original meaning intact. Do not add new ideas.
-    
-        3. Wrap **only the words, phrases, or sentences that are changed or improved** in double asterisks to highlight the actual improvements. Do NOT wrap the parts that remain unchanged.
-    
-        4. After the essay, provide a short note (2–3 sentences) summarizing key improvements.
-    
-        Original OCR-corrected essay:
-        <<< BEGIN TEXT >>>
-        {corrected_text}
-        <<< END TEXT >>>
-        """
+    for image in images:
+        image_bytes = await image.read()
+        if not image_bytes:
+            continue
 
-
-        improvement_response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a creative writing tutor helping a student improve their essay."},
-                {"role": "user", "content": improvement_prompt},
-            ],
-            temperature=0.3,
+        ocr_result = client_google_vision_api.document_text_detection(
+            image=vision.Image(content=image_bytes)
         )
-        improved_text = improvement_response.choices[0].message.content.strip()
+        extracted_text = (
+            ocr_result.full_text_annotation.text
+            if ocr_result.full_text_annotation
+            else ""
+        )
+        combined_text += extracted_text + "\n\n"
+
+    if not combined_text.strip():
+        return JSONResponse(
+            content={"detail": "No text extracted from images"},
+            status_code=400,
+            headers=cors_headers,
+        )
+
+    # ------------------------------------------------
+    # STEP 2: Correct OCR errors (light-touch only)
+    # ------------------------------------------------
+    correction_prompt = f"""
+The following text was extracted by an OCR system and may contain mistakes.
+Please fix only obvious OCR errors:
+- Correct misrecognized characters (0 → O, 1 → I, etc.)
+- Fix broken or merged words
+- Fix missing or extra spaces
+Do NOT paraphrase, summarize, or reword sentences.
+
+Text:
+<<< BEGIN TEXT >>>
+{combined_text.strip()}
+<<< END TEXT >>>
+"""
+    correction_response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are an AI assistant that only fixes OCR errors such as incorrect word splits, "
+                    "misread letters (0 → O, 1 → I, etc.), and misplaced line breaks. "
+                    "Preserve the original grammar, wording, punctuation, and sentence structure exactly as in the OCR. "
+                    "Do not paraphrase, summarize, or reword sentences."
+                ),
+            },
+            {"role": "user", "content": correction_prompt},
+        ],
+        temperature=0.2,
+    )
+    corrected_text = correction_response.choices[0].message.content.strip()
+
+    # ------------------------------------------------
+    # STEP 3: Improve essay quality with feedback
+    # ------------------------------------------------
+    improvement_prompt = f"""
+You are an expert creative writing tutor. Your goal is to help a student improve their writing skills.
+
+1. Rewrite the following essay with:
+   - Better overall structure and flow
+   - Clear grammar, punctuation, and sentence construction
+   - Richer and more precise vocabulary
+   - Logical organization and smooth transitions
+   - Formal academic style appropriate for A-level essays
+
+2. Keep the original meaning intact. Do not add new ideas.
+
+3. Wrap **only the words, phrases, or sentences that are changed or improved** in double asterisks to highlight the actual improvements. Do NOT wrap the parts that remain unchanged.
+
+4. After the essay, provide a short note (2–3 sentences) summarizing key improvements.
+
+Original OCR-corrected essay:
+<<< BEGIN TEXT >>>
+{corrected_text}
+<<< END TEXT >>>
+"""
+    improvement_response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a creative writing tutor helping a student improve their essay.",
+            },
+            {"role": "user", "content": improvement_prompt},
+        ],
+        temperature=0.3,
+    )
+    improved_text = improvement_response.choices[0].message.content.strip()
+
 
         # ------------------------------------------------
         # STEP 4: Merge original + improved essay
@@ -4076,6 +4076,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
