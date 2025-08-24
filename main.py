@@ -1737,65 +1737,33 @@ async def train_on_images(
     global username_for_interactive_session
     username_for_interactive_session = doctor.get("name") if doctor else None
 
-    combined_text = ""
+    
 
-    try:    # STEP 1: OCR Extraction from uploaded images
-    # ------------------------------------------------
+    try: 
+        
+        # STEP 1 & 2: Use your existing extract_text() for OCR + cleanup
+        # ------------------------------------------------
+        combined_text = ""
+        
         for image in images:
-            image_bytes = await image.read()
-            if not image_bytes:
+            if not image:
                 continue
-    
-            ocr_result = client_google_vision_api.document_text_detection(
-                image=vision.Image(content=image_bytes)
-            )
-            extracted_text = (
-                ocr_result.full_text_annotation.text
-                if ocr_result.full_text_annotation
-                else ""
-            )
-            combined_text += extracted_text + "\n\n"
-    
+        
+            # Call your existing FastAPI function that returns {"text": cleaned_text}
+            result = await extract_text(image)   # <-- same function you already have
+            extracted_text = result.get("text", "") if isinstance(result, dict) else ""
+            if extracted_text:
+                combined_text += extracted_text.strip() + "\n\n"
+        
         if not combined_text.strip():
             return JSONResponse(
                 content={"detail": "No text extracted from images"},
                 status_code=400,
                 headers=cors_headers,
             )
-    
-        # ------------------------------------------------
-        # STEP 2: Correct OCR errors (light-touch only)
-        # ------------------------------------------------
-        correction_prompt = f"""
-    The following text was extracted by an OCR system and may contain mistakes.
-    Please fix only obvious OCR errors:
-    - Correct misrecognized characters (0 → O, 1 → I, etc.)
-    - Fix broken or merged words
-    - Fix missing or extra spaces
-    Do NOT paraphrase, summarize, or reword sentences.
-    
-    Text:
-    <<< BEGIN TEXT >>>
-    {combined_text.strip()}
-    <<< END TEXT >>>
-    """
-        correction_response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an AI assistant that only fixes OCR errors such as incorrect word splits, "
-                        "misread letters (0 → O, 1 → I, etc.), and misplaced line breaks. "
-                        "Preserve the original grammar, wording, punctuation, and sentence structure exactly as in the OCR. "
-                        "Do not paraphrase, summarize, or reword sentences."
-                    ),
-                },
-                {"role": "user", "content": correction_prompt},
-            ],
-            temperature=0.2,
-        )
-        corrected_text = correction_response.choices[0].message.content.strip()
+        
+        # This replaces the previous Step 2 output
+        corrected_text = combined_text.strip()
     
         # ------------------------------------------------
         # STEP 3: Improve essay quality with feedback
@@ -4076,6 +4044,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
