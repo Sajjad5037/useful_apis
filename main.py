@@ -1700,6 +1700,48 @@ async def options_train_on_images():
     )
 
 
+async def extract_text_helper(image: UploadFile) -> dict:
+    # Read and prepare image for Vision API
+    image_bytes = await image.read()
+    image_content = vision.Image(content=image_bytes)
+
+    # Run OCR
+    response = client_google_vision_api.document_text_detection(image=image_content)
+    ocr_text = response.full_text_annotation.text if response.full_text_annotation else ""
+
+    if not ocr_text.strip():
+        return {"text": ""}
+
+    # Use OpenAI to clean up OCR text
+    prompt = f"""
+    The following text was extracted by an OCR system and may have mistakes or odd formatting. 
+    Please rewrite it so that it is clear, but ONLY fix OCR mistakes (e.g., word splits, misread letters, misplaced line breaks). 
+    Do NOT paraphrase or change meaning.
+
+    Text:
+    {ocr_text}
+
+    Cleaned Text:
+    """
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are an AI assistant that ONLY fixes OCR errors, "
+                    "without paraphrasing or altering meaning."
+                )
+            },
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.2,
+    )
+
+    cleaned_text = response.choices[0].message.content.strip()
+    return {"text": cleaned_text}
+
+
 @app.post("/train-on-images")
 async def train_on_images(
     images: List[UploadFile] = File(...),
@@ -1740,8 +1782,9 @@ async def train_on_images(
     
 
     try: 
-        
-        # STEP 1 & 2: Use your existing extract_text() for OCR + cleanup
+                
+                # ✅ Inside /train-on-images you now do this:
+        # STEP 1 & 2: Use your existing extract_text_helper() for OCR + cleanup
         # ------------------------------------------------
         combined_text = ""
         
@@ -1749,8 +1792,8 @@ async def train_on_images(
             if not image:
                 continue
         
-            # Call your existing FastAPI function that returns {"text": cleaned_text}
-            result = await extract_text(image)   # <-- same function you already have
+            # Call helper (dict guaranteed)
+            result = await extract_text_helper(image)
             extracted_text = result.get("text", "") if isinstance(result, dict) else ""
             if extracted_text:
                 combined_text += extracted_text.strip() + "\n\n"
@@ -1763,8 +1806,7 @@ async def train_on_images(
             )
         
         # This replaces the previous Step 2 output
-        corrected_text = combined_text.strip()
-    
+        corrected_text = combined_text.strip()    
         # ------------------------------------------------
         # STEP 3: Improve essay quality with feedback
         # ------------------------------------------------
@@ -4044,6 +4086,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
