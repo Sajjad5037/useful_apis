@@ -1781,7 +1781,7 @@ async def train_on_images(
         {combined_text.strip()}
         <<< END TEXT >>>
         """
-            correction_response = client.chat.completions.create(
+        correction_response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {
@@ -1796,7 +1796,7 @@ async def train_on_images(
                     {"role": "user", "content": correction_prompt},
                 ],
                 temperature=0.2,
-            )
+            )    
     
         corrected_text = correction_response.choices[0].message.content.strip()
         # ------------------------------------------------
@@ -4076,6 +4076,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
