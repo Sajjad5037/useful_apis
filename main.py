@@ -3943,13 +3943,6 @@ async def chat_with_database(request: ChatRequest, db: Session = Depends(get_db_
     return ChatResponse(reply=answer)
 
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import openai
-
-app = FastAPI()
-
-openai.api_key = "YOUR_API_KEY"  # or use environment variable
 
 class AIRequest(BaseModel):
     message: str
@@ -3994,7 +3987,8 @@ async def evaluate_paraphrase(request: ParaphraseRequest):
         system_prompt = (
             f"You are an English teacher for {request.level} students. "
             "Evaluate the student's paraphrase based on clarity, grammar, and faithfulness to the original sentence. "
-            "Provide concise feedback and suggest improvements if necessary."
+            "Provide concise feedback and suggest improvements if necessary. "
+            "Additionally, generate 3 alternative paraphrased versions of the original sentence that the student could use as examples."
         )
         print("System prompt sent to GPT:", system_prompt)
 
@@ -4169,6 +4163,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
