@@ -3946,7 +3946,6 @@ async def chat_with_database(request: ChatRequest, db: Session = Depends(get_db_
 
 class AIRequest(BaseModel):
     message: str
-
 @app.get("/api/get-ai-sentence")
 async def get_ai_sentence():
     print("Received request for AI sentence...")
@@ -3958,8 +3957,11 @@ async def get_ai_sentence():
                     "role": "system",
                     "content": (
                         "You are a teacher for O-Level students. "
-                        "Generate clear, simple, grammatically correct sentences suitable for O-Level English students "
-                        "to practice paraphrasing. Sentences should be 1-2 lines long and easy to understand."
+                        "Your task is to generate exactly ONE grammatically correct sentence suitable for O-Level English students to practice paraphrasing. "
+                        "The sentence must contain only one sentence—do NOT generate multiple sentences or examples. "
+                        "Make it slightly complex by including at least one subordinate clause or descriptive element. "
+                        "It should be 2-3 lines long, but still understandable by O-Level students. "
+                        "DO NOT include numbering, bullet points, or extra sentences. Strictly one sentence only."
                     )
                 },
                 {
@@ -3967,8 +3969,9 @@ async def get_ai_sentence():
                     "content": "Please generate a sentence to paraphrase."
                 }
             ],
-            temperature=0.5
+            temperature=0.3
         )
+
         sentence = response.choices[0].message.content.strip()
         print("Generated sentence:", sentence)
         return {"sentence": sentence}
@@ -3976,7 +3979,6 @@ async def get_ai_sentence():
     except Exception as e:
         print("Error generating sentence:", e)
         return {"sentence": "Failed to generate sentence."}
-
 
 @app.post("/api/evaluate-paraphrase")
 async def evaluate_paraphrase(request: ParaphraseRequest):
@@ -4163,6 +4165,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
