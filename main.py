@@ -219,7 +219,7 @@ class CampaignSuggestion(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class CampaignSuggestion2(Base):
-    __tablename__ = "campaign_suggestions"
+    __tablename__ = "campaign_suggestions2"
 
     id = Column(Integer, primary_key=True, index=True)
     content = Column(Text, nullable=False)
@@ -4340,6 +4340,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
