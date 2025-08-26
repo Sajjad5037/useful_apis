@@ -3218,7 +3218,8 @@ Important:
             suggestion_entry = CampaignSuggestion2(
                 campaign_id=campaign.id,
                 content=s,
-                status="pending"
+                status="pending",
+                user_id=request.doctorData.id 
             )
             db.add(suggestion_entry)
         db.commit()
@@ -4336,6 +4337,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
