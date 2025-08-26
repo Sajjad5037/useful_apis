@@ -17,7 +17,7 @@ from langchain.schema import Document
 from urllib.parse import quote
 import re
 from sqlalchemy.sql import text
-from google.cloud import vision
+
 import numpy as np
 from langchain.chains import RetrievalQA
 from langchain.chat_models import ChatOpenAI
@@ -79,7 +79,7 @@ from fastapi.responses import JSONResponse
 vectorstore = None
 total_pdf = 0
 import tempfile
-from vertexai.preview.generative_models import GenerativeModel, Part
+
 
 USAGE_LIMIT_INCREASE = 5.0  # dollars
 vision_model = GenerativeModel("gemini-1.5-flash-001")
@@ -4335,6 +4335,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
