@@ -3183,7 +3183,15 @@ Important:
         suggestions_text = response.choices[0].message.content.strip()
         print(f"[DEBUG] Raw suggestions from OpenAI: {suggestions_text}")
         suggestions = json.loads(suggestions_text)
-        # After getting suggestions from OpenAI
+        
+        
+        if not isinstance(suggestions, list):
+            raise ValueError("Invalid response format from OpenAI.")
+    except Exception as e:
+        print(f"[ERROR] OpenAI generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate suggestions: {e}")
+        # 2. Then add suggestions
+    try:
         for s in suggestions:
             suggestion_entry = CampaignSuggestion(
                 campaign_id=campaign.id,
@@ -3192,14 +3200,10 @@ Important:
             )
             db.add(suggestion_entry)
         db.commit()
-
-        
-        if not isinstance(suggestions, list):
-            raise ValueError("Invalid response format from OpenAI.")
     except Exception as e:
-        print(f"[ERROR] OpenAI generation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate suggestions: {e}")
-
+        db.rollback()
+        print(f"[ERROR] Failed to save suggestions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save suggestions: {e}")
     # Store campaign in DB
     try:
         campaign = Campaign(
@@ -4305,6 +4309,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
