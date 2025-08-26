@@ -3190,21 +3190,6 @@ Important:
     except Exception as e:
         print(f"[ERROR] OpenAI generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate suggestions: {e}")
-        # 2. Then add suggestions
-    try:
-        for s in suggestions:
-            suggestion_entry = CampaignSuggestion(
-                campaign_id=campaign.id,
-                content=s,
-                status="pending"
-            )
-            db.add(suggestion_entry)
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        print(f"[ERROR] Failed to save suggestions: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to save suggestions: {e}")
-    # Store campaign in DB
     try:
         campaign = Campaign(
             campaign_name=request.campaignName,
@@ -3222,8 +3207,22 @@ Important:
         db.rollback()
         print(f"[ERROR] Failed to save campaign: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to save campaign: {e}")
-
-    return CampaignResponse(campaignId=campaign.id, suggestions=suggestions)
+    
+    # 2. Then add suggestions
+    try:
+        for s in suggestions:
+            suggestion_entry = CampaignSuggestion(
+                campaign_id=campaign.id,
+                content=s,
+                status="pending"
+            )
+            db.add(suggestion_entry)
+        db.commit()
+        print(f"[DEBUG] Suggestions saved for campaign {campaign.id}")
+    except Exception as e:
+        db.rollback()
+        print(f"[ERROR] Failed to save suggestions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save suggestions: {e}")    
 
 @app.get("/campaigns/{campaign_id}/suggestions/pending")
 def get_pending_suggestions(campaign_id: int, db: Session = Depends(get_db)):
@@ -4309,6 +4308,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
