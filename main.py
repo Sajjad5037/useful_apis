@@ -3225,7 +3225,7 @@ Important:
 
     # 4. Return a valid response
     return {
-        "campaignId": new_campaign.id,   # not campaign_id
+        "campaignId": campaign.id,   # use campaign, not new_campaign
         "message": "Campaign created. Suggestions pending approval."
     }
 
@@ -4327,6 +4327,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
