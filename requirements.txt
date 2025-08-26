@@ -1,5 +1,6 @@
 # Google / AI
 google-cloud-storage==2.18.2
+google-cloud-vision>=3.3.2
 
 # FastAPI and web
 fastapi==0.111.0
@@ -64,4 +65,5 @@ openai==1.76.2
 
 
 #
+
 
