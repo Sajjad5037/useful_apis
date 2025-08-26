@@ -5,6 +5,7 @@ import fitz
 from google.cloud import storage
 
 from uuid import uuid4
+from sqlalchemy.dialects.postgresql import JSONB
 
 from rapidfuzz import fuzz
 import joblib
@@ -202,11 +203,10 @@ class Campaign(Base):
     campaign_name = Column(String, nullable=False)
     goal = Column(String, nullable=False)
     tone = Column(String, nullable=False)
-    
+
     doctor_id = Column(Integer, nullable=False)
     doctor_name = Column(String, nullable=False)
-    doctor_extra = Column(JSON, nullable=True)  # stores all extra doctor info
-    
+    doctor_extra = Column(JSONB, nullable=True)  # stores all extra doctor info    
     suggestions = Column(JSON, nullable=True)  # stores AI-generated campaign suggestions
     
 # ---------- Pydantic MODELS ----------
@@ -4270,6 +4270,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
