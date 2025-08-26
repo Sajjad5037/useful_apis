@@ -23,7 +23,7 @@ from langchain.chains import RetrievalQA
 from langchain.chat_models import ChatOpenAI
 import boto3
 from botocore.exceptions import ClientError
-from google.cloud.vision_v1 import types
+
 from sklearn.metrics.pairwise import cosine_similarity
 from langchain.prompts import PromptTemplate
 from langchain.embeddings import OpenAIEmbeddings
@@ -82,7 +82,7 @@ import tempfile
 
 
 USAGE_LIMIT_INCREASE = 5.0  # dollars
-vision_model = GenerativeModel("gemini-1.5-flash-001")
+#vision_model = GenerativeModel("gemini-1.5-flash-001")
 # Suppose you have a baseline cost stored somewhere or passed in, for demo let's hardcode:
 BASELINE_COST = 0.0  # Replace this with your actual baseline cost or fetch it from DB/config
 bucket_name_anz_way = "sociology_anz_way"
@@ -4335,6 +4335,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
