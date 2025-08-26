@@ -3232,7 +3232,7 @@ Important:
 @app.get("/queue/posts")
 def get_all_pending_suggestions(db: Session = Depends(get_db)):
     suggestions = db.query(CampaignSuggestion).filter_by(status="pending").all()
-    return [
+    result = [
         {
             "id": s.id,
             "content": s.content,
@@ -3240,7 +3240,8 @@ def get_all_pending_suggestions(db: Session = Depends(get_db)):
         }
         for s in suggestions
     ]
-
+    print("DEBUG: Approvals endpoint result:", result)  # 👈 debug print
+    return result
 
 
 @app.get("/campaigns/{campaign_id}/suggestions/pending")
@@ -4327,6 +4328,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
