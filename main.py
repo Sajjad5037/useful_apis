@@ -209,14 +209,7 @@ class Campaign(Base):
     doctor_name = Column(String, nullable=False)
 
     suggestions = Column(String, nullable=False)  # Store JSON array as string
-class CampaignSuggestion(Base):
-    __tablename__ = "campaign_suggestions"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=False)
-    content = Column(String, nullable=False)
-    status = Column(String, default="pending")  # pending | approved | rejected
-    created_at = Column(DateTime, default=datetime.utcnow)
 
 class CampaignSuggestion2(Base):
     __tablename__ = "campaign_suggestions2"
@@ -4340,6 +4333,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
