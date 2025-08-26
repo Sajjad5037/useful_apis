@@ -17,6 +17,7 @@ from langchain.schema import Document
 from urllib.parse import quote
 import re
 from sqlalchemy.sql import text
+from google.cloud import vision
 
 import numpy as np
 from langchain.chains import RetrievalQA
@@ -4335,6 +4336,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
