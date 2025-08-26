@@ -3225,7 +3225,8 @@ Important:
         raise HTTPException(status_code=500, detail=f"Failed to save suggestions: {e}")
 
     # 4. Return a valid response
-    return CampaignResponse(campaignId=campaign.id, suggestions=suggestions)
+    return {"campaign_id": campaign.id, "message": "Campaign created. Suggestions pending approval."}
+
 
 
 @app.get("/campaigns/{campaign_id}/suggestions/pending")
@@ -4312,6 +4313,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
