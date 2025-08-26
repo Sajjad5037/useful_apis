@@ -218,7 +218,8 @@ class CampaignSuggestion2(Base):
     content = Column(Text, nullable=False)
     campaign_id = Column(Integer, ForeignKey("campaigns.id"))
     status = Column(String, default="pending")
-    user_id = Column(Integer, ForeignKey("campaigns.doctor_id"))
+    user_id = Column(Integer)  # just a plain column, no FK
+
 
     
 # ---------- Pydantic MODELS ----------
@@ -4333,6 +4334,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
