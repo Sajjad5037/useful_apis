@@ -218,6 +218,15 @@ class CampaignSuggestion(Base):
     status = Column(String, default="pending")  # pending | approved | rejected
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class CampaignSuggestion2(Base):
+    __tablename__ = "campaign_suggestions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content = Column(Text, nullable=False)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"))
+    status = Column(String, default="pending")
+    user_id = Column(Integer, ForeignKey("users.id"))  # 🔑 link to user
+
     
 # ---------- Pydantic MODELS ----------
 class CampaignDoctorInfo(BaseModel):
@@ -3210,7 +3219,7 @@ Important:
     # 3. Save suggestions
     try:
         for s in suggestions:
-            suggestion_entry = CampaignSuggestion(
+            suggestion_entry = CampaignSuggestion2(
                 campaign_id=campaign.id,
                 content=s,
                 status="pending"
@@ -3230,23 +3239,26 @@ Important:
     }
 
 @app.get("/queue/posts")
-def get_all_pending_suggestions(db: Session = Depends(get_db)):
-    suggestions = db.query(CampaignSuggestion).filter_by(status="pending").all()
+def get_all_pending_suggestions(user_id: int, db: Session = Depends(get_db)):
+    suggestions = (
+        db.query(CampaignSuggestion2)
+        .filter_by(status="pending", user_id=user_id)
+        .all()
+    )
     result = [
         {
             "id": s.id,
             "content": s.content,
-            "campaignId": s.campaign_id
+            "campaignId": s.campaign_id,
+            "userId": s.user_id
         }
         for s in suggestions
     ]
-    print("DEBUG: Approvals endpoint result:", result)  # 👈 debug print
+    print(f"DEBUG: Approvals endpoint result for user {user_id}:", result)  # 👈 debug print
     return result
-
-
 @app.get("/campaigns/{campaign_id}/suggestions/pending")
 def get_pending_suggestions(campaign_id: int, db: Session = Depends(get_db)):
-    suggestions = db.query(CampaignSuggestion).filter_by(
+    suggestions = db.query(CampaignSuggestion2).filter_by(
         campaign_id=campaign_id,
         status="pending"
     ).all()
@@ -3254,7 +3266,7 @@ def get_pending_suggestions(campaign_id: int, db: Session = Depends(get_db)):
 
 @app.post("/suggestions/{suggestion_id}/approve")
 def approve_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
-    suggestion = db.get(CampaignSuggestion, suggestion_id)
+    suggestion = db.get(CampaignSuggestion2, suggestion_id)
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
     suggestion.status = "approved"
@@ -3263,7 +3275,7 @@ def approve_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
 
 @app.post("/suggestions/{suggestion_id}/reject")
 def reject_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
-    suggestion = db.get(CampaignSuggestion, suggestion_id)
+    suggestion = db.get(CampaignSuggestion2, suggestion_id)
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
     suggestion.status = "rejected"
@@ -4328,6 +4340,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
