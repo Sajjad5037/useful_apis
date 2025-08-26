@@ -3224,7 +3224,22 @@ Important:
         raise HTTPException(status_code=500, detail=f"Failed to save suggestions: {e}")
 
     # 4. Return a valid response
-    return {"campaign_id": campaign.id, "message": "Campaign created. Suggestions pending approval."}
+    return {
+        "campaignId": new_campaign.id,   # not campaign_id
+        "message": "Campaign created. Suggestions pending approval."
+    }
+
+@app.get("/queue/posts")
+def get_all_pending_suggestions(db: Session = Depends(get_db)):
+    suggestions = db.query(CampaignSuggestion).filter_by(status="pending").all()
+    return [
+        {
+            "id": s.id,
+            "content": s.content,
+            "campaignId": s.campaign_id
+        }
+        for s in suggestions
+    ]
 
 
 
