@@ -3147,7 +3147,6 @@ async def extract_text_essay_checker(
         print(f"[ERROR] Unhandled exception in /extract_text_essayChecker: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error.")
-
 @app.post("/generate-campaign", response_model=CampaignResponse)
 def generate_campaign(request: CampaignRequest, db: Session = Depends(get_db)):
     if not request.campaignName or not request.goal:
@@ -3157,7 +3156,9 @@ def generate_campaign(request: CampaignRequest, db: Session = Depends(get_db)):
     print(f"[DEBUG] Goal: {request.goal}, Tone: {request.tone}")
     print(f"[DEBUG] Doctor Info: id={request.doctorData.id}, name={request.doctorData.name}")
 
-    prompt = f"""
+    # 1. Call OpenAI to generate suggestions
+    try:
+        prompt = f"""
 You are an expert AI marketing assistant. Generate exactly 5 social media post suggestions for a campaign.
 
 Campaign Name: {request.campaignName}
@@ -3170,8 +3171,6 @@ Important:
 - Example: ["Post idea 1", "Post idea 2", "Post idea 3", "Post idea 4", "Post idea 5"]
 - Do NOT include any extra text outside the JSON array.
 """
-
-    try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -3183,13 +3182,14 @@ Important:
         suggestions_text = response.choices[0].message.content.strip()
         print(f"[DEBUG] Raw suggestions from OpenAI: {suggestions_text}")
         suggestions = json.loads(suggestions_text)
-        
-        
+
         if not isinstance(suggestions, list):
             raise ValueError("Invalid response format from OpenAI.")
     except Exception as e:
         print(f"[ERROR] OpenAI generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate suggestions: {e}")
+
+    # 2. Save campaign first
     try:
         campaign = Campaign(
             campaign_name=request.campaignName,
@@ -3207,8 +3207,8 @@ Important:
         db.rollback()
         print(f"[ERROR] Failed to save campaign: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to save campaign: {e}")
-    
-    # 2. Then add suggestions
+
+    # 3. Save suggestions
     try:
         for s in suggestions:
             suggestion_entry = CampaignSuggestion(
@@ -3222,7 +3222,11 @@ Important:
     except Exception as e:
         db.rollback()
         print(f"[ERROR] Failed to save suggestions: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to save suggestions: {e}")    
+        raise HTTPException(status_code=500, detail=f"Failed to save suggestions: {e}")
+
+    # 4. Return a valid response
+    return CampaignResponse(campaignId=campaign.id, suggestions=suggestions)
+
 
 @app.get("/campaigns/{campaign_id}/suggestions/pending")
 def get_pending_suggestions(campaign_id: int, db: Session = Depends(get_db)):
@@ -4308,6 +4312,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
