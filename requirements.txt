@@ -5,6 +5,7 @@ google-cloud-storage==2.18.2
 fastapi==0.111.0
 uvicorn[standard]==0.23.2
 python-multipart>=0.0.7
+
 starlette  # let pip pick compatible version
 
 # Data / NLP
@@ -58,6 +59,9 @@ SQLAlchemy==2.0.40
 psycopg2-binary==2.9.10
 #Misc
 rapidfuzz==3.6.1
+openai==1.76.2
+
 
 
 #
+
