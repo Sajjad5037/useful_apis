@@ -206,22 +206,20 @@ class Campaign(Base):
 
     doctor_id = Column(Integer, nullable=False)
     doctor_name = Column(String, nullable=False)
-    doctor_extra = Column(JSONB, nullable=True)  # stores all extra doctor info    
-    suggestions = Column(JSON, nullable=True)  # stores AI-generated campaign suggestions
+
+    suggestions = Column(String, nullable=False)  # Store JSON array as string
     
 # ---------- Pydantic MODELS ----------
 class CampaignDoctorInfo(BaseModel):
     id: int
     name: str
 
-    class Config:
-        extra = "allow"  # accept extra fields dynamic
 class CampaignRequest(BaseModel):
     campaignName: str
     goal: str
     tone: str
     doctorData: CampaignDoctorInfo
-
+    
 class CampaignResponse(BaseModel):
     suggestions: List[str]
     campaignId: int
@@ -3142,15 +3140,13 @@ async def extract_text_essay_checker(
 
 @app.post("/generate-campaign", response_model=CampaignResponse)
 def generate_campaign(request: CampaignRequest, db: Session = Depends(get_db)):
-    print("[DEBUG] Received request to /generate-campaign")
-    print(f"[DEBUG] Request data: campaignName={request.campaignName}, goal={request.goal}, tone={request.tone}")
-    print(f"[DEBUG] Doctor data: {request.doctorData.dict()}")
-
     if not request.campaignName or not request.goal:
-        print("[ERROR] Missing required fields: campaignName or goal")
         raise HTTPException(status_code=400, detail="Missing required fields")
 
-    # Build the prompt for OpenAI
+    print(f"[DEBUG] Generating campaign for: {request.campaignName}")
+    print(f"[DEBUG] Goal: {request.goal}, Tone: {request.tone}")
+    print(f"[DEBUG] Doctor Info: id={request.doctorData.id}, name={request.doctorData.name}")
+
     prompt = f"""
 You are an expert AI marketing assistant. Generate exactly 5 social media post suggestions for a campaign.
 
@@ -3164,10 +3160,8 @@ Important:
 - Example: ["Post idea 1", "Post idea 2", "Post idea 3", "Post idea 4", "Post idea 5"]
 - Do NOT include any extra text outside the JSON array.
 """
-    print(f"[DEBUG] OpenAI prompt built (first 300 chars): {prompt[:300]}{'...' if len(prompt) > 300 else ''}")
 
     try:
-        print("[DEBUG] Sending request to OpenAI API...")
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -3176,18 +3170,13 @@ Important:
             ],
             temperature=0.7,
         )
-        print("[DEBUG] OpenAI API response received")
         suggestions_text = response.choices[0].message.content.strip()
-        print(f"[DEBUG] Raw suggestions text from OpenAI: {suggestions_text}")
-
-        # Convert JSON string to list
+        print(f"[DEBUG] Raw suggestions from OpenAI: {suggestions_text}")
         suggestions = json.loads(suggestions_text)
-        print(f"[DEBUG] Parsed suggestions as list: {suggestions}")
-
         if not isinstance(suggestions, list):
             raise ValueError("Invalid response format from OpenAI.")
     except Exception as e:
-        print(f"[ERROR] Failed to generate suggestions: {e}")
+        print(f"[ERROR] OpenAI generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate suggestions: {e}")
 
     # Store campaign in DB
@@ -3198,21 +3187,19 @@ Important:
             tone=request.tone,
             doctor_id=request.doctorData.id,
             doctor_name=request.doctorData.name,
-            doctor_extra={k: v for k, v in request.doctorData.dict().items() if k not in ["id", "name"]},
-            suggestions=suggestions
+            suggestions=json.dumps(suggestions)
         )
         db.add(campaign)
         db.commit()
         db.refresh(campaign)
-        print(f"[DEBUG] Campaign stored in DB with ID: {campaign.id}")
+        print(f"[DEBUG] Campaign saved with ID: {campaign.id}")
     except Exception as e:
         db.rollback()
-        print(f"[ERROR] Failed to save campaign in DB: {e}")
+        print(f"[ERROR] Failed to save campaign: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to save campaign: {e}")
 
-    print("[DEBUG] Returning response to front end")
     return CampaignResponse(campaignId=campaign.id, suggestions=suggestions)
-        
+    
 @app.post("/solve_math_problem")
 async def solve_math_problem(image: UploadFile = File(...)):
     # Validate file type
@@ -4270,6 +4257,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
