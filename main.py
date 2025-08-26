@@ -195,6 +195,39 @@ class CostPerInteraction(Base):
     cost_usd = Column(Numeric(10, 6), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class Campaign(Base):
+    __tablename__ = "campaigns"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    campaign_name = Column(String, nullable=False)
+    goal = Column(String, nullable=False)
+    tone = Column(String, nullable=False)
+    
+    doctor_id = Column(Integer, nullable=False)
+    doctor_name = Column(String, nullable=False)
+    doctor_extra = Column(JSON, nullable=True)  # stores all extra doctor info
+    
+    suggestions = Column(JSON, nullable=True)  # stores AI-generated campaign suggestions
+    
+# ---------- Pydantic MODELS ----------
+class CampaignDoctorInfo(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        extra = "allow"  # accept extra fields dynamic
+class CampaignRequest(BaseModel):
+    campaignName: str
+    goal: str
+    tone: str
+    doctorData: CampaignDoctorInfo
+
+class CampaignResponse(BaseModel):
+    suggestions: List[str]
+    campaignId: int
+
+
+
 class CommonMistakeSchema(BaseModel):
     id: int
     session_id: str
@@ -3107,6 +3140,78 @@ async def extract_text_essay_checker(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error.")
 
+@app.post("/generate-campaign", response_model=CampaignResponse)
+def generate_campaign(request: CampaignRequest, db: Session = Depends(get_db)):
+    print("[DEBUG] Received request to /generate-campaign")
+    print(f"[DEBUG] Request data: campaignName={request.campaignName}, goal={request.goal}, tone={request.tone}")
+    print(f"[DEBUG] Doctor data: {request.doctorData.dict()}")
+
+    if not request.campaignName or not request.goal:
+        print("[ERROR] Missing required fields: campaignName or goal")
+        raise HTTPException(status_code=400, detail="Missing required fields")
+
+    # Build the prompt for OpenAI
+    prompt = f"""
+You are an expert AI marketing assistant. Generate exactly 5 social media post suggestions for a campaign.
+
+Campaign Name: {request.campaignName}
+Goal: {request.goal}
+Tone: {request.tone}
+Doctor Info: {request.doctorData.dict()}
+
+Important:
+- Return the output as a valid JSON array of strings ONLY.
+- Example: ["Post idea 1", "Post idea 2", "Post idea 3", "Post idea 4", "Post idea 5"]
+- Do NOT include any extra text outside the JSON array.
+"""
+    print(f"[DEBUG] OpenAI prompt built (first 300 chars): {prompt[:300]}{'...' if len(prompt) > 300 else ''}")
+
+    try:
+        print("[DEBUG] Sending request to OpenAI API...")
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful AI marketing assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+        )
+        print("[DEBUG] OpenAI API response received")
+        suggestions_text = response.choices[0].message.content.strip()
+        print(f"[DEBUG] Raw suggestions text from OpenAI: {suggestions_text}")
+
+        # Convert JSON string to list
+        suggestions = json.loads(suggestions_text)
+        print(f"[DEBUG] Parsed suggestions as list: {suggestions}")
+
+        if not isinstance(suggestions, list):
+            raise ValueError("Invalid response format from OpenAI.")
+    except Exception as e:
+        print(f"[ERROR] Failed to generate suggestions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate suggestions: {e}")
+
+    # Store campaign in DB
+    try:
+        campaign = Campaign(
+            campaign_name=request.campaignName,
+            goal=request.goal,
+            tone=request.tone,
+            doctor_id=request.doctorData.id,
+            doctor_name=request.doctorData.name,
+            doctor_extra={k: v for k, v in request.doctorData.dict().items() if k not in ["id", "name"]},
+            suggestions=suggestions
+        )
+        db.add(campaign)
+        db.commit()
+        db.refresh(campaign)
+        print(f"[DEBUG] Campaign stored in DB with ID: {campaign.id}")
+    except Exception as e:
+        db.rollback()
+        print(f"[ERROR] Failed to save campaign in DB: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save campaign: {e}")
+
+    print("[DEBUG] Returning response to front end")
+    return CampaignResponse(campaignId=campaign.id, suggestions=suggestions)
         
 @app.post("/solve_math_problem")
 async def solve_math_problem(image: UploadFile = File(...)):
@@ -4165,6 +4270,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
