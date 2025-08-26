@@ -56,4 +56,8 @@ langchain-community==0.3.24
 # Database
 SQLAlchemy==2.0.40
 psycopg2-binary==2.9.10
+#Misc
+rapidfuzz==3.6.1
 
+
+#
