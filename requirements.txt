@@ -1,8 +1,5 @@
 # Google / AI
 google-cloud-storage==2.18.2
-google-cloud-vision==3.3.2
-google-cloud-aiplatform>=1.110.0  # compatible version for Railway / Python 3.10+
-vertexai-preview==0.16.0
 
 # FastAPI and web
 fastapi==0.111.0
@@ -59,3 +56,4 @@ langchain-community==0.3.24
 # Database
 SQLAlchemy==2.0.40
 psycopg2-binary==2.9.10
+
