@@ -209,6 +209,15 @@ class Campaign(Base):
     doctor_name = Column(String, nullable=False)
 
     suggestions = Column(String, nullable=False)  # Store JSON array as string
+class CampaignSuggestion(Base):
+    __tablename__ = "campaign_suggestions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=False)
+    content = Column(String, nullable=False)
+    status = Column(String, default="pending")  # pending | approved | rejected
+    created_at = Column(DateTime, default=datetime.utcnow)
+
     
 # ---------- Pydantic MODELS ----------
 class CampaignDoctorInfo(BaseModel):
@@ -3174,6 +3183,17 @@ Important:
         suggestions_text = response.choices[0].message.content.strip()
         print(f"[DEBUG] Raw suggestions from OpenAI: {suggestions_text}")
         suggestions = json.loads(suggestions_text)
+        # After getting suggestions from OpenAI
+        for s in suggestions:
+            suggestion_entry = CampaignSuggestion(
+                campaign_id=campaign.id,
+                content=s,
+                status="pending"
+            )
+            db.add(suggestion_entry)
+        db.commit()
+
+        
         if not isinstance(suggestions, list):
             raise ValueError("Invalid response format from OpenAI.")
     except Exception as e:
@@ -3200,6 +3220,33 @@ Important:
         raise HTTPException(status_code=500, detail=f"Failed to save campaign: {e}")
 
     return CampaignResponse(campaignId=campaign.id, suggestions=suggestions)
+
+@app.get("/campaigns/{campaign_id}/suggestions/pending")
+def get_pending_suggestions(campaign_id: int, db: Session = Depends(get_db)):
+    suggestions = db.query(CampaignSuggestion).filter_by(
+        campaign_id=campaign_id,
+        status="pending"
+    ).all()
+    return [{"id": s.id, "content": s.content} for s in suggestions]
+
+@app.post("/suggestions/{suggestion_id}/approve")
+def approve_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
+    suggestion = db.get(CampaignSuggestion, suggestion_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+    suggestion.status = "approved"
+    db.commit()
+    return {"success": True}
+
+@app.post("/suggestions/{suggestion_id}/reject")
+def reject_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
+    suggestion = db.get(CampaignSuggestion, suggestion_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+    suggestion.status = "rejected"
+    db.commit()
+    return {"success": True}
+    
     
 @app.post("/solve_math_problem")
 async def solve_math_problem(image: UploadFile = File(...)):
@@ -4258,6 +4305,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
