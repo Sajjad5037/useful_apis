@@ -1830,6 +1830,128 @@ async def run_vision_on_image(image_file):
         print(f"[ERROR] Vision AI analysis failed for '{image_file.filename}': {e}")
         return "[Error during Vision AI analysis]"
 #a new train-on-images so that answers could include diagrams
+@app.post("/train-on-images-anz-way-new")
+async def train_on_images_anz_way(
+    images: List[UploadFile] = File(...),
+    question_text: str = Form(...),
+    total_marks: int = Form(...),  # from frontend
+    request: Request = None
+):
+    origin = request.headers.get("origin") if request else "*"
+    cors_headers = {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true"
+    }
+
+    global qa_chain_anz_way
+
+    print("\n==========================")
+    print("[DEBUG] New request received")
+    print(f"[DEBUG] Question: {question_text}")
+    print(f"[DEBUG] Total Marks: {total_marks}")
+    print(f"[DEBUG] Number of images uploaded: {len(images)}")
+    print("==========================\n")
+
+    # ✅ Lazy fallback: initialize if not ready
+    if qa_chain_anz_way is None:
+        print("[DEBUG] qa_chain_anz_way not initialized, trying to initialize...")
+        try:
+            qa_chain_anz_way = initialize_qa_chain_anz_way(
+                bucket_name="sociology_anz_way",
+                folder_in_bucket="sociology_instructions.faiss"
+            )
+            print("[DEBUG] qa_chain_anz_way successfully initialized.")
+        except Exception as e:
+            print(f"[ERROR] Failed to initialize QA chain: {str(e)}")
+            return JSONResponse(
+                content={
+                    "status": "error",
+                    "detail": f"Failed to initialize QA chain: {str(e)}"
+                },
+                headers=cors_headers
+            )
+
+    if qa_chain_anz_way is None:
+        print("[ERROR] qa_chain_anz_way is still None after initialization attempt")
+        return JSONResponse(
+            content={"status": "error", "detail": "QA chain still not initialized"},
+            headers=cors_headers
+        )
+
+    # ✅ Define mapping dictionary
+    word_count_map = {
+        4: 100,
+        6: 150,
+        8: 200,
+        10: 250,
+        26: 450
+    }
+
+    print(f"[DEBUG] Allowed marks mapping: {word_count_map}")
+
+    if total_marks not in word_count_map:
+        print(f"[ERROR] Invalid total_marks {total_marks} received.")
+        return JSONResponse(
+            content={
+                "status": "error",
+                "detail": f"Invalid total_marks: {total_marks}. "
+                          f"Allowed values are {list(word_count_map.keys())}"
+            },
+            headers=cors_headers
+        )
+
+    minimum_word_count = word_count_map[total_marks]
+    print(f"[DEBUG] Minimum word count set to: {minimum_word_count}")
+
+    # ✅ Process images
+    combined_essay_text = ""
+    combined_diagram_notes = ""
+
+    for idx, image_file in enumerate(images, start=1):
+        print(f"\n[DEBUG] Processing image #{idx}: {image_file.filename}")
+    
+        # OCR for essay text
+        print("[DEBUG] Running OCR extraction...")
+        ocr_text = run_ocr_on_image(image_file)
+        print(f"[DEBUG] OCR Extracted Text:\n{ocr_text}\n")
+        combined_essay_text += "\n" + ocr_text
+    
+        # Vision AI for diagram
+        print("[DEBUG] Running Vision AI analysis...")
+        diagram_analysis = run_vision_on_image(image_file)
+        print(f"[DEBUG] Vision AI Diagram Notes:\n{diagram_analysis}\n")
+        combined_diagram_notes += "\n" + diagram_analysis
+
+    # ✅ Combine into one input
+    student_response = f"""
+    Extracted Essay Text:
+    {combined_essay_text.strip()}
+
+    Diagram Interpretation:
+    {combined_diagram_notes.strip()}
+    """
+
+    print("\n==========================")
+    print("[DEBUG] Final Combined Student Response Prepared")
+    print(student_response)
+    print("==========================\n")
+
+    # ✅ Run evaluation (unchanged)
+    print("[DEBUG] Sending response for evaluation...")
+    result = await evaluate_student_response_from_images_new(
+        images=images,
+        question_text=question_text,
+        total_marks=total_marks,
+        qa_chain=qa_chain_anz_way,
+        minimum_word_count=minimum_word_count,
+        student_response=student_response  # <-- NEW
+    )
+
+    print("[DEBUG] Evaluation result received:")
+    print(result)
+
+    return JSONResponse(content=result, headers=cors_headers)
+
 async def evaluate_student_response_from_images_new(
     images: List[UploadFile],
     question_text: str,
@@ -4646,6 +4768,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
