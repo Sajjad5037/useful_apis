@@ -3,10 +3,10 @@ import os
 import sys
 import fitz 
 from google.cloud import storage
-
+from vertexai.generative_models import GenerativeModel, Part
 from uuid import uuid4
 from sqlalchemy.dialects.postgresql import JSONB
-
+from google.cloud.vision_v1 import types as vision_types
 from rapidfuzz import fuzz
 import joblib
 import sympy
@@ -90,6 +90,11 @@ bucket_name_anz_way = "sociology_anz_way"
 VECTORSTORE_FOLDER_IN_BUCKET = "vectorstore"
 qa_chain_anz_way = None
 
+# OCR client
+ocr_client = vision.ImageAnnotatorClient()
+
+# Gemini / Vision model
+vision_model = GenerativeModel("gemini-1.5-flash")
 #for text extractor from image 
 # Load the JSON string from the environment variable
 json_creds = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
@@ -1659,6 +1664,288 @@ def initialize_qa_chain_anz_way(bucket_name: str, folder_in_bucket: str):
         print(f"[ERROR] Failed to initialize QA Chain (anz way): {e}")
         traceback.print_exc()
 # a new evaluate your essay so that anser could include diagrams
+async def evaluate_student_response_from_images_new(
+    images: List[UploadFile],
+    question_text: str,
+    total_marks: int,
+    qa_chain,  # RetrievalQA
+    minimum_word_count: int = 80,
+    student_response: str = None   # <-- NEW
+):
+    """
+    Evaluate a student's response (text + optional diagrams) against a question.
+    Works with OCR-only or pre-combined OCR+Vision input.
+    """
+
+    print("\n[DEBUG] === Student Response Evaluation Started ===")
+
+    # If endpoint passed pre-combined text (OCR + Vision), use it directly
+    if student_response:
+        print("[DEBUG] Using pre-combined student response (OCR + Vision AI).")
+    else:
+        print("[DEBUG] No pre-combined response provided. Falling back to OCR-only.")
+        extracted_texts = []
+
+        for idx, image in enumerate(images):
+            print(f"[DEBUG] Processing image {idx + 1}/{len(images)}: {image.filename}")
+
+            contents = await image.read()
+            try:
+                ocr_result = ocr_client.document_text_detection(
+                    image={"content": contents}
+                )
+
+                extracted_text = (
+                    ocr_result.full_text_annotation.text.strip()
+                    if ocr_result.full_text_annotation
+                    else ""
+                )
+
+                print(f"[DEBUG] OCR extracted {len(extracted_text.split())} words.")
+                extracted_texts.append(extracted_text)
+
+            except Exception as e:
+                print(f"[ERROR] OCR failed on image {image.filename}: {e}")
+                extracted_texts.append("")
+
+        student_response = "\n".join(extracted_texts).strip()
+        print("[DEBUG] Final OCR-only extracted response length:",
+              len(student_response.split()), "words")
+
+    # Handle case: no text extracted at all
+    if not student_response.strip():
+        print("[DEBUG] No student response extracted. Returning 0 marks.")
+        return {
+            "score": 0,
+            "total": total_marks,
+            "feedback": "No valid response detected in the submission."
+        }
+
+    print("\n[DEBUG] Running evaluation through QA chain...")
+    query = (
+        f"Question: {question_text}\n\n"
+        f"Student Response: {student_response}\n\n"
+        f"Total Marks: {total_marks}, Minimum Words: {minimum_word_count}.\n\n"
+        "Evaluate the response by:\n"
+        "1. Checking relevance and accuracy\n"
+        "2. Awarding marks fairly\n"
+        "3. Providing constructive feedback\n\n"
+        "Return JSON in this format:\n"
+        "{'score': <int>, 'total': <int>, 'feedback': <string>}"
+    )
+
+    try:
+        result = qa_chain.run(query)
+        print("[DEBUG] Raw QA Chain Output:", result)
+
+        parsed_result = json.loads(result)
+        print("[DEBUG] Parsed JSON result successfully.")
+
+        return parsed_result
+
+    except Exception as e:
+        print("[ERROR] Evaluation failed:", str(e))
+        return {
+            "score": 0,
+            "total": total_marks,
+            "feedback": f"Evaluation failed: {e}"
+        }
+
+
+def run_ocr_on_image(image_file) -> str:
+    """
+    Run OCR on an uploaded image using Google Vision API.
+    
+    Args:
+        image_file (UploadFile): FastAPI UploadFile
+    
+    Returns:
+        str: Extracted text from the image (empty string if none)
+    """
+    try:
+        client = vision.ImageAnnotatorClient()
+
+        # Read image into memory
+        content = image_file.file.read()
+        image = vision.Image(content=content)
+
+        # Run OCR
+        response = client.text_detection(image=image)
+        texts = response.text_annotations
+
+        if response.error.message:
+            print(f"[OCR ERROR] {response.error.message}")
+            return ""
+
+        if not texts:
+            print("[OCR DEBUG] No text detected in image.")
+            return ""
+
+        # First annotation is the full text block
+        extracted_text = texts[0].description.strip()
+        print(f"[OCR DEBUG] Extracted text (length {len(extracted_text)}): {extracted_text[:200]}...")
+
+        return extracted_text
+
+    except Exception as e:
+        print(f"[OCR EXCEPTION] Failed to run OCR: {str(e)}")
+        return ""
+    finally:
+        # Reset file pointer so Vision AI (for diagrams) can also use it later
+        image_file.file.seek(0)
+
+async def run_vision_on_image(image_file):
+    """
+    Analyze an image with Gemini 1.5 Flash to extract diagram / visual notes.
+    """
+    try:
+        # Read image bytes from the uploaded file
+        image_bytes = await image_file.read()
+
+        # Convert to Vertex AI Part
+        image_part = Part.from_data(mime_type="image/png", data=image_bytes)
+
+        # Prepare the prompt
+        prompt = """
+        You are an assistant that analyzes diagrams in student essays.
+        Summarize what this diagram shows, list key points, and note 
+        any observations that would help a teacher evaluate it.
+        """
+
+        # Run Gemini inference
+        response = vision_model.generate_content(
+            [prompt, image_part]
+        )
+
+        diagram_notes = response.text.strip() if response and response.text else ""
+        return diagram_notes or "[No diagram analysis produced]"
+    
+    except Exception as e:
+        print(f"[ERROR] Vision AI analysis failed for '{image_file.filename}': {e}")
+        return "[Error during Vision AI analysis]"
+#a new train-on-images so that answers could include diagrams
+@app.post("/train-on-images-anz-way-new")
+async def train_on_images_anz_way(
+    images: List[UploadFile] = File(...),
+    question_text: str = Form(...),
+    total_marks: int = Form(...),  # from frontend
+    request: Request = None
+):
+    origin = request.headers.get("origin") if request else "*"
+    cors_headers = {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true"
+    }
+
+    global qa_chain_anz_way
+
+    print("\n==========================")
+    print("[DEBUG] New request received")
+    print(f"[DEBUG] Question: {question_text}")
+    print(f"[DEBUG] Total Marks: {total_marks}")
+    print(f"[DEBUG] Number of images uploaded: {len(images)}")
+    print("==========================\n")
+
+    # ✅ Lazy fallback: initialize if not ready
+    if qa_chain_anz_way is None:
+        print("[DEBUG] qa_chain_anz_way not initialized, trying to initialize...")
+        try:
+            qa_chain_anz_way = initialize_qa_chain_anz_way(
+                bucket_name="sociology_anz_way",
+                folder_in_bucket="sociology_instructions.faiss"
+            )
+            print("[DEBUG] qa_chain_anz_way successfully initialized.")
+        except Exception as e:
+            print(f"[ERROR] Failed to initialize QA chain: {str(e)}")
+            return JSONResponse(
+                content={
+                    "status": "error",
+                    "detail": f"Failed to initialize QA chain: {str(e)}"
+                },
+                headers=cors_headers
+            )
+
+    if qa_chain_anz_way is None:
+        print("[ERROR] qa_chain_anz_way is still None after initialization attempt")
+        return JSONResponse(
+            content={"status": "error", "detail": "QA chain still not initialized"},
+            headers=cors_headers
+        )
+
+    # ✅ Define mapping dictionary
+    word_count_map = {
+        4: 100,
+        6: 150,
+        8: 200,
+        10: 250,
+        26: 450
+    }
+
+    print(f"[DEBUG] Allowed marks mapping: {word_count_map}")
+
+    if total_marks not in word_count_map:
+        print(f"[ERROR] Invalid total_marks {total_marks} received.")
+        return JSONResponse(
+            content={
+                "status": "error",
+                "detail": f"Invalid total_marks: {total_marks}. "
+                          f"Allowed values are {list(word_count_map.keys())}"
+            },
+            headers=cors_headers
+        )
+
+    minimum_word_count = word_count_map[total_marks]
+    print(f"[DEBUG] Minimum word count set to: {minimum_word_count}")
+
+    # ✅ Process images
+    combined_essay_text = ""
+    combined_diagram_notes = ""
+
+    for idx, image_file in enumerate(images, start=1):
+        print(f"\n[DEBUG] Processing image #{idx}: {image_file.filename}")
+    
+        # OCR for essay text
+        print("[DEBUG] Running OCR extraction...")
+        ocr_text = run_ocr_on_image(image_file)
+        print(f"[DEBUG] OCR Extracted Text:\n{ocr_text}\n")
+        combined_essay_text += "\n" + ocr_text
+    
+        # Vision AI for diagram
+        print("[DEBUG] Running Vision AI analysis...")
+        diagram_analysis = run_vision_on_image(image_file)
+        print(f"[DEBUG] Vision AI Diagram Notes:\n{diagram_analysis}\n")
+        combined_diagram_notes += "\n" + diagram_analysis
+
+    # ✅ Combine into one input
+    student_response = f"""
+    Extracted Essay Text:
+    {combined_essay_text.strip()}
+
+    Diagram Interpretation:
+    {combined_diagram_notes.strip()}
+    """
+
+    print("\n==========================")
+    print("[DEBUG] Final Combined Student Response Prepared")
+    print(student_response)
+    print("==========================\n")
+
+    # ✅ Run evaluation (unchanged)
+    print("[DEBUG] Sending response for evaluation...")
+    result = await evaluate_student_response_from_images_new(
+        images=images,
+        question_text=question_text,
+        total_marks=total_marks,
+        qa_chain=qa_chain_anz_way,
+        minimum_word_count=minimum_word_count,
+        student_response=student_response  # <-- NEW
+    )
+
+    print("[DEBUG] Evaluation result received:")
+    print(result)
+
+    return JSONResponse(content=result, headers=cors_headers)
+
 
 @app.post("/train-on-images-anz-way")
 async def train_on_images_anz_way(
@@ -4337,6 +4624,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
