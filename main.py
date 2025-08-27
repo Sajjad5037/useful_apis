@@ -1999,13 +1999,10 @@ async def train_on_images_anz_way(
     
     response_payload = {
         "status": "success",
-        "evaluation_text": (
-            f"Score: {eval_result['score']}/{eval_result['total']}\n"
-            f"Feedback: {eval_result['feedback']}"
-        ),
-        "total_marks": total_marks,
-        "minimum_word_count": minimum_word_count,
-        "student_response": student_response
+        "evaluation_text": eval_result["evaluation_text"],  # full text
+        "total_marks": eval_result["total_marks"],
+        "minimum_word_count": eval_result["minimum_word_count"],
+        "student_response": eval_result["student_response"]
     }
     
     # Make sure this return is indented to match the function scope
@@ -4826,6 +4823,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
