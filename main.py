@@ -90,9 +90,6 @@ bucket_name_anz_way = "sociology_anz_way"
 VECTORSTORE_FOLDER_IN_BUCKET = "vectorstore"
 qa_chain_anz_way = None
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
-# OCR client
-ocr_client = vision.ImageAnnotatorClient()
 
 # Gemini / Vision model
 vision_model = GenerativeModel("gemini-1.5-flash")
@@ -106,6 +103,11 @@ if not json_creds:
 with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
     f.write(json_creds)
     temp_path = f.name
+    
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
+# OCR client
+ocr_client = vision.ImageAnnotatorClient()
+
 
 # Set the correct GOOGLE_APPLICATION_CREDENTIALS to point to that file
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
@@ -4625,6 +4627,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
