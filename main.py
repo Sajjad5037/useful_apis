@@ -1676,16 +1676,16 @@ async def evaluate_student_response_from_images_new(
     total_marks: int,
     qa_chain,  # RetrievalQA
     minimum_word_count: int = 80,
-    student_response: str = None   # <-- NEW
+    student_response: str = None
 ):
     """
     Evaluate a student's response (text + optional diagrams) against a question.
     Works with OCR-only or pre-combined OCR+Vision input.
+    Returns free-form structured text suitable for front-end display.
     """
-
     print("\n[DEBUG] === Student Response Evaluation Started ===")
 
-    # If endpoint passed pre-combined text (OCR + Vision), use it directly
+    # Step 1: Prepare student response
     if student_response:
         print("[DEBUG] Using pre-combined student response (OCR + Vision AI).")
     else:
@@ -1694,22 +1694,16 @@ async def evaluate_student_response_from_images_new(
 
         for idx, image in enumerate(images):
             print(f"[DEBUG] Processing image {idx + 1}/{len(images)}: {image.filename}")
-
             contents = await image.read()
             try:
-                ocr_result = ocr_client.document_text_detection(
-                    image={"content": contents}
-                )
-
+                ocr_result = ocr_client.document_text_detection(image={"content": contents})
                 extracted_text = (
                     ocr_result.full_text_annotation.text.strip()
                     if ocr_result.full_text_annotation
                     else ""
                 )
-
                 print(f"[DEBUG] OCR extracted {len(extracted_text.split())} words.")
                 extracted_texts.append(extracted_text)
-
             except Exception as e:
                 print(f"[ERROR] OCR failed on image {image.filename}: {e}")
                 extracted_texts.append("")
@@ -1718,7 +1712,6 @@ async def evaluate_student_response_from_images_new(
         print("[DEBUG] Final OCR-only extracted response length:",
               len(student_response.split()), "words")
 
-    # Handle case: no text extracted at all
     if not student_response.strip():
         print("[DEBUG] No student response extracted. Returning 0 marks.")
         return {
@@ -1727,34 +1720,91 @@ async def evaluate_student_response_from_images_new(
             "feedback": "No valid response detected in the submission."
         }
 
-    print("\n[DEBUG] Running evaluation through QA chain...")
-    query = (
-        f"Question: {question_text}\n\n"
-        f"Student Response: {student_response}\n\n"
-        f"Total Marks: {total_marks}, Minimum Words: {minimum_word_count}.\n\n"
-        "Evaluate the response by:\n"
-        "1. Checking relevance and accuracy\n"
-        "2. Awarding marks fairly\n"
-        "3. Providing constructive feedback\n\n"
-        "Return JSON in this format:\n"
-        "{'score': <int>, 'total': <int>, 'feedback': <string>}"
+    # Step 2: Retrieve authoritative instructions
+    retrieval_query = (
+        f"Provide all instructions, features, and marking rules relevant for answering: "
+        f"{question_text}"
     )
 
+    retriever = qa_chain.retriever
+    retrieved_docs = retriever.get_relevant_documents(retrieval_query)
+    if not retrieved_docs:
+        print("[WARNING] No instructions retrieved from vector store")
+        retrieved_context = "No instructions retrieved. Model should give 0 marks for all features."
+    else:
+        retrieved_context = "\n".join([doc.page_content for doc in retrieved_docs])
+        print(f"[DEBUG] Retrieved {len(retrieved_docs)} documents, total length: {len(retrieved_context)} chars")
+
+    # Step 3: Construct evaluation prompt
+    evaluation_prompt = f"""
+You are an expert sociology examiner and a supportive teacher.
+Use ONLY the retrieved instructions below to evaluate the student's response.
+Treat the instructions as authoritative. Do NOT use any outside knowledge.
+
+--- Retrieved Instructions ---
+{retrieved_context}
+---------------------------
+
+Question:
+{question_text}
+
+Student Response:
+{student_response}
+
+Task:
+
+1. **Improved Response:**
+   - Rewrite the student response into the strongest possible version that would receive maximum marks STRICTLY based on the retrieved instructions.
+   - Include ONLY points, features, or examples explicitly mentioned in the instructions.
+   - Keep the response concise but complete.
+   - Ensure the response meets the minimum word count of {minimum_word_count} words.
+
+2. **Detailed Marking and Feedback (STRICT Scheme Compliance):**
+   - Identify all attempted features or points in the response.
+   - For each attempted feature, present it in the following format:
+     - **Attempted Feature:** <text>
+     - **Closest matching phrase:** <text from instructions>
+     - **Marks awarded:** <marks>
+   - Assign marks strictly based on the retrieved instructions.
+   - Do NOT reward more features than allowed by the instructions.
+   - Features cannot be double-counted.
+   - Ensure total marks do not exceed {total_marks}.
+   - Provide optional notes (e.g., spelling, grammar, minor clarity issues).
+
+3. **Overall Assessment:**
+   - Summarize how well the response meets the retrieved instructions.
+   - Confirm whether the minimum word count was achieved.
+   - Provide practical advice strictly tied to instructions **only if the response did not achieve the maximum marks**.
+   - State the final mark in the format: **Overall Mark: <score/{total_marks}>**.
+
+Format your answer as clear, structured text using headings, bullet points, and bold formatting for front-end display.
+Do NOT return JSON or any structured data format.
+"""
+
+    print("[DEBUG][PROMPT] Evaluation prompt sent to QA chain:")
+    print(evaluation_prompt)
+    print("=" * 80)
+
+    # Step 4: Run evaluation and return free-form result
     try:
-        result = qa_chain.run(query)
-        print("[DEBUG] Raw QA Chain Output:", result)
+        evaluation_result = qa_chain.run(evaluation_prompt)
+        print("[DEBUG] Received evaluation result from QA chain (raw):")
+        print(evaluation_result)
+        print("=" * 80)
 
-        parsed_result = json.loads(result)
-        print("[DEBUG] Parsed JSON result successfully.")
-
-        return parsed_result
+        return {
+            "status": "success",
+            "evaluation_text": evaluation_result,
+            "total_marks": total_marks,
+            "minimum_word_count": minimum_word_count,
+            "student_response": student_response
+        }
 
     except Exception as e:
-        print("[ERROR] Evaluation failed:", str(e))
+        print(f"[ERROR] Evaluation failed: {e}")
         return {
-            "score": 0,
-            "total": total_marks,
-            "feedback": f"Evaluation failed: {e}"
+            "status": "error",
+            "detail": str(e)
         }
 
 
@@ -4768,6 +4818,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
