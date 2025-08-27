@@ -1939,17 +1939,22 @@ async def train_on_images_anz_way(
         combined_essay_text += "\n" + ocr_text
 
         # Vision AI (await properly)
-        diagram_notes = await run_vision_on_image(image_file)
-        combined_diagram_notes += "\n" + diagram_notes
+    diagram_notes = await run_vision_on_image(image_file)
+    combined_diagram_notes += "\n" + diagram_notes
+    print(f"[DEBUG] combined diagram notes: {combined_diagram_notes}")
+    diagram_section = combined_diagram_notes.strip()
+    if not diagram_section or diagram_section == "[No diagram analysis produced]":
+        student_response = f"Extracted Essay Text:\n{combined_essay_text.strip()}"
+    else:
+        student_response = f"""
+        Extracted Essay Text:
+        {combined_essay_text.strip()}
+        
+        Diagram Interpretation:
+        {diagram_section}
+        """
 
-    # Combine into one student response
-    student_response = f"""
-Extracted Essay Text:
-{combined_essay_text.strip()}
-
-Diagram Interpretation:
-{combined_diagram_notes.strip()}
-"""
+    
 
     print("[DEBUG] Combined student response prepared.")
 
@@ -4795,6 +4800,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
