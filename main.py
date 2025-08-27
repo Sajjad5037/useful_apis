@@ -1968,7 +1968,7 @@ async def train_on_images_anz_way(
     
         # Vision AI for diagram
         print("[DEBUG] Running Vision AI analysis...")
-        diagram_analysis = run_vision_on_image(image_file)
+        diagram_analysis = await run_vision_on_image(image_file)  
         print(f"[DEBUG] Vision AI Diagram Notes:\n{diagram_analysis}\n")
         combined_diagram_notes += "\n" + diagram_analysis
 
@@ -4826,6 +4826,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
