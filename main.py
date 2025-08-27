@@ -1988,19 +1988,27 @@ async def train_on_images_anz_way(
 
     # ✅ Run evaluation (unchanged)
     print("[DEBUG] Sending response for evaluation...")
-    result = await evaluate_student_response_from_images_new(
+    eval_result = await evaluate_student_response_from_images_new(
         images=images,
         question_text=question_text,
         total_marks=total_marks,
         qa_chain=qa_chain_anz_way,
         minimum_word_count=minimum_word_count,
-        student_response=student_response  # <-- NEW
+        student_response=student_response
     )
 
-    print("[DEBUG] Evaluation result received:")
-    print(result)
+    response_payload = {
+        "status": "success",
+        "evaluation_text": (
+            f"Score: {eval_result['score']}/{eval_result['total']}\n"
+            f"Feedback: {eval_result['feedback']}"
+        ),
+        "total_marks": total_marks,
+        "minimum_word_count": minimum_word_count,
+        "student_response": student_response
+    }
 
-    return JSONResponse(content=result, headers=cors_headers)
+return JSONResponse(content=response_payload, headers=cors_headers)
 
 async def evaluate_student_response_from_images_new(
     images: List[UploadFile],
@@ -4818,6 +4826,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
