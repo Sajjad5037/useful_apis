@@ -1906,7 +1906,7 @@ async def train_on_images_anz_way(
         try:
             qa_chain_anz_way = initialize_qa_chain_anz_way(
                 bucket_name="sociology_anz_way",
-                folder_in_bucket="sociology_instructions.faiss"
+                folder_in_bucket="sociology_economics.faiss"
             )
             print("[DEBUG] qa_chain_anz_way initialized successfully.")
         except Exception as e:
@@ -4800,6 +4800,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
