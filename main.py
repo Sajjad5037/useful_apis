@@ -1,5 +1,6 @@
 import docx2txt
 import os
+import vertexai
 import sys
 import fitz 
 from google.cloud import storage
@@ -83,7 +84,9 @@ import tempfile
 
 
 USAGE_LIMIT_INCREASE = 5.0  # dollars
-#vision_model = GenerativeModel("gemini-1.5-flash-001")
+vertexai.init(project="dazzling-tensor-455512-j1", location="us-central1")
+vision_model = GenerativeModel("gemini-1.5-flash")
+
 # Suppose you have a baseline cost stored somewhere or passed in, for demo let's hardcode:
 BASELINE_COST = 0.0  # Replace this with your actual baseline cost or fetch it from DB/config
 bucket_name_anz_way = "sociology_anz_way"
@@ -4627,6 +4630,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
