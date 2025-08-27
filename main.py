@@ -21,14 +21,14 @@ from google.cloud import vision
 
 import numpy as np
 from langchain.chains import RetrievalQA
-from langchain.chat_models import ChatOpenAI
+from langchain_community.chat_models import ChatOpenAI
 import boto3
 from botocore.exceptions import ClientError
 
 from sklearn.metrics.pairwise import cosine_similarity
 from langchain.prompts import PromptTemplate
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS,VectorStore
+from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS, VectorStore
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import logging
 from typing import Optional,List,Union
@@ -90,6 +90,7 @@ bucket_name_anz_way = "sociology_anz_way"
 VECTORSTORE_FOLDER_IN_BUCKET = "vectorstore"
 qa_chain_anz_way = None
 
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
 # OCR client
 ocr_client = vision.ImageAnnotatorClient()
 
@@ -4624,6 +4625,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
