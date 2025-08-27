@@ -1996,7 +1996,7 @@ async def train_on_images_anz_way(
         minimum_word_count=minimum_word_count,
         student_response=student_response
     )
-
+    
     response_payload = {
         "status": "success",
         "evaluation_text": (
@@ -2007,9 +2007,9 @@ async def train_on_images_anz_way(
         "minimum_word_count": minimum_word_count,
         "student_response": student_response
     }
-
-return JSONResponse(content=response_payload, headers=cors_headers)
-
+    
+    # Make sure this return is indented to match the function scope
+    return JSONResponse(content=response_payload, headers=cors_headers)
 async def evaluate_student_response_from_images_new(
     images: List[UploadFile],
     question_text: str,
@@ -4826,6 +4826,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
