@@ -1992,7 +1992,6 @@ async def train_on_images_anz_way(
 
 
 
-
 async def evaluate_student_response_from_images_new(
     images: List[UploadFile],
     question_text: str,
@@ -2003,8 +2002,8 @@ async def evaluate_student_response_from_images_new(
 ):
     """
     Evaluate a student's response (text + optional diagrams) against a question.
-    Works with OCR-only or pre-combined OCR+Vision input.
-    Returns free-form structured text suitable for front-end display.
+    Returns structured, free-form text suitable for front-end display.
+    Explicitly informs the model about total marks and marking rules for consistency.
     """
     print("\n[DEBUG] === Student Response Evaluation Started ===")
 
@@ -2014,7 +2013,6 @@ async def evaluate_student_response_from_images_new(
     else:
         print("[DEBUG] No pre-combined response provided. Falling back to OCR-only.")
         extracted_texts = []
-
         for idx, image in enumerate(images):
             print(f"[DEBUG] Processing image {idx + 1}/{len(images)}: {image.filename}")
             contents = await image.read()
@@ -2030,10 +2028,8 @@ async def evaluate_student_response_from_images_new(
             except Exception as e:
                 print(f"[ERROR] OCR failed on image {image.filename}: {e}")
                 extracted_texts.append("")
-
         student_response = "\n".join(extracted_texts).strip()
-        print("[DEBUG] Final OCR-only extracted response length:",
-              len(student_response.split()), "words")
+        print("[DEBUG] Final OCR-only extracted response length:", len(student_response.split()), "words")
 
     if not student_response.strip():
         print("[DEBUG] No student response extracted. Returning 0 marks.")
@@ -2044,11 +2040,7 @@ async def evaluate_student_response_from_images_new(
         }
 
     # Step 2: Retrieve authoritative instructions
-    retrieval_query = (
-        f"Provide all instructions, features, and marking rules relevant for answering: "
-        f"{question_text}"
-    )
-
+    retrieval_query = f"Provide all instructions, features, and marking rules relevant for answering: {question_text}"
     retriever = qa_chain.retriever
     retrieved_docs = retriever.get_relevant_documents(retrieval_query)
     if not retrieved_docs:
@@ -2058,7 +2050,7 @@ async def evaluate_student_response_from_images_new(
         retrieved_context = "\n".join([doc.page_content for doc in retrieved_docs])
         print(f"[DEBUG] Retrieved {len(retrieved_docs)} documents, total length: {len(retrieved_context)} chars")
 
-    # Step 3: Construct evaluation prompt
+    # Step 3: Construct evaluation prompt (explicitly pass total_marks)
     evaluation_prompt = f"""
 You are an expert sociology examiner and a supportive teacher.
 Use ONLY the retrieved instructions below to evaluate the student's response.
@@ -2074,41 +2066,44 @@ Question:
 Student Response:
 {student_response}
 
+Total Marks for this Question: {total_marks}
+Maximum Features to Reward: {total_marks // 2}  # Approximation if 2 marks per feature
+Minimum Word Count: {minimum_word_count}
+
 Task:
 
 1. **Improved Response:**
    - Rewrite the student response into the strongest possible version that would receive maximum marks STRICTLY based on the retrieved instructions.
    - Include ONLY points, features, or examples explicitly mentioned in the instructions.
    - Keep the response concise but complete.
-   - Ensure the response meets the minimum word count of {minimum_word_count} words.
+   - Ensure the response meets the minimum word count.
 
 2. **Detailed Marking and Feedback (STRICT Scheme Compliance):**
-   - Identify all attempted features or points in the response.
-   - For each attempted feature, present it in the following format:
-     - **Attempted Feature:** <text>
-     - **Closest matching phrase:** <text from instructions>
-     - **Marks awarded:** <marks>
-   - Assign marks strictly based on the retrieved instructions.
-   - Do NOT reward more features than allowed by the instructions.
+   - Identify all attempted features in the response.
+   - For each attempted feature, present:
+     - **Attempted Feature:** <text from response>
+     - **Closest matching phrase in instructions:** <text>
+     - **Marks awarded:** <marks, max 2 per feature>
+   - Assign marks strictly based on instructions. Do NOT over-award.
+   - Ensure the total awarded marks do not exceed {total_marks}.
    - Features cannot be double-counted.
-   - Ensure total marks do not exceed {total_marks}.
-   - Provide optional notes (e.g., spelling, grammar, minor clarity issues).
+   - Include optional notes (clarity, spelling, grammar) if relevant.
 
 3. **Overall Assessment:**
-   - Summarize how well the response meets the retrieved instructions.
-   - Confirm whether the minimum word count was achieved.
-   - Provide practical advice strictly tied to instructions **only if the response did not achieve the maximum marks**.
-   - State the final mark in the format: **Overall Mark: <score/{total_marks}>**.
+   - Summarize how well the response aligns with instructions.
+   - Confirm whether minimum word count is achieved.
+   - Give overall mark in the format: **Overall Mark: <score/{total_marks}>**.
+   - Only give advice if marks are not full, strictly based on instructions.
 
-Format your answer as clear, structured text using headings, bullet points, and bold formatting for front-end display.
-Do NOT return JSON or any structured data format.
+Format output as **structured, human-readable text** with headings and bullet points.
+Do NOT return JSON or any other structured format.
 """
 
     print("[DEBUG][PROMPT] Evaluation prompt sent to QA chain:")
     print(evaluation_prompt)
     print("=" * 80)
 
-    # Step 4: Run evaluation and return free-form result
+    # Step 4: Run evaluation
     try:
         evaluation_result = qa_chain.run(evaluation_prompt)
         print("[DEBUG] Received evaluation result from QA chain (raw):")
@@ -2129,6 +2124,7 @@ Do NOT return JSON or any structured data format.
             "status": "error",
             "detail": str(e)
         }
+
 
 
 
@@ -4809,6 +4805,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
