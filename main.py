@@ -1905,13 +1905,14 @@ async def train_on_images_anz_way(
     # Initialize QA chain if needed
     if qa_chain_anz_way is None:
         try:
+            folder_in_bucket = f"{subject}_instructions.faiss"
             qa_chain_anz_way = initialize_qa_chain_anz_way(
                 bucket_name="sociology_anz_way",
-                folder_in_bucket = f"{subject}_instructions.faiss"
+                folder_in_bucket=folder_in_bucket
             )
-            print("[DEBUG] qa_chain_anz_way initialized successfully.")
+            print(f"[DEBUG] qa_chain_anz_way initialized successfully for subject: {subject}")
         except Exception as e:
-            print(f"[ERROR] Failed to initialize QA chain: {str(e)}")
+            print(f"[ERROR] Failed to initialize QA chain for subject {subject}: {str(e)}")
             return JSONResponse(
                 content={"status": "error", "detail": str(e)},
                 headers=cors_headers
@@ -4801,6 +4802,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
