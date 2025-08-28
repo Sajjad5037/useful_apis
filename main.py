@@ -1884,6 +1884,7 @@ async def run_vision_on_image(image_file):
 @app.post("/train-on-images-anz-way-new")
 async def train_on_images_anz_way(
     images: List[UploadFile] = File(...),
+    subject: str = Form(...),
     question_text: str = Form(...),
     total_marks: int = Form(...),
     request: Request = None
@@ -4800,6 +4801,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
