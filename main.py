@@ -1919,7 +1919,14 @@ async def train_on_images_anz_way(
             )
 
     # Word count mapping
-    word_count_map = {4: 100, 6: 150, 8: 200, 10: 250, 26: 450}
+    word_count_map = {
+        4: 50,     # 2–3 sentences, one developed point
+        6: 80,     # 2 developed points, brief examples
+        8: 120,    # 2–3 developed points, some application
+        10: 150,   # mini-essay, developed reasons + evidence
+        26: 450    # full essay, intro + multiple points + evaluation + conclusion
+    }
+
     if total_marks not in word_count_map:
         return JSONResponse(
             content={
@@ -4802,6 +4809,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
