@@ -195,7 +195,12 @@ class CommonMistake(Base):
     category = Column(String, nullable=False)
     explanation = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-
+    
+class ChatRequest_AnzWay(BaseModel):
+    
+    subject: str = ""
+    marks: str = ""
+    question_text: str = ""
 
 class CostPerInteraction(Base):
     __tablename__ = "cost_per_interaction"
@@ -1669,6 +1674,68 @@ def initialize_qa_chain_anz_way(bucket_name: str, folder_in_bucket: str):
     except Exception as e:
         print(f"[ERROR] Failed to initialize QA Chain (anz way): {e}")
         traceback.print_exc()
+@app.post("/chat_anz_way_model_evaluation")
+async def chat_with_ai(req: ChatRequest_AnzWay):
+    global qa_chain_anz_way
+
+    try:
+        print(f"[DEBUG] Subject: {req.subject}")
+        print(f"[DEBUG] Question: {req.question_text}")
+        print(f"[DEBUG] Marks: {req.marks}")
+
+        # Initialize QA chain only once
+        if qa_chain_anz_way is None:
+            
+            qa_chain_anz_way = initialize_qa_chain_anz_way(
+                bucket_name="sociology_anz_way",
+                folder_in_bucket=f"{req.subject}_instructions.faiss"
+            )
+
+        # Get Cambridge context (notes + marking scheme)
+        context = qa_chain_anz_way.run(req.question_text)
+        print(f"[DEBUG] Context retrieved: {context[:500]}...")  # truncate debug
+
+        # Tutor prompt
+        system_prompt = f"""
+        You are an AI tutor helping a student prepare for Cambridge exams. 
+        Subject: {req.subject}
+        Marks available: {req.marks}
+        Question: {req.question_text}
+
+        Cambridge Examiner Context: {context}
+
+        Your goal is to interact with the student in a **step-by-step, educational manner**. You should:
+
+        1. Ask the student if they know specific aspects of the question derived from the marking scheme.  
+        2. If the student does not know, provide a clear, concise explanation to teach that aspect.  
+        3. Assess how likely the student is to score full marks based on their current knowledge, and gently encourage improvement.  
+        4. Suggest similar unseen questions and guide the student on how to approach and structure answers to them.  
+        5. Give **short, digestible replies** so the student does not feel overwhelmed.  
+        6. **Never discuss topics outside the scope** of the question or marking scheme.  
+        7. If the student asks something off-topic, respond politely: 
+        "I'm here to help only with this question and its marking scheme. Let's focus on that."
+
+        Focus only on what the student shows interest in discovering. Your responses should be educational, encouraging, structured, and strictly limited to the context provided.
+        """
+
+
+        # OpenAI call
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": req.message}
+            ]
+        )
+
+        reply = response["choices"][0]["message"]["content"]
+
+        return JSONResponse(content={"reply": reply, "context": context})
+
+    except Exception as e:
+        print("[ERROR] Exception:", str(e))
+        return JSONResponse(content={"reply": "⚠️ Server error", "detail": str(e)})
+
 # a new evaluate your essay so that anser could include diagrams
 async def evaluate_student_response_from_images_new(
     images: List[UploadFile],
@@ -1879,6 +1946,8 @@ async def run_vision_on_image(image_file):
     except Exception as e:
         print(f"[ERROR] Vision AI analysis failed for '{image_file.filename}': {e}")
         return "[Error during Vision AI analysis]"
+
+
 #a new train-on-images so that answers could include diagrams
 
 @app.post("/train-on-images-anz-way-new")
@@ -4805,6 +4874,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
