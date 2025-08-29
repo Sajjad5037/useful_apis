@@ -1680,20 +1680,20 @@ def initialize_qa_chain_anz_way(bucket_name: str, folder_in_bucket: str):
         print(f"[ERROR] Failed to initialize QA Chain (anz way): {e}")
         traceback.print_exc()
 
-
+#when start conversation is pressed
 @app.post("/chat_anz_way_model_evaluation")
 async def chat_with_ai(req: StartConversationRequest):
     try:
-        # Generate session ID if starting new conversation
+        # Generate session ID
         session_id = str(uuid.uuid4())
         sessions[session_id] = []
 
-        # Default message if none provided
-        user_message = req.message or "Hello! I want to start learning about this question."
+        # Hard-code default user message
+        user_message = f"Evaluate this question: {req.question_text} (marks: {req.marks})"
         sessions[session_id].append({"role": "user", "content": user_message})
 
-        # Dummy reply (replace with QA chain + OpenAI logic)
-        reply = f"Received your question about {req.subject}. Let's start learning!"
+        # Dummy AI reply
+        reply = f"📘 I received a {req.marks}-mark question about {req.subject}. Let's start learning!"
 
         # Save AI reply in session
         sessions[session_id].append({"role": "assistant", "content": reply})
@@ -1703,8 +1703,7 @@ async def chat_with_ai(req: StartConversationRequest):
     except Exception as e:
         return JSONResponse(content={"reply": "⚠️ Server error", "detail": str(e)})
 
-
-
+#when send button is pressed
 @app.post("/send_message_anz_way_model_evaluation")
 async def send_message(req: SendMessageRequest):
     global qa_chain_anz_way, sessions
@@ -4900,6 +4899,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
