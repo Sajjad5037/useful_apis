@@ -150,9 +150,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],  # allow GET, POST, OPTIONS, etc.
-    allow_headers=["*"],  # allow all headers
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
 )
+
 Base = declarative_base()
 
 # AWS S3 config (use Railway ENV variables in deployment)
@@ -4946,6 +4947,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
