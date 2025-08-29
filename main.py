@@ -1704,68 +1704,59 @@ async def chat_with_ai(req: StartConversationRequest):
         return JSONResponse(content={"reply": "⚠️ Server error", "detail": str(e)})
 
 #when send button is pressed
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from openai import OpenAI
+import traceback
+
+app = FastAPI()
+client = OpenAI()
+
+sessions = {}
+
+class SendMessageRequest(BaseModel):
+    session_id: str
+    message: str
+
 @app.post("/send_message_anz_way_model_evaluation")
 async def send_message(req: SendMessageRequest):
-    global qa_chain_anz_way, sessions
+    global sessions
 
     try:
-        print("\n[DEBUG] Incoming request:", req.dict())
-
         # Validate session
         if req.session_id not in sessions:
-            print("[ERROR] Invalid session_id:", req.session_id)
             return JSONResponse(
                 status_code=400,
                 content={"reply": "⚠️ Invalid session_id. Start a new conversation first."}
             )
 
-        # Append user message
-        print("[DEBUG] Before appending, session messages:", sessions[req.session_id])
+        # Append user message to session
         sessions[req.session_id].append({"role": "user", "content": req.message})
-        print("[DEBUG] After appending user message:", sessions[req.session_id])
 
-        # Extract system prompt
-        system_prompt = None
-        for msg in sessions[req.session_id]:
-            if msg["role"] == "system":
-                system_prompt = msg["content"]
-                break
+        # Construct system prompt from first system message
+        system_prompt = "You are a helpful AI tutor that evaluates sociology exam answers step by step."
 
-        if not system_prompt:
-            print("[ERROR] System prompt missing in session:", sessions[req.session_id])
-            return JSONResponse(
-                status_code=500,
-                content={"reply": "⚠️ System prompt missing. Please restart conversation."}
-            )
 
-        print("[DEBUG] System prompt found:", system_prompt[:200], "...")
-
-        # Combine messages
+        
+        # Combine system prompt + session history
         messages = [{"role": "system", "content": system_prompt}] + sessions[req.session_id]
-        print("[DEBUG] Messages being sent to OpenAI:", messages)
 
-        # Call OpenAI API
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-4o-mini",
-                messages=messages
-            )
-            print("[DEBUG] Raw OpenAI response:", response)
-        except Exception as api_err:
-            print("[ERROR] OpenAI API failed:", str(api_err))
-            traceback.print_exc()
-            return JSONResponse(
-                status_code=500,
-                content={"reply": "⚠️ OpenAI API error", "detail": str(api_err)}
-            )
+        # Debug log
+        print("\n[DEBUG] Messages being sent to OpenAI API:")
+        for m in messages:
+            print(f"  - {m['role']}: {m['content'][:80]}...")
 
-        # Extract AI reply
-        reply = response["choices"][0]["message"]["content"]
-        print("[DEBUG] Extracted AI reply:", reply)
+        # Call OpenAI API (new client)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages
+        )
 
-        # Save reply
+        reply = response.choices[0].message.content
+
+        # Save AI reply
         sessions[req.session_id].append({"role": "assistant", "content": reply})
-        print("[DEBUG] Updated session messages:", sessions[req.session_id])
 
         return JSONResponse(
             content={
@@ -1775,12 +1766,16 @@ async def send_message(req: SendMessageRequest):
         )
 
     except Exception as e:
-        print("[ERROR] Exception in send_message:", str(e))
-        traceback.print_exc()  # full stack trace
+        print("[ERROR] Exception while processing message:")
+        print(traceback.format_exc())
         return JSONResponse(
             status_code=500,
-            content={"reply": "⚠️ Server error. Please try again later.", "detail": str(e)}
+            content={
+                "reply": "⚠️ Server error. Please try again later.",
+                "detail": str(e)
+            }
         )
+
 # a new evaluate your essay so that anser could include diagrams
 async def evaluate_student_response_from_images_new(
     images: List[UploadFile],
@@ -4919,6 +4914,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
