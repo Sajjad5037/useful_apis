@@ -1680,16 +1680,6 @@ def initialize_qa_chain_anz_way(bucket_name: str, folder_in_bucket: str):
         print(f"[ERROR] Failed to initialize QA Chain (anz way): {e}")
         traceback.print_exc()
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-import openai
-import uuid
-
-app = FastAPI()
-
-# In-memory store for session histories
-chat_sessions = {}
 
 class StartConversationRequest(BaseModel):
     subject: str
@@ -1722,13 +1712,6 @@ async def send_message(req: SendMessageRequest):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-import uuid
-import openai
-
-app = FastAPI()
 
 # Global variables
 qa_chain_anz_way = None
@@ -4936,6 +4919,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
