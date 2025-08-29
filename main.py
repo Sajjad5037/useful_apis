@@ -195,12 +195,14 @@ class CommonMistake(Base):
     category = Column(String, nullable=False)
     explanation = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-class ChatRequest_AnzWay(BaseModel):
-    
-    subject: str = ""
-    marks: str = ""
-    question_text: str = ""
+
+class StartConversationRequest(BaseModel):
+    subject: str
+    marks: int
+    question_text: str
+class SendMessageRequest(BaseModel):
+    session_id: str
+    message: str    
 
 class CostPerInteraction(Base):
     __tablename__ = "cost_per_interaction"
@@ -1674,28 +1676,81 @@ def initialize_qa_chain_anz_way(bucket_name: str, folder_in_bucket: str):
     except Exception as e:
         print(f"[ERROR] Failed to initialize QA Chain (anz way): {e}")
         traceback.print_exc()
+
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+import openai
+import uuid
+
+app = FastAPI()
+
+# In-memory store for session histories
+chat_sessions = {}
+
+class StartConversationRequest(BaseModel):
+    subject: str
+    marks: int
+    question_text: str
+    message: str = ""  # optional for first message
+@app.post("/send_message_anz_way_model_evaluation")
+async def send_message(req: SendMessageRequest):
+    try:
+        if req.session_id not in sessions:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # Append user message to session history
+        sessions[req.session_id].append({"role": "user", "content": req.message})
+
+        # Call OpenAI with full conversation history
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=sessions[req.session_id]
+        )
+
+        ai_reply = response["choices"][0]["message"]["content"]
+
+        # Append AI reply to history
+        sessions[req.session_id].append({"role": "assistant", "content": ai_reply})
+
+        return {"reply": ai_reply}
+
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 @app.post("/chat_anz_way_model_evaluation")
-async def chat_with_ai(req: ChatRequest_AnzWay):
+async def chat_with_ai(req: StartConversationRequest, session_id: str = None):
     global qa_chain_anz_way
 
     try:
+        # Generate session ID if not provided
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            chat_sessions[session_id] = []
+
+        print(f"[DEBUG] Session ID: {session_id}")
         print(f"[DEBUG] Subject: {req.subject}")
         print(f"[DEBUG] Question: {req.question_text}")
         print(f"[DEBUG] Marks: {req.marks}")
 
-        # Initialize QA chain only once
+        # Initialize QA chain if needed
         if qa_chain_anz_way is None:
-            
             qa_chain_anz_way = initialize_qa_chain_anz_way(
                 bucket_name="sociology_anz_way",
                 folder_in_bucket=f"{req.subject}_instructions.faiss"
             )
 
-        # Get Cambridge context (notes + marking scheme)
+        # Retrieve context from QA chain (notes + marking scheme)
         context = qa_chain_anz_way.run(req.question_text)
-        print(f"[DEBUG] Context retrieved: {context[:500]}...")  # truncate debug
 
-        # Tutor prompt
+        # Append user message to session history
+        # If no message is sent (start conversation), use a default intro
+        user_message = req.message if req.message else "Hello! I want to start learning about this question."
+        sessions[session_id].append({"role": "user", "content": user_message})
+        
+
+        # Construct system prompt
         system_prompt = f"""
         You are an AI tutor helping a student prepare for Cambridge exams. 
         Subject: {req.subject}
@@ -1704,38 +1759,30 @@ async def chat_with_ai(req: ChatRequest_AnzWay):
 
         Cambridge Examiner Context: {context}
 
-        Your goal is to interact with the student in a **step-by-step, educational manner**. You should:
-
-        1. Ask the student if they know specific aspects of the question derived from the marking scheme.  
-        2. If the student does not know, provide a clear, concise explanation to teach that aspect.  
-        3. Assess how likely the student is to score full marks based on their current knowledge, and gently encourage improvement.  
-        4. Suggest similar unseen questions and guide the student on how to approach and structure answers to them.  
-        5. Give **short, digestible replies** so the student does not feel overwhelmed.  
-        6. **Never discuss topics outside the scope** of the question or marking scheme.  
-        7. If the student asks something off-topic, respond politely: 
-        "I'm here to help only with this question and its marking scheme. Let's focus on that."
-
-        Focus only on what the student shows interest in discovering. Your responses should be educational, encouraging, structured, and strictly limited to the context provided.
+        Your goal is to interact with the student in a step-by-step, educational manner.
+        Keep replies short and only teach what the student wants to learn.
         """
 
+        # Combine system prompt + chat history
+        messages = [{"role": "system", "content": system_prompt}] + chat_sessions[session_id]
 
-        # OpenAI call
+        # Call OpenAI API
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": req.message}
-            ]
+            messages=messages
         )
 
         reply = response["choices"][0]["message"]["content"]
 
-        return JSONResponse(content={"reply": reply})
+        # Save AI reply to session
+        chat_sessions[session_id].append({"role": "assistant", "content": reply})
 
+        return JSONResponse(content={"reply": reply, "session_id": session_id})
 
     except Exception as e:
         print("[ERROR] Exception:", str(e))
         return JSONResponse(content={"reply": "⚠️ Server error", "detail": str(e)})
+
 
 # a new evaluate your essay so that anser could include diagrams
 async def evaluate_student_response_from_images_new(
@@ -4875,6 +4922,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
