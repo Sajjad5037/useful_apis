@@ -1681,48 +1681,29 @@ def initialize_qa_chain_anz_way(bucket_name: str, folder_in_bucket: str):
         traceback.print_exc()
 
 
-class StartConversationRequest(BaseModel):
-    subject: str
-    marks: int
-    question_text: str
-    message: str = ""  # optional for first message
-@app.post("/send_message_anz_way_model_evaluation")
-async def send_message(req: SendMessageRequest):
+@app.post("/chat_anz_way_model_evaluation")
+async def chat_with_ai(req: StartConversationRequest):
     try:
-        if req.session_id not in sessions:
-            raise HTTPException(status_code=404, detail="Session not found")
+        # Generate session ID if starting new conversation
+        session_id = str(uuid.uuid4())
+        sessions[session_id] = []
 
-        # Append user message to session history
-        sessions[req.session_id].append({"role": "user", "content": req.message})
+        # Default message if none provided
+        user_message = req.message or "Hello! I want to start learning about this question."
+        sessions[session_id].append({"role": "user", "content": user_message})
 
-        # Call OpenAI with full conversation history
-        response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=sessions[req.session_id]
-        )
+        # Dummy reply (replace with QA chain + OpenAI logic)
+        reply = f"Received your question about {req.subject}. Let's start learning!"
 
-        ai_reply = response["choices"][0]["message"]["content"]
+        # Save AI reply in session
+        sessions[session_id].append({"role": "assistant", "content": reply})
 
-        # Append AI reply to history
-        sessions[req.session_id].append({"role": "assistant", "content": ai_reply})
-
-        return {"reply": ai_reply}
+        return JSONResponse(content={"reply": reply, "session_id": session_id})
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(content={"reply": "⚠️ Server error", "detail": str(e)})
 
 
-
-# Global variables
-qa_chain_anz_way = None
-sessions = {}  # Session storage: {session_id: [{"role": "user"/"assistant", "content": ...}, ...]}
-
-# Pydantic request model
-class StartConversationRequest(BaseModel):
-    subject: str
-    marks: str
-    question_text: str
-    message: str = None  # Optional, for "start conversation" this can be empty
 
 @app.post("/send_message_anz_way_model_evaluation")
 async def send_message(req: SendMessageRequest):
@@ -4919,6 +4900,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
