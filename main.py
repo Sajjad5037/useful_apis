@@ -1730,7 +1730,8 @@ async def chat_with_ai(req: ChatRequest_AnzWay):
 
         reply = response["choices"][0]["message"]["content"]
 
-        return JSONResponse(content={"reply": reply, "context": context})
+        return JSONResponse(content={"reply": reply})
+
 
     except Exception as e:
         print("[ERROR] Exception:", str(e))
@@ -4874,6 +4875,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
