@@ -134,9 +134,7 @@ username_for_interactive_session = None
 
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+allowed_origins = [
     "http://127.0.0.1:3000",
     "http://localhost:3000",
     "https://rafis-kitchen.vercel.app",
@@ -145,13 +143,16 @@ app.add_middleware(
     "https://shah-rukk-website.vercel.app",
     "https://class-management-system-new.web.app",
     "https://ai-social-campaign.vercel.app",
-    "https://anz-way.vercel.app",  # ← added
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    "https://anz-way.vercel.app",  # ← only the domain
+]
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],  # allow GET, POST, OPTIONS, etc.
+    allow_headers=["*"],  # allow all headers
+)
 Base = declarative_base()
 
 # AWS S3 config (use Railway ENV variables in deployment)
@@ -4945,6 +4946,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
