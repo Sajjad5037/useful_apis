@@ -1704,20 +1704,6 @@ async def chat_with_ai(req: StartConversationRequest):
         return JSONResponse(content={"reply": "⚠️ Server error", "detail": str(e)})
 
 #when send button is pressed
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from openai import OpenAI
-import traceback
-
-app = FastAPI()
-client = OpenAI()
-
-sessions = {}
-
-class SendMessageRequest(BaseModel):
-    session_id: str
-    message: str
 
 @app.post("/send_message_anz_way_model_evaluation")
 async def send_message(req: SendMessageRequest):
@@ -4914,6 +4900,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
