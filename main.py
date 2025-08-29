@@ -1741,55 +1741,37 @@ class StartConversationRequest(BaseModel):
     question_text: str
     message: str = None  # Optional, for "start conversation" this can be empty
 
-@app.post("/chat_anz_way_model_evaluation")
-async def chat_with_ai(req: StartConversationRequest, session_id: str = None):
+@app.post("/send_message_anz_way_model_evaluation")
+async def send_message(req: SendMessageRequest):
     global qa_chain_anz_way, sessions
 
     try:
-        # Initialize session if not provided or unknown
-        if not session_id or session_id not in sessions:
-            session_id = str(uuid.uuid4())
-            sessions[session_id] = []
-
-        print(f"[DEBUG] Session ID: {session_id}")
-        print(f"[DEBUG] Subject: {req.subject}")
-        print(f"[DEBUG] Question: {req.question_text}")
-        print(f"[DEBUG] Marks: {req.marks}")
-
-        # Initialize QA chain if needed
-        if qa_chain_anz_way is None:
-            qa_chain_anz_way = initialize_qa_chain_anz_way(
-                bucket_name="sociology_anz_way",
-                folder_in_bucket=f"{req.subject}_instructions.faiss"
+        # Validate session
+        if req.session_id not in sessions:
+            return JSONResponse(
+                status_code=400,
+                content={"reply": "⚠️ Invalid session_id. Start a new conversation first."}
             )
 
-        # Retrieve context (notes + marking scheme) for the question
-        context = qa_chain_anz_way.run(req.question_text)
+        # Append user message to session
+        sessions[req.session_id].append({"role": "user", "content": req.message})
 
-        # Determine user message
-        user_message = req.message or "Hello! I want to start learning about this question."
-        sessions[session_id].append({"role": "user", "content": user_message})
+        # Construct system prompt from first message in session
+        # Assumes subject, marks, question_text stored in first system message
+        system_prompt = None
+        for msg in sessions[req.session_id]:
+            if msg["role"] == "system":
+                system_prompt = msg["content"]
+                break
 
-        # Construct system prompt
-        system_prompt = f"""
-        You are an AI tutor helping a student prepare for Cambridge exams.
-        Subject: {req.subject}
-        Marks available: {req.marks}
-        Question: {req.question_text}
-
-        Cambridge Examiner Context: {context}
-
-        Your goal is to interact with the student in a step-by-step, educational manner:
-        - Ask if the student knows specific aspects of the question.
-        - If the student does not know, provide short, clear explanations.
-        - Assess the likelihood of full marks and encourage improvement.
-        - Suggest similar unseen questions and guide the student on how to approach them.
-        - Keep replies short and focused only on the question/context provided.
-        - If the student asks off-topic, politely redirect: "I'm here to help only with this question and its marking scheme."
-        """
+        if not system_prompt:
+            return JSONResponse(
+                status_code=500,
+                content={"reply": "⚠️ System prompt missing. Please restart conversation."}
+            )
 
         # Combine system prompt + session history
-        messages = [{"role": "system", "content": system_prompt}] + sessions[session_id]
+        messages = [{"role": "system", "content": system_prompt}] + sessions[req.session_id]
 
         # Call OpenAI API
         response = openai.ChatCompletion.create(
@@ -1800,14 +1782,21 @@ async def chat_with_ai(req: StartConversationRequest, session_id: str = None):
         reply = response["choices"][0]["message"]["content"]
 
         # Save AI reply to session
-        sessions[session_id].append({"role": "assistant", "content": reply})
+        sessions[req.session_id].append({"role": "assistant", "content": reply})
 
-        return JSONResponse(content={"reply": reply, "session_id": session_id})
+        return JSONResponse(
+            content={
+                "reply": reply,
+                "session_id": req.session_id
+            }
+        )
 
     except Exception as e:
         print("[ERROR] Exception:", str(e))
-        return JSONResponse(content={"reply": "⚠️ Server error", "detail": str(e)})
-
+        return JSONResponse(
+            status_code=500,
+            content={"reply": "⚠️ Server error. Please try again later.", "detail": str(e)}
+        )
 
 # a new evaluate your essay so that anser could include diagrams
 async def evaluate_student_response_from_images_new(
@@ -4947,6 +4936,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
