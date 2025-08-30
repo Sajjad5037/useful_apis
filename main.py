@@ -1711,21 +1711,20 @@ def initialize_qa_chain_anz_way(bucket_name: str, folder_in_bucket: str):
         print(f"[ERROR] Failed to initialize QA Chain (anz way): {e}")
         traceback.print_exc()
 
-#to send the student exam prepartion data to anz way
-@app.post("/student_report", response_model=List[StudentReflectionSchema])
-def get_student_report(
-    req: StudentReportRequest,
-    db: Session = Depends(get_db)
-):
+#to send the student exam prepartion data to anz way@app.post("/student_report")
+def get_student_report(req: StudentReportRequest, db: Session = Depends(get_db)):
     print("=== get_student_report called ===")
     print(f"Student ID: {req.student_id}, From: {req.from_date}, To: {req.to_date}")
 
     try:
-        # Convert string dates to datetime objects
+        # Convert dates from string to datetime
         from_dt = datetime.strptime(req.from_date, "%Y-%m-%d")
         to_dt = datetime.strptime(req.to_date, "%Y-%m-%d")
 
-        # Fetch reflections from the database
+        # Adjust 'to_dt' to include the whole day
+        to_dt = datetime.combine(to_dt, time.max)
+
+        # Fetch reflections from database
         reflections = (
             db.query(StudentReflection)
             .filter(StudentReflection.student_id == req.student_id)
@@ -1736,10 +1735,10 @@ def get_student_report(
         )
 
         print(f"Fetched {len(reflections)} reflections for student {req.student_id}")
-        return [StudentReflectionSchema.from_orm(r) for r in reflections]
+        return reflections
 
     except Exception as e:
-        print("Error fetching student reflections:", e)
+        print("Error fetching student report:", e)
         raise HTTPException(status_code=500, detail="Internal server error")
         
 
@@ -5149,6 +5148,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
