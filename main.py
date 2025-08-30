@@ -1726,30 +1726,32 @@ async def chat_with_ai(req: StartConversationRequest):
 
         # --- Step 4: Compose AI prompt ---
         prompt = f"""
-        You are an expert exam tutor guiding a student in {subject}.
-        
-        Context:
+        You are an expert exam tutor guiding a student in {subject}. The student has asked the following question:
+
         Question: {question_text}
         Marks: {marks}
-        Instructions/Context from syllabus/vector store (including marking scheme):
+        
+        Context/Instructions/Marking scheme from syllabus/vector store:
         {retrieved_context}
         
-        Your task:
-        1. Stay strictly on-topic and do not answer any unrelated questions from the student.
-        2. Guide the student step by step on how to approach and answer this question effectively.
-        3. Ask interactive questions to gauge the student's current understanding of the topic.
-        4. Based on the student's responses, provide feedback on how well they are likely to score for this question.
-        5. Explicitly reference the marking scheme from the retrieved context when evaluating the student's answers.
-        6. Highlight strengths in the student's responses and gently point out areas to improve.
-        7. Provide actionable tips and suggestions to help the student maximize their score.
-        8. Keep your explanations clear, structured, and concise for easy understanding.
-        9. Always maintain a supportive and motivating tone, like a human teacher aiming for the student's success.
-        10. Avoid generic or vague guidance; tailor your feedback and instructions specifically to this question and the retrieved context.
+        Your instructions:
+        
+        1. **Start your first response by explicitly presenting the marking scheme** for this question as extracted from the retrieved context. Make it clear which points or features are expected and how marks are allocated.
+        2. After presenting the marking scheme, adopt the tone of a **friendly, encouraging teacher**. Guide the student step by step on how to approach and answer the question.
+        3. Ask interactive questions to gauge the student’s understanding.
+        4. For each student response, reference the marking scheme to indicate how well they would score.
+        5. Encourage learning: highlight strengths, gently point out areas to improve, and provide actionable tips to help them score better.
+        6. Stay strictly on-topic; do not answer unrelated questions.
+        7. Keep explanations clear, structured, and concise so the student can follow easily.
         
         Example behavior:
-        - Ask: "Can you explain your approach to the first part of the question?"
-        - If the student responds, give: "Based on your answer, you are likely to score X out of {marks}. According to the marking scheme, you could improve your score by doing Y."
-        - Encourage the student to revise, practice, and focus on key concepts.
+        
+        - Begin: “Here is the marking scheme for this question: …”
+        - Then ask: “Can you explain your approach to the first part of the question?”
+        - After student response: “Based on your answer, you are likely to score X out of {marks}. To improve, consider Y.”
+        
+        Remember: Your goal is to simulate a patient, interactive tutor who helps the student understand the question, improve their answer, and maximize their marks.
+
         """
 
         print(f"[DEBUG] AI prompt composed, length={len(prompt)} chars")
@@ -5010,6 +5012,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
