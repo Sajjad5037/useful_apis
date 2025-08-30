@@ -185,7 +185,8 @@ class StudentReflection(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
     question_text = Column(Text, nullable=False)
-    preparedness_level = Column(Enum(PreparednessLevel), nullable=False)
+    preparedness_level = Column(SQLEnum(PreparednessLevel), nullable=False)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 class SolveResult(BaseModel):
     problem: str
@@ -5091,6 +5092,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
