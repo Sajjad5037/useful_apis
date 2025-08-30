@@ -1691,26 +1691,20 @@ async def chat_with_ai(req: StartConversationRequest):
         print("\n[DEBUG] --- /chat_anz_way_model_evaluation called ---")
         print(f"[DEBUG] Received request: subject='{subject}', marks={marks}, question_text='{question_text[:100]}...'")
 
-        # --- Step 1: Initialize QA chain if not already done ---
-        qa_chain_anz_way = qa_chains.get(subject)
-        if qa_chain_anz_way is None:
-            print(f"[DEBUG] QA chain not found for subject '{subject}', initializing...")
-            try:
-                folder_in_bucket = f"{subject}_instructions.faiss"
-                qa_chain_anz_way = initialize_qa_chain_anz_way(
-                    bucket_name="sociology_anz_way",
-                    folder_in_bucket=folder_in_bucket
-                )
-                qa_chains[subject] = qa_chain_anz_way
-                print(f"[DEBUG] QA chain initialized successfully for subject: {subject}")
-            except Exception as e:
-                print(f"[ERROR] Failed to initialize QA chain for subject {subject}: {str(e)}")
-                return JSONResponse(
-                    content={"status": "error", "detail": str(e)},
-                    headers=cors_headers
-                )
-        else:
-            print(f"[DEBUG] QA chain already exists for subject: {subject}")
+        # --- Step 1: Initialize QA chain ---
+        print(f"[DEBUG] Initializing QA chain for subject '{subject}'...")
+        try:
+            folder_in_bucket = f"{subject}_instructions.faiss"
+            qa_chain_anz_way = initialize_qa_chain_anz_way(
+                bucket_name="sociology_anz_way",
+                folder_in_bucket=folder_in_bucket
+            )
+            print(f"[DEBUG] QA chain initialized successfully for subject: {subject}")
+        except Exception as e:
+            print(f"[ERROR] Failed to initialize QA chain for subject {subject}: {str(e)}")
+            return JSONResponse(
+                content={"status": "error", "detail": str(e)}
+            )
 
         # --- Step 2: Retrieve relevant instructions/context ---
         retrieval_query = f"Provide all instructions, features, and marking rules relevant for answering: {question_text}"
@@ -1723,14 +1717,14 @@ async def chat_with_ai(req: StartConversationRequest):
             retrieved_context = "No instructions retrieved. Model should give 0 marks for all features."
         else:
             retrieved_context = "\n".join([doc.page_content for doc in retrieved_docs])
-            print(f"[DEBUG] Retrieved {len(retrieved_docs)} documents from vector store, total length: {len(retrieved_context)} chars")
+            print(f"[DEBUG] Retrieved {len(retrieved_docs)} documents, total length: {len(retrieved_context)} chars")
 
         # --- Step 3: Generate session ID ---
         session_id = str(uuid.uuid4())
         sessions[session_id] = []
         print(f"[DEBUG] New session created: session_id={session_id}")
 
-        # --- Step 4: Compose AI prompt using context and question ---
+        # --- Step 4: Compose AI prompt ---
         prompt = f"""
         You are an expert exam tutor guiding a student in {subject}.
         
@@ -1747,10 +1741,10 @@ async def chat_with_ai(req: StartConversationRequest):
         4. Based on the student's responses, provide feedback on how well they are likely to score for this question.
         5. Encourage the student with positive reinforcement, highlighting strengths and gently pointing out areas to improve.
         6. Offer actionable tips and suggestions on how the student can improve their score.
-        7. Make your explanations clear, structured, and concise, so that the student can follow easily.
-        8. Use the retrieved instructions and marking scheme to explain what features or points are expected in the answer.
-        9. Always maintain a supportive and motivating tone, like a human teacher who wants the student to succeed.
-        10. Avoid generic answers; tailor your guidance based on the specific question and context.
+        7. Make your explanations clear, structured, and concise.
+        8. Use the retrieved instructions and marking scheme to explain expected answer features.
+        9. Maintain a supportive and motivating tone like a human teacher.
+        10. Avoid generic answers; tailor guidance to the question and context.
         """
         print(f"[DEBUG] AI prompt composed, length={len(prompt)} chars")
 
@@ -1771,12 +1765,11 @@ async def chat_with_ai(req: StartConversationRequest):
         # --- Step 6: Store session messages ---
         sessions[session_id].append({"role": "user", "content": question_text})
         sessions[session_id].append({"role": "assistant", "content": ai_reply})
-        print(f"[DEBUG] Session messages stored. Total messages in session: {len(sessions[session_id])}")
+        print(f"[DEBUG] Session messages stored. Total messages: {len(sessions[session_id])}")
 
         print("[DEBUG] Returning response to frontend")
         return JSONResponse(
-            content={"reply": ai_reply, "session_id": session_id},
-            headers=cors_headers
+            content={"reply": ai_reply, "session_id": session_id}
         )
 
     except Exception as e:
@@ -5011,6 +5004,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
