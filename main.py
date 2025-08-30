@@ -2,6 +2,7 @@ from enum import Enum
 import docx2txt
 import os
 import vertexai
+
 import sys
 import fitz 
 from google.cloud import storage
@@ -53,7 +54,8 @@ from sqlalchemy import (
     desc,
     func,
     text,
-    Text
+    Text,
+    Enum as SQLEnum  # <-- added this line
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session,relationship,joinedload
@@ -5092,6 +5094,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
