@@ -175,6 +175,21 @@ s3 = boto3.client(
 )
 # for solving math problem after exxtracing from images
 
+class StudentReflectionSchema(BaseModel):
+    id: int
+    student_id: int
+    question_text: str
+    preparedness_level: str
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
+class StudentReportRequest(BaseModel):
+    student_id: int
+    from_date: str
+    to_date: str
+
+
 class PreparednessLevel(Enum):
     well_prepared = "well_prepared"
     partially_prepared = "partially_prepared"
@@ -1695,6 +1710,39 @@ def initialize_qa_chain_anz_way(bucket_name: str, folder_in_bucket: str):
     except Exception as e:
         print(f"[ERROR] Failed to initialize QA Chain (anz way): {e}")
         traceback.print_exc()
+
+#to send the student exam prepartion data to anz way
+@app.post("/student_report", response_model=List[StudentReflectionSchema])
+def get_student_report(
+    req: StudentReportRequest,
+    db: Session = Depends(get_db)
+):
+    print("=== get_student_report called ===")
+    print(f"Student ID: {req.student_id}, From: {req.from_date}, To: {req.to_date}")
+
+    try:
+        # Convert string dates to datetime objects
+        from_dt = datetime.strptime(req.from_date, "%Y-%m-%d")
+        to_dt = datetime.strptime(req.to_date, "%Y-%m-%d")
+
+        # Fetch reflections from the database
+        reflections = (
+            db.query(StudentReflection)
+            .filter(StudentReflection.student_id == req.student_id)
+            .filter(StudentReflection.created_at >= from_dt)
+            .filter(StudentReflection.created_at <= to_dt)
+            .order_by(StudentReflection.created_at.desc())
+            .all()
+        )
+
+        print(f"Fetched {len(reflections)} reflections for student {req.student_id}")
+        return [StudentReflectionSchema.from_orm(r) for r in reflections]
+
+    except Exception as e:
+        print("Error fetching student reflections:", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+        
+
 
 #when start conversation is pressed
 @app.post("/chat_anz_way_model_evaluation")
@@ -5101,6 +5149,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
