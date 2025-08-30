@@ -1684,70 +1684,183 @@ def initialize_qa_chain_anz_way(bucket_name: str, folder_in_bucket: str):
 @app.post("/chat_anz_way_model_evaluation")
 async def chat_with_ai(req: StartConversationRequest):
     try:
-        # Generate session ID
+        subject = req.subject
+        question_text = req.question_text
+        marks = req.marks
+
+        print("\n[DEBUG] --- /chat_anz_way_model_evaluation called ---")
+        print(f"[DEBUG] Received request: subject='{subject}', marks={marks}, question_text='{question_text[:100]}...'")
+
+        # --- Step 1: Initialize QA chain if not already done ---
+        qa_chain_anz_way = qa_chains.get(subject)
+        if qa_chain_anz_way is None:
+            print(f"[DEBUG] QA chain not found for subject '{subject}', initializing...")
+            try:
+                folder_in_bucket = f"{subject}_instructions.faiss"
+                qa_chain_anz_way = initialize_qa_chain_anz_way(
+                    bucket_name="sociology_anz_way",
+                    folder_in_bucket=folder_in_bucket
+                )
+                qa_chains[subject] = qa_chain_anz_way
+                print(f"[DEBUG] QA chain initialized successfully for subject: {subject}")
+            except Exception as e:
+                print(f"[ERROR] Failed to initialize QA chain for subject {subject}: {str(e)}")
+                return JSONResponse(
+                    content={"status": "error", "detail": str(e)},
+                    headers=cors_headers
+                )
+        else:
+            print(f"[DEBUG] QA chain already exists for subject: {subject}")
+
+        # --- Step 2: Retrieve relevant instructions/context ---
+        retrieval_query = f"Provide all instructions, features, and marking rules relevant for answering: {question_text}"
+        print(f"[DEBUG] Retrieval query: {retrieval_query[:100]}...")
+
+        retriever = qa_chain_anz_way.retriever
+        retrieved_docs = retriever.get_relevant_documents(retrieval_query)
+        if not retrieved_docs:
+            print("[WARNING] No instructions retrieved from vector store")
+            retrieved_context = "No instructions retrieved. Model should give 0 marks for all features."
+        else:
+            retrieved_context = "\n".join([doc.page_content for doc in retrieved_docs])
+            print(f"[DEBUG] Retrieved {len(retrieved_docs)} documents from vector store, total length: {len(retrieved_context)} chars")
+
+        # --- Step 3: Generate session ID ---
         session_id = str(uuid.uuid4())
         sessions[session_id] = []
+        print(f"[DEBUG] New session created: session_id={session_id}")
 
-        # Hard-code default user message
-        user_message = f"Evaluate this question: {req.question_text} (marks: {req.marks})"
-        sessions[session_id].append({"role": "user", "content": user_message})
+        # --- Step 4: Compose AI prompt using context and question ---
+        prompt = f"""
+        You are an expert exam tutor guiding a student in {subject}.
+        
+        Context:
+        Question: {question_text}
+        Marks: {marks}
+        Instructions/Context from syllabus/vector store:
+        {retrieved_context}
+        
+        Your task:
+        1. Stay strictly on-topic. Do not answer any unrelated questions or queries from the student.
+        2. Guide the student on how to approach and answer this question effectively.
+        3. Ask interactive questions to gauge the student's current understanding of the topic.
+        4. Based on the student's responses, provide feedback on how well they are likely to score for this question.
+        5. Encourage the student with positive reinforcement, highlighting strengths and gently pointing out areas to improve.
+        6. Offer actionable tips and suggestions on how the student can improve their score.
+        7. Make your explanations clear, structured, and concise, so that the student can follow easily.
+        8. Use the retrieved instructions and marking scheme to explain what features or points are expected in the answer.
+        9. Always maintain a supportive and motivating tone, like a human teacher who wants the student to succeed.
+        10. Avoid generic answers; tailor your guidance based on the specific question and context.
+        """
+        print(f"[DEBUG] AI prompt composed, length={len(prompt)} chars")
 
-        # Dummy AI reply
-        reply = f"📘 I received a {req.marks}-mark question about {req.subject}. Let's start learning!"
+        # --- Step 5: Call OpenAI API ---
+        print("[DEBUG] Sending prompt to OpenAI API...")
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an AI assistant that tutors students using provided instructions and marking scheme."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+        )
 
-        # Save AI reply in session
-        sessions[session_id].append({"role": "assistant", "content": reply})
+        ai_reply = response.choices[0].message.content.strip()
+        print(f"[DEBUG] Received AI reply (truncated 200 chars): {ai_reply[:200]}")
 
-        return JSONResponse(content={"reply": reply, "session_id": session_id})
+        # --- Step 6: Store session messages ---
+        sessions[session_id].append({"role": "user", "content": question_text})
+        sessions[session_id].append({"role": "assistant", "content": ai_reply})
+        print(f"[DEBUG] Session messages stored. Total messages in session: {len(sessions[session_id])}")
+
+        print("[DEBUG] Returning response to frontend")
+        return JSONResponse(
+            content={"reply": ai_reply, "session_id": session_id},
+            headers=cors_headers
+        )
 
     except Exception as e:
-        return JSONResponse(content={"reply": "⚠️ Server error", "detail": str(e)})
+        print(f"[ERROR] Unexpected error: {str(e)}")
+        print(traceback.format_exc())
+        return JSONResponse(
+            content={"status": "error", "detail": str(e)},
+            headers=cors_headers
+        )
 
-#when send button is pressed
 
+
+MAX_EXCHANGES = 5  # 5 exchanges = 10 messages (user+assistant)
 @app.post("/send_message_anz_way_model_evaluation")
 async def send_message(req: SendMessageRequest):
     global sessions
 
     try:
+        print("\n[DEBUG] Received message request:")
+        print(f"  session_id: {req.session_id}")
+        print(f"  user_message: {req.message[:100]}")  # truncate for readability
+
         # Validate session
         if req.session_id not in sessions:
+            print("[WARNING] Invalid session_id received.")
             return JSONResponse(
                 status_code=400,
                 content={"reply": "⚠️ Invalid session_id. Start a new conversation first."}
             )
 
+        session_history = sessions[req.session_id]
+        print(f"[DEBUG] Current session length: {len(session_history)} messages")
+
+        # Check if max exchanges reached
+        if len(session_history) >= MAX_EXCHANGES * 2:
+            print(f"[INFO] Max exchanges reached for session {req.session_id}")
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "reply": "✅ This conversation has reached the 5-exchange limit. Please start a new session for further evaluation.",
+                    "session_id": req.session_id,
+                    "conversation_ended": True
+                }
+            )
+
         # Append user message to session
-        sessions[req.session_id].append({"role": "user", "content": req.message})
+        session_history.append({"role": "user", "content": req.message})
+        print(f"[DEBUG] Appended user message. Session length now: {len(session_history)}")
 
-        # Construct system prompt from first system message
-        system_prompt = "You are a helpful AI tutor that evaluates sociology exam answers step by step."
+        # System prompt
+        system_prompt = (
+            "You are a helpful AI tutor that evaluates sociology exam answers step by step. "
+            "Focus ONLY on the question at hand. Ask the student guiding questions, "
+            "assess their answers based on the marking scheme, and encourage learning. "
+            "Do NOT answer unrelated questions."
+        )
+        print("[DEBUG] System prompt prepared.")
 
-
-        
         # Combine system prompt + session history
-        messages = [{"role": "system", "content": system_prompt}] + sessions[req.session_id]
+        messages = [{"role": "system", "content": system_prompt}] + session_history
+        print("[DEBUG] Combined messages to send to OpenAI API:")
+        for idx, m in enumerate(messages):
+            preview = m['content'][:80].replace("\n", " ")
+            print(f"  {idx+1}. {m['role']}: {preview}...")
 
-        # Debug log
-        print("\n[DEBUG] Messages being sent to OpenAI API:")
-        for m in messages:
-            print(f"  - {m['role']}: {m['content'][:80]}...")
-
-        # Call OpenAI API (new client)
+        # Call OpenAI API
+        print("[DEBUG] Sending request to OpenAI API...")
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages
         )
 
         reply = response.choices[0].message.content
+        print(f"[DEBUG] Received AI reply (truncated 150 chars): {reply[:150]}")
 
         # Save AI reply
-        sessions[req.session_id].append({"role": "assistant", "content": reply})
+        session_history.append({"role": "assistant", "content": reply})
+        print(f"[DEBUG] Appended AI reply. Session length now: {len(session_history)}")
 
         return JSONResponse(
             content={
                 "reply": reply,
-                "session_id": req.session_id
+                "session_id": req.session_id,
+                "conversation_ended": False
             }
         )
 
@@ -4900,6 +5013,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
