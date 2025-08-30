@@ -174,7 +174,7 @@ s3 = boto3.client(
 )
 # for solving math problem after exxtracing from images
 
-class PreparednessLevel(enum.Enum):
+class PreparednessLevel(Enum):
     well_prepared = "well_prepared"
     partially_prepared = "partially_prepared"
     needs_improvement = "needs_improvement"
@@ -5091,6 +5091,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
