@@ -62,7 +62,7 @@ import openai  # classic client
 from fastapi import Query,Request
 import datetime
 from sqlalchemy.types import UserDefinedType
-from datetime import datetime,date
+from datetime import datetime,date,time
 import uvicorn
 import uuid  # Add this import at the top of your file
 import random
@@ -5151,6 +5151,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
