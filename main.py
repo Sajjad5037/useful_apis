@@ -172,6 +172,20 @@ s3 = boto3.client(
     region_name=AWS_REGION
 )
 # for solving math problem after exxtracing from images
+
+class PreparednessLevel(enum.Enum):
+    well_prepared = "well_prepared"
+    partially_prepared = "partially_prepared"
+    needs_improvement = "needs_improvement"
+
+class StudentReflection(Base):
+    __tablename__ = "student_reflections"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    question_text = Column(Text, nullable=False)
+    preparedness_level = Column(Enum(PreparednessLevel), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 class SolveResult(BaseModel):
     problem: str
     solution: str
@@ -204,9 +218,9 @@ class StartConversationRequest(BaseModel):
     marks: int
     question_text: str
 class SendMessageRequest(BaseModel):
+    id: int          # Unique identifier, e.g., student or message ID
     session_id: str
-    message: str    
-
+    message: str
 class CostPerInteraction(Base):
     __tablename__ = "cost_per_interaction"
 
@@ -1790,7 +1804,11 @@ async def chat_with_ai(req: StartConversationRequest):
 
 MAX_EXCHANGES = 5  # 5 exchanges = 10 messages (user+assistant)
 @app.post("/send_message_anz_way_model_evaluation")
-async def send_message(req: SendMessageRequest):
+async def send_message(
+    req: SendMessageRequest,
+    token: Optional[str] = Depends(get_token),
+    db: Session = Depends(get_db)
+):    
     global sessions
 
     try:
@@ -1812,6 +1830,62 @@ async def send_message(req: SendMessageRequest):
         # Check if max exchanges reached
         if len(session_history) >= MAX_EXCHANGES * 2:
             print(f"[INFO] Max exchanges reached for session {req.session_id}")
+        
+            # --- Evaluate preparedness before ending session ---
+            try:
+                print("[DEBUG] Preparing final AI evaluation for DB save")
+        
+                # Construct prompt for AI to extract question and preparedness
+                final_prompt = f"""
+                You are an AI tutor evaluating a student's exam preparation.
+        
+                Here is the full conversation between the student and the AI tutor:
+                {session_history}
+        
+                Task:
+                1. Extract the main exam question the student was preparing for.
+                2. Assess the student's preparedness using one label: "Well prepared", "Needs improvement", "Not prepared".
+        
+                Return strictly in JSON format:
+                {{
+                    "question_text": "...",
+                    "preparedness_level": "..."
+                }}
+                """
+                print(f"[DEBUG] Sending final evaluation prompt to OpenAI (truncated 200 chars): {final_prompt[:200]}...")
+        
+                # Call OpenAI API
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": final_prompt}]
+                )
+        
+                reply_content = response.choices[0].message.content
+                print(f"[DEBUG] Received final AI evaluation reply (truncated 200 chars): {reply_content[:200]}")
+        
+                # Parse JSON response
+                summary = json.loads(reply_content)
+                extracted_question = summary.get("question_text", "N/A")
+                preparedness_level = summary.get("preparedness_level", "Not prepared")
+                print(f"[DEBUG] Extracted question (truncated 100 chars): {extracted_question[:100]}")
+                print(f"[DEBUG] Preparedness level: {preparedness_level}")
+        
+                # Save evaluation to database
+                new_reflection = StudentReflection(
+                    student_id=req.id,            # replace with actual student ID if available
+                    question_text=extracted_question,
+                    preparedness_level=preparedness_level
+                )
+                db.add(new_reflection)
+                db.commit()
+                db.refresh(new_reflection)
+                print(f"[DB] Saved student reflection with ID {new_reflection.id}")
+        
+            except Exception as e:
+                db.rollback()
+                print("[ERROR] Failed to save student reflection:", e)
+        
+            # Return response to frontend
             return JSONResponse(
                 status_code=200,
                 content={
@@ -1819,8 +1893,7 @@ async def send_message(req: SendMessageRequest):
                     "session_id": req.session_id,
                     "conversation_ended": True
                 }
-            )
-
+            ) 
         # Append user message to session
         session_history.append({"role": "user", "content": req.message})
         print(f"[DEBUG] Appended user message. Session length now: {len(session_history)}")
@@ -5017,6 +5090,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
