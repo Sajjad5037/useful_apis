@@ -1783,10 +1783,8 @@ async def chat_with_ai(req: StartConversationRequest):
         print(f"[ERROR] Unexpected error: {str(e)}")
         print(traceback.format_exc())
         return JSONResponse(
-            content={"status": "error", "detail": str(e)},
-            headers=cors_headers
+            content={"status": "error", "detail": str(e)}
         )
-
 
 
 MAX_EXCHANGES = 5  # 5 exchanges = 10 messages (user+assistant)
@@ -5013,6 +5011,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
