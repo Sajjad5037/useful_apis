@@ -1839,20 +1839,22 @@ async def send_message(
                 # Construct prompt for AI to extract question and preparedness
                 final_prompt = f"""
                 You are an AI tutor evaluating a student's exam preparation.
-            
-                Here is the full conversation between the student and the AI tutor:
+                
+                Instructions:
+                1. From the conversation below, extract the main exam question that the student was preparing for. Use the **most recent relevant question**.
+                2. Assess the student's preparedness using **exactly one of these labels**: "Well prepared", "Needs improvement", "Not prepared".
+                3. Return the result **strictly in pure JSON only** — do not include backticks, markdown, explanations, or any extra text.
+                
+                Conversation:
                 {session_history}
-            
-                Task:
-                1. Extract the main exam question the student was preparing for.
-                2. Assess the student's preparedness using one label: "Well prepared", "Needs improvement", "Not prepared".
-            
-                Return strictly in JSON format:
+                
+                Output JSON format (strictly):
                 {{
                     "question_text": "...",
                     "preparedness_level": "..."
                 }}
                 """
+
                 print(f"[DEBUG] Sending final evaluation prompt to OpenAI (truncated 200 chars): {final_prompt[:200]}...")
             
                 # Call OpenAI API
@@ -5099,6 +5101,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
