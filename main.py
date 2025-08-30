@@ -1835,18 +1835,18 @@ async def send_message(
             # --- Evaluate preparedness before ending session ---
             try:
                 print("[DEBUG] Preparing final AI evaluation for DB save")
-        
+            
                 # Construct prompt for AI to extract question and preparedness
                 final_prompt = f"""
                 You are an AI tutor evaluating a student's exam preparation.
-        
+            
                 Here is the full conversation between the student and the AI tutor:
                 {session_history}
-        
+            
                 Task:
                 1. Extract the main exam question the student was preparing for.
                 2. Assess the student's preparedness using one label: "Well prepared", "Needs improvement", "Not prepared".
-        
+            
                 Return strictly in JSON format:
                 {{
                     "question_text": "...",
@@ -1854,34 +1854,42 @@ async def send_message(
                 }}
                 """
                 print(f"[DEBUG] Sending final evaluation prompt to OpenAI (truncated 200 chars): {final_prompt[:200]}...")
-        
+            
                 # Call OpenAI API
                 response = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[{"role": "user", "content": final_prompt}]
                 )
-        
+            
                 reply_content = response.choices[0].message.content
                 print(f"[DEBUG] Received final AI evaluation reply (truncated 200 chars): {reply_content[:200]}")
-        
+            
                 # Parse JSON response
                 summary = json.loads(reply_content)
                 extracted_question = summary.get("question_text", "N/A")
-                preparedness_level = summary.get("preparedness_level", "Not prepared")
+                ai_label = summary.get("preparedness_level", "Not prepared")
                 print(f"[DEBUG] Extracted question (truncated 100 chars): {extracted_question[:100]}")
-                print(f"[DEBUG] Preparedness level: {preparedness_level}")
-        
+                print(f"[DEBUG] AI reported preparedness level: {ai_label}")
+            
+                # Convert AI string to Enum
+                ai_enum_value = ai_label.lower().replace(" ", "_")
+                try:
+                    preparedness_enum = PreparednessLevel(ai_enum_value)
+                except ValueError:
+                    print(f"[WARNING] AI returned unexpected preparedness value '{ai_label}', defaulting to 'needs_improvement'")
+                    preparedness_enum = PreparednessLevel.needs_improvement
+            
                 # Save evaluation to database
                 new_reflection = StudentReflection(
-                    student_id=req.id,            # replace with actual student ID if available
+                    student_id=req.id,
                     question_text=extracted_question,
-                    preparedness_level=preparedness_level
+                    preparedness_level=preparedness_enum
                 )
                 db.add(new_reflection)
                 db.commit()
                 db.refresh(new_reflection)
                 print(f"[DB] Saved student reflection with ID {new_reflection.id}")
-        
+            
             except Exception as e:
                 db.rollback()
                 print("[ERROR] Failed to save student reflection:", e)
@@ -5091,6 +5099,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
