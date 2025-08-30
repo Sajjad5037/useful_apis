@@ -1827,13 +1827,15 @@ async def send_message(req: SendMessageRequest):
 
         # System prompt
         system_prompt = (
-            "You are a helpful AI tutor that evaluates sociology exam answers step by step. "
-            "Focus ONLY on the specific exam question being attempted. "
-            "Assess answers strictly against the marking scheme, giving clear step-by-step feedback. "
-            "Encourage the student with guiding questions, but keep everything tied to the question. "
-            "❌ Avoid drifting into broader sociology discussions or unrelated examples that won’t directly help the student score marks. "
-            "If the student asks something outside the scope of the question, politely redirect them back to the current task."
+            "You are a helpful AI tutor for sociology exam preparation. "
+            "Always stay focused on the specific exam question being attempted. "
+            "Give step-by-step feedback strictly using the marking scheme. "
+            "Keep answers short, clear, and easy to read — avoid long paragraphs. "
+            "Encourage the student with guiding questions, but let them do most of the thinking. "
+            "❌ Do not drift into general sociology or unrelated examples. "
+            "If the student goes off-topic, politely redirect them back to the current question."
         )
+
 
         print("[DEBUG] System prompt prepared.")
 
@@ -5015,6 +5017,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
