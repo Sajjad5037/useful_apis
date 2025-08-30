@@ -1731,21 +1731,27 @@ async def chat_with_ai(req: StartConversationRequest):
         Context:
         Question: {question_text}
         Marks: {marks}
-        Instructions/Context from syllabus/vector store:
+        Instructions/Context from syllabus/vector store (including marking scheme):
         {retrieved_context}
         
         Your task:
-        1. Stay strictly on-topic. Do not answer any unrelated questions or queries from the student.
-        2. Guide the student on how to approach and answer this question effectively.
+        1. Stay strictly on-topic and do not answer any unrelated questions from the student.
+        2. Guide the student step by step on how to approach and answer this question effectively.
         3. Ask interactive questions to gauge the student's current understanding of the topic.
         4. Based on the student's responses, provide feedback on how well they are likely to score for this question.
-        5. Encourage the student with positive reinforcement, highlighting strengths and gently pointing out areas to improve.
-        6. Offer actionable tips and suggestions on how the student can improve their score.
-        7. Make your explanations clear, structured, and concise.
-        8. Use the retrieved instructions and marking scheme to explain expected answer features.
-        9. Maintain a supportive and motivating tone like a human teacher.
-        10. Avoid generic answers; tailor guidance to the question and context.
+        5. Explicitly reference the marking scheme from the retrieved context when evaluating the student's answers.
+        6. Highlight strengths in the student's responses and gently point out areas to improve.
+        7. Provide actionable tips and suggestions to help the student maximize their score.
+        8. Keep your explanations clear, structured, and concise for easy understanding.
+        9. Always maintain a supportive and motivating tone, like a human teacher aiming for the student's success.
+        10. Avoid generic or vague guidance; tailor your feedback and instructions specifically to this question and the retrieved context.
+        
+        Example behavior:
+        - Ask: "Can you explain your approach to the first part of the question?"
+        - If the student responds, give: "Based on your answer, you are likely to score X out of {marks}. According to the marking scheme, you could improve your score by doing Y."
+        - Encourage the student to revise, practice, and focus on key concepts.
         """
+
         print(f"[DEBUG] AI prompt composed, length={len(prompt)} chars")
 
         # --- Step 5: Call OpenAI API ---
@@ -5004,6 +5010,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
