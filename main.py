@@ -1809,7 +1809,6 @@ MAX_EXCHANGES = 5  # 5 exchanges = 10 messages (user+assistant)
 @app.post("/send_message_anz_way_model_evaluation")
 async def send_message(
     req: SendMessageRequest,
-    token: Optional[str] = Depends(get_token),
     db: Session = Depends(get_db)
 ):    
     global sessions
@@ -5093,6 +5092,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
