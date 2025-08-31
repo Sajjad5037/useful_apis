@@ -1924,6 +1924,43 @@ def check_user_access(username: str, db: Session = Depends(get_db)):
     print(f"[DEBUG] Response content prepared: {response_content}")
 
     return JSONResponse(content=response_content)
+@app.get("/users_total_usage")
+def users_total_usage(
+    min_usage: float = Query(0.0, description="Minimum usage to filter users"),
+    max_usage: float = Query(1000.0, description="Maximum usage to filter users"),
+    db: Session = Depends(get_db)
+):
+    print("[DEBUG] --- /users_total_usage called ---")
+    print(f"[DEBUG] min_usage: {min_usage}, max_usage: {max_usage}")
+
+    try:
+        # Query total cost per user
+        query = (
+            db.query(
+                CostPerInteraction.username,
+                func.sum(CostPerInteraction.cost_usd).label("total_cost")
+            )
+            .group_by(CostPerInteraction.username)
+            .having(func.sum(CostPerInteraction.cost_usd) >= min_usage)
+            .having(func.sum(CostPerInteraction.cost_usd) <= max_usage)
+        )
+
+        result = query.all()
+        print(f"[DEBUG] Retrieved {len(result)} users matching filter")
+
+        users = []
+        for r in result:
+            user_data = {"username": r.username, "total_cost": float(r.total_cost)}
+            print(f"[DEBUG] User data: {user_data}")
+            users.append(user_data)
+
+        print(f"[DEBUG] Response content prepared with {len(users)} users")
+        return JSONResponse(content={"users": users})
+
+    except Exception as e:
+        print(f"[ERROR] Exception in /users_total_usage: {e}")
+        return JSONResponse(content={"users": [], "error": str(e)}, status_code=500)
+        
 
 #when start conversation is pressed
 @app.post("/chat_anz_way_model_evaluation")
@@ -5234,6 +5271,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
