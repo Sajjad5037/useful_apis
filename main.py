@@ -2410,8 +2410,11 @@ async def train_on_images_anz_way(
     subject: str = Form(...),
     question_text: str = Form(...),
     total_marks: int = Form(...),
+    minimum_word_count: int = Form(...),  # Added to match front-end
+    username: str = Form(...),             # Added to match front-end
     request: Request = None
 ):
+    
     origin = request.headers.get("origin") if request else "*"
     cors_headers = {
         "Access-Control-Allow-Origin": origin,
@@ -2498,8 +2501,10 @@ async def train_on_images_anz_way(
         total_marks=total_marks,
         qa_chain=qa_chain_anz_way,
         minimum_word_count=minimum_word_count,
-        student_response=student_response
+        student_response=student_response,
+        username=username  # <-- added username argument
     )
+
 
     # Prepare response for frontend
     response_payload = {
@@ -2519,11 +2524,11 @@ async def evaluate_student_response_from_images_new(
     images: List[UploadFile],
     question_text: str,
     total_marks: int,
-    qa_chain,  # RetrievalQA
+    qa_chain,                 # RetrievalQA
     minimum_word_count: int = 80,
-    student_response: str = None
-):
-    """
+    student_response: str = None,
+    username: str = None       # <-- added username
+):    """
     Evaluate a student's response (text + optional diagrams) against a question.
     Returns structured, free-form text suitable for front-end display.
     Explicitly informs the model about total marks and marking rules for consistency.
@@ -2626,16 +2631,30 @@ Do NOT return JSON or any other structured format.
     print(evaluation_prompt)
     print("=" * 80)
 
-    # Step 4: Run evaluation
+    # Step 4: Call underlying LLM directly to capture usage
     try:
-        evaluation_result = qa_chain.run(evaluation_prompt)
-        print("[DEBUG] Received evaluation result from QA chain (raw):")
-        print(evaluation_result)
-        print("=" * 80)
+        llm = qa_chain.llm  # ChatOpenAI instance
+        response = await llm.acall([{"role": "user", "content": evaluation_prompt}])
+        evaluation_text = response.content
+        usage = getattr(response, "usage", None)
+
+        # Step 5: Log usage to DB if available
+        if usage and username:
+            log_to_db(
+                db,
+                username=username,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                total_tokens=usage.total_tokens,
+                model_name="gpt-4o-mini"
+            )
+            print("[DEBUG] Token usage logged successfully.")
+        else:
+            print("[DEBUG] No usage info available to log.")
 
         return {
             "status": "success",
-            "evaluation_text": evaluation_result,
+            "evaluation_text": evaluation_text,
             "total_marks": total_marks,
             "minimum_word_count": minimum_word_count,
             "student_response": student_response
@@ -2643,10 +2662,7 @@ Do NOT return JSON or any other structured format.
 
     except Exception as e:
         print(f"[ERROR] Evaluation failed: {e}")
-        return {
-            "status": "error",
-            "detail": str(e)
-        }
+        return {"status": "error", "detail": str(e)}
 
 
 
@@ -5328,6 +5344,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
