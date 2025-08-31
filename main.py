@@ -1811,64 +1811,25 @@ def initialize_qa_chain_with_cost(bucket_name: str, folder_in_bucket: str, usern
         retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 6})
         print("[DEBUG] Retriever created successfully.")
 
-        # Step 5: Create QA chain
+        # Step 5: Create QA chain (same as before)
         print("[DEBUG] Creating RetrievalQA chain...")
-        base_chain = RetrievalQA.from_chain_type(
+        qa_chain_anz_way = RetrievalQA.from_chain_type(
             llm=ChatOpenAI(model="gpt-4o-mini", openai_api_key=openai_api_key),
             retriever=retriever,
             chain_type="stuff"
         )
         print("[DEBUG] QA chain created successfully.")
 
-        # --- Wrapper class to log cost automatically ---
-        class QAChainWithCost:
-            def __init__(self, chain, username):
-                self.chain = chain
-                self.username = username
+        # Attach username so run() calls can log cost later
+        qa_chain_anz_way.username = username  
 
-            def run(self, query: str):
-                print("[DEBUG] Running QA chain...")
-                result = self.chain.run(query)
-                print("[DEBUG] QA chain run completed.")
-
-                # Extract token usage
-                usage = getattr(self.chain.llm, "last_token_usage", {})
-                prompt_tokens = usage.get("prompt_tokens", 0)
-                completion_tokens = usage.get("completion_tokens", 0)
-                total_tokens = usage.get("total_tokens", 0)
-                print(f"[DEBUG] Token usage: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}")
-
-                # Calculate cost
-                cost_usd = calculate_cost(self.chain.llm.model_name, prompt_tokens, completion_tokens)
-
-                # Log to database
-                print("[DEBUG] Logging cost to database...")
-                try:
-                    with SessionLocal() as session:
-                        interaction = CostPerInteraction(
-                            username=self.username,
-                            model=self.chain.llm.model_name,
-                            prompt_tokens=prompt_tokens,
-                            completion_tokens=completion_tokens,
-                            total_tokens=total_tokens,
-                            cost_usd=Decimal(cost_usd)
-                        )
-                        session.add(interaction)
-                        session.commit()
-                    print("[DEBUG] Cost logged successfully.")
-                except Exception as e:
-                    print(f"[ERROR] Failed to log cost: {e}")
-
-                return result
-
-        # Wrap the chain
-        qa_chain_anz_way = QAChainWithCost(base_chain, username)
         print("[DEBUG] QA Chain (anz way) initialized successfully.")
         return qa_chain_anz_way
 
     except Exception as e:
         print(f"[ERROR] Failed to initialize QA Chain (anz way): {e}")
         traceback.print_exc()
+        return None
 
 
 def log_to_db(
@@ -1905,9 +1866,11 @@ def log_to_db(
 
     print(f"[DEBUG] Token usage logged for user={username}, model={model_name}, total={total_tokens}, cost=${cost_usd:.6f}")
 
-#when start conversation is pressed
-@app.post("/chat_anz_way_model_evaluation")
-async def chat_with_ai(req: StartConversationRequest):
+#when start conversation is pressed@app.post("/chat_anz_way_model_evaluation")
+async def chat_with_ai(
+    req: StartConversationRequest,
+    db: Session = Depends(get_db)   # <-- injects DB session
+):
     try:
         subject = req.subject
         question_text = req.question_text
@@ -5318,6 +5281,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
