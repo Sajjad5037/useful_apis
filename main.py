@@ -1933,15 +1933,18 @@ def check_user_access(username: str, db: Session = Depends(get_db)):
     
     
 
-@app.get("/users_total_usage_tokens")
-def users_total_usage_tokens(db: Session = Depends(get_db)):
-    # Query sum of tokens and cost dynamically per user
+@app.get("/users_total_usage")
+def users_total_usage(
+    min_usage: float = Query(0, description="Minimum usage filter"),
+    max_usage: float = Query(1000, description="Maximum usage filter"),
+    db: Session = Depends(get_db)
+):
+    # Query sum of tokens and cost per user
     users = db.query(
         CostPerInteraction.username,
         func.sum(CostPerInteraction.total_tokens).label("total_tokens"),
         func.sum(CostPerInteraction.prompt_tokens).label("total_prompt_tokens"),
-        func.sum(CostPerInteraction.completion_tokens).label("total_completion_tokens"),
-        func.sum(CostPerInteraction.cost_usd).label("old_total_cost")
+        func.sum(CostPerInteraction.completion_tokens).label("total_completion_tokens")
     ).group_by(CostPerInteraction.username).all()
 
     response = []
@@ -1949,17 +1952,18 @@ def users_total_usage_tokens(db: Session = Depends(get_db)):
         # Compute USD using latest per-token rates
         prompt_cost = MODEL_COST_PER_TOKEN["gpt-4o-mini"]["prompt"]
         completion_cost = MODEL_COST_PER_TOKEN["gpt-4o-mini"]["completion"]
-
         total_usd = (u.total_prompt_tokens * prompt_cost) + (u.total_completion_tokens * completion_cost)
 
-        response.append({
-            "username": u.username,
-            "total_tokens": int(u.total_tokens),
-            "total_usage_usd": float(total_usd)
-        })
+        # Apply filter
+        if min_usage <= total_usd <= max_usage:
+            response.append({
+                "username": u.username,
+                "total_tokens": int(u.total_tokens),
+                "total_usage_usd": float(total_usd)
+            })
 
     return JSONResponse(content=response)
-
+    
 #when start conversation is pressed
 @app.post("/chat_anz_way_model_evaluation")
 async def chat_with_ai(
@@ -5269,6 +5273,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
