@@ -5,6 +5,7 @@ import vertexai
 import sys
 import fitz 
 from google.cloud import storage
+from models import TokenUsage
 from vertexai.generative_models import GenerativeModel, Part
 from uuid import uuid4
 from sqlalchemy.dialects.postgresql import JSONB
@@ -84,6 +85,12 @@ vectorstore = None
 total_pdf = 0
 import tempfile
 
+
+MODEL_COSTS = {
+    "gpt-4o-mini": {"prompt": 0.00000015, "completion": 0.00000060},  # USD per token
+    "gpt-4": {"prompt": 0.0000030, "completion": 0.0000060},
+    # add other models if needed
+}
 
 USAGE_LIMIT_INCREASE = 5.0  # dollars
 vertexai.init(project="dazzling-tensor-455512-j1", location="us-central1")
@@ -1813,15 +1820,15 @@ def initialize_qa_chain_with_cost(bucket_name: str, folder_in_bucket: str, usern
         )
         print("[DEBUG] QA chain created successfully.")
 
-        # --- Wrap the chain call to log cost ---
-        original_call = base_chain.__call__
+        # --- Wrap run() to log cost automatically ---
+        original_run = base_chain.run
 
-        def call_with_cost(*args, **kwargs):
-            print("[DEBUG] Calling QA chain...")
-            result = original_call(*args, **kwargs)
-            print("[DEBUG] QA chain call completed.")
+        def run_with_cost(*args, **kwargs):
+            print("[DEBUG] Running QA chain...")
+            result = original_run(*args, **kwargs)
+            print("[DEBUG] QA chain run completed.")
 
-            # Extract token usage if available
+            # Extract token usage
             usage = getattr(base_chain.llm, "last_token_usage", {})
             prompt_tokens = usage.get("prompt_tokens", 0)
             completion_tokens = usage.get("completion_tokens", 0)
@@ -1831,7 +1838,8 @@ def initialize_qa_chain_with_cost(bucket_name: str, folder_in_bucket: str, usern
             # Calculate cost
             cost_usd = calculate_cost(base_chain.llm.model_name, prompt_tokens, completion_tokens)
 
-            # Log cost to DB
+            # Log to database
+            print("[DEBUG] Logging cost to database...")
             try:
                 with SessionLocal() as session:
                     interaction = CostPerInteraction(
@@ -1844,15 +1852,13 @@ def initialize_qa_chain_with_cost(bucket_name: str, folder_in_bucket: str, usern
                     )
                     session.add(interaction)
                     session.commit()
-                print(f"[DEBUG] Cost logged successfully for user '{username}'")
+                print("[DEBUG] Cost logged successfully.")
             except Exception as e:
                 print(f"[ERROR] Failed to log cost: {e}")
 
             return result
 
-        # Assign the wrapped call
-        base_chain.__call__ = call_with_cost
-
+        base_chain.run = run_with_cost
         qa_chain_anz_way = base_chain
         print("[DEBUG] QA Chain (anz way) initialized successfully.")
         return qa_chain_anz_way
@@ -1860,10 +1866,41 @@ def initialize_qa_chain_with_cost(bucket_name: str, folder_in_bucket: str, usern
     except Exception as e:
         print(f"[ERROR] Failed to initialize QA Chain (anz way): {e}")
         traceback.print_exc()
-        return None
 
 
+def log_to_db(
+    db: Session,
+    username: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    total_tokens: int,
+    model_name: str
+):
+    """Logs token usage + cost into the DB using SQLAlchemy ORM session."""
 
+    # Get token pricing (fallback = 0)
+    cost_info = MODEL_COSTS.get(model_name, {"prompt": 0, "completion": 0})
+
+    # Calculate cost
+    cost_usd = (
+        (prompt_tokens * cost_info["prompt"]) +
+        (completion_tokens * cost_info["completion"])
+    )
+
+    new_entry = CostPerInteraction(
+        username=username,
+        model=model_name,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        cost_usd=Decimal(str(cost_usd))  # ensures precision
+    )
+
+    db.add(new_entry)
+    db.commit()
+    db.refresh(new_entry)
+
+    print(f"[DEBUG] Token usage logged for user={username}, model={model_name}, total={total_tokens}, cost=${cost_usd:.6f}")
 
 #when start conversation is pressed
 @app.post("/chat_anz_way_model_evaluation")
@@ -1959,6 +1996,9 @@ async def chat_with_ai(req: StartConversationRequest):
 
         ai_reply = response.choices[0].message.content.strip()
         print(f"[DEBUG] Received AI reply (truncated 200 chars): {ai_reply[:200]}")
+
+        usage = response.usage
+        log_to_db(db, username, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-mini")
 
         # --- Step 6: Store session messages ---
         sessions[session_id].append({"role": "user", "content": question_text})
