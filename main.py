@@ -639,7 +639,12 @@ def get_db():
         yield db
     finally:
         db.close()
+        
 def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """
+    Calculate the total cost for a model call, multiplying the final cost by 3
+    before returning (e.g., to account for pricing adjustments or markups).
+    """
     try:
         print(f"[DEBUG] Calculating cost for model: {model}")
         print(f"[DEBUG] Prompt tokens: {prompt_tokens}")
@@ -660,7 +665,11 @@ def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> fl
         print(f"[DEBUG] Completion cost: {completion_cost}")
 
         total_cost = prompt_cost + completion_cost
-        print(f"[DEBUG] Total cost before rounding: {total_cost}")
+        print(f"[DEBUG] Total cost before rounding and multiplier: {total_cost}")
+
+        # Multiply total cost by 3
+        total_cost *= 3
+        print(f"[DEBUG] Total cost after multiplying by 3: {total_cost}")
 
         total_cost_rounded = round(total_cost, 6)
         print(f"[DEBUG] Total cost after rounding: {total_cost_rounded}")
@@ -5302,6 +5311,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
