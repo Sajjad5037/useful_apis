@@ -1866,7 +1866,8 @@ def log_to_db(
 
     print(f"[DEBUG] Token usage logged for user={username}, model={model_name}, total={total_tokens}, cost=${cost_usd:.6f}")
 
-#when start conversation is pressed@app.post("/chat_anz_way_model_evaluation")
+#when start conversation is pressed
+@app.post("/chat_anz_way_model_evaluation")
 async def chat_with_ai(
     req: StartConversationRequest,
     db: Session = Depends(get_db)   # <-- injects DB session
@@ -5281,6 +5282,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
