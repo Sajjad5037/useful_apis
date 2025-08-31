@@ -85,7 +85,7 @@ vectorstore = None
 total_pdf = 0
 import tempfile
 
-MAX_USER_COST = 2.0 #dollars
+MAX_USER_COST = 0.4 #dollars
 MODEL_COSTS = {
     "gpt-4o-mini": {"prompt": 0.00000015, "completion": 0.0000006},  # per token
     "text-embedding-3-small": {"embedding": 0.00000002},   # $0.02 / 1M tokens
@@ -5234,6 +5234,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
