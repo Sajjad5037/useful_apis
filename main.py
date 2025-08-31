@@ -183,6 +183,9 @@ s3 = boto3.client(
 )
 # for solving math problem after exxtracing from images
 
+class StudentUsageRequest(BaseModel):
+    student_name: str
+
 class StudentReflectionSchema(BaseModel):
     id: int
     student_id: int
@@ -1881,6 +1884,20 @@ def log_to_db(
 
     print(f"[DEBUG] Token usage logged: user={username}, model={model_name}, tokens={total_tokens}, cost=${cost_usd:.6f}")
 
+@app.post("/student_total_usage")
+def get_student_total_usage(req: StudentUsageRequest, db: Session = Depends(get_db)):
+    try:
+        # Sum total cost for the given student
+        total_usage = db.query(func.sum(CostPerInteraction.cost_usd)) \
+                        .filter(CostPerInteraction.username == req.student_name) \
+                        .scalar() or 0.0
+
+        return {"total_usage_usd": float(total_usage)}
+
+    except Exception as e:
+        print(f"[ERROR] Failed to get student usage: {e}")
+        return {"total_usage_usd": 0.0}
+        
 
 #when start conversation is pressed
 @app.post("/chat_anz_way_model_evaluation")
@@ -5311,6 +5328,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
