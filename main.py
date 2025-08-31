@@ -1901,52 +1901,29 @@ def get_student_total_usage(req: StudentUsageRequest, db: Session = Depends(get_
 
 @app.get("/check-user-access")
 def check_user_access(username: str, db: Session = Depends(get_db)):
-    """
-    Returns the total accumulated cost for a user.
-    Frontend can use this to restrict access if limit is exceeded.
-    """
-
-    print("\n[DEBUG] --- check_user_access called ---")
+    print("[DEBUG] --- check_user_access called ---")
     print(f"[DEBUG] Username received: {username}")
 
-    try:
-        # Calculate total cost
-        total_cost_query = db.query(func.sum(CostPerInteraction.cost_usd)).filter(
-            CostPerInteraction.username == username
-        )
-        total_cost = total_cost_query.scalar() or 0.0
+    # Query total cost
+    total_cost = db.query(func.sum(CostPerInteraction.cost_usd)).filter(
+        CostPerInteraction.username == username
+    ).scalar() or 0.0
 
-        print(f"[DEBUG] Total cost query executed: {total_cost_query}")
-        print(f"[DEBUG] Total accumulated cost for user '{username}': {total_cost:.4f} USD")
+    print(f"[DEBUG] Total accumulated cost for user '{username}': {total_cost} USD")
 
-        # Determine access
-        access_allowed = total_cost < MAX_USER_COST
-        if access_allowed:
-            print(f"[DEBUG] Access allowed: total_cost < MAX_USER_COST ({total_cost:.4f} < {MAX_USER_COST})")
-        else:
-            print(f"[DEBUG] Access denied: total_cost >= MAX_USER_COST ({total_cost:.4f} >= {MAX_USER_COST})")
+    access_allowed = total_cost < MAX_USER_COST
+    print(f"[DEBUG] Access allowed: total_cost < MAX_USER_COST ({total_cost} < {MAX_USER_COST})")
 
-        response_content = {
-            "username": username,
-            "total_cost": round(total_cost, 4),
-            "access_allowed": access_allowed,
-            "max_allowed_cost": MAX_USER_COST
-        }
+    response_content = {
+        "username": username,
+        "total_cost": float(total_cost),  # <-- convert Decimal to float
+        "access_allowed": access_allowed,
+        "max_allowed_cost": MAX_USER_COST
+    }
 
-        print(f"[DEBUG] Response content prepared: {response_content}")
-        return JSONResponse(content=response_content)
+    print(f"[DEBUG] Response content prepared: {response_content}")
 
-    except Exception as e:
-        print(f"[ERROR] Exception while checking user access: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "username": username,
-                "error": str(e),
-                "access_allowed": False
-            }
-        )
-
+    return JSONResponse(content=response_content)
 
 #when start conversation is pressed
 @app.post("/chat_anz_way_model_evaluation")
@@ -5257,6 +5234,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
