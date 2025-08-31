@@ -2519,7 +2519,6 @@ async def train_on_images_anz_way(
     return JSONResponse(content=response_payload, headers=cors_headers)
 
 
-
 async def evaluate_student_response_from_images_new(
     images: List[UploadFile],
     question_text: str,
@@ -2528,7 +2527,8 @@ async def evaluate_student_response_from_images_new(
     minimum_word_count: int = 80,
     student_response: str = None,
     username: str = None       # <-- added username
-):    """
+):
+    """
     Evaluate a student's response (text + optional diagrams) against a question.
     Returns structured, free-form text suitable for front-end display.
     Explicitly informs the model about total marks and marking rules for consistency.
@@ -2578,7 +2578,7 @@ async def evaluate_student_response_from_images_new(
         retrieved_context = "\n".join([doc.page_content for doc in retrieved_docs])
         print(f"[DEBUG] Retrieved {len(retrieved_docs)} documents, total length: {len(retrieved_context)} chars")
 
-    # Step 3: Construct evaluation prompt (explicitly pass total_marks)
+    # Step 3: Construct evaluation prompt
     evaluation_prompt = f"""
 You are an expert sociology examiner and a supportive teacher.
 Use ONLY the retrieved instructions below to evaluate the student's response.
@@ -2626,7 +2626,6 @@ Task:
 Format output as **structured, human-readable text** with headings and bullet points.
 Do NOT return JSON or any other structured format.
 """
-
     print("[DEBUG][PROMPT] Evaluation prompt sent to QA chain:")
     print(evaluation_prompt)
     print("=" * 80)
@@ -5344,6 +5343,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
