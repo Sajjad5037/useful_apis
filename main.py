@@ -1925,12 +1925,12 @@ def check_user_access(username: str, db: Session = Depends(get_db)):
 
     return JSONResponse(content=response_content)
     
- MODEL_COST_PER_TOKEN = {
+    
+MODEL_COST_PER_TOKEN = {
     "gpt-4o-mini": {"prompt": 0.000000056, "completion": 0.000000223},
     "text-embedding-3-small": {"embedding": 0.00000002},
     "text-embedding-3-large": {"embedding": 0.00000013},
-}   
-
+}
 
 @app.get("/users_total_usage_tokens")
 def users_total_usage_tokens(db: Session = Depends(get_db)):
@@ -5268,6 +5268,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
