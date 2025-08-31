@@ -1925,47 +1925,39 @@ def check_user_access(username: str, db: Session = Depends(get_db)):
 
     return JSONResponse(content=response_content)
     
-@app.get("/users_total_usage")
-def users_total_usage(
-    min_usage: float = Query(0.0, description="Minimum usage to filter users"),
-    max_usage: float = Query(1000.0, description="Maximum usage to filter users"),
-    db: Session = Depends(get_db)
-):
-    print("[DEBUG] --- /users_total_usage called ---")
-    print(f"[DEBUG] min_usage: {min_usage}, max_usage: {max_usage}")
+ MODEL_COST_PER_TOKEN = {
+    "gpt-4o-mini": {"prompt": 0.000000056, "completion": 0.000000223},
+    "text-embedding-3-small": {"embedding": 0.00000002},
+    "text-embedding-3-large": {"embedding": 0.00000013},
+}   
 
-    try:
-        # Query total cost and total tokens per user
-        query = (
-            db.query(
-                CostPerInteraction.username,
-                func.sum(CostPerInteraction.cost_usd).label("total_cost"),
-                func.sum(CostPerInteraction.total_tokens).label("total_tokens")
-            )
-            .group_by(CostPerInteraction.username)
-            .having(func.sum(CostPerInteraction.cost_usd) >= min_usage)
-            .having(func.sum(CostPerInteraction.cost_usd) <= max_usage)
-        )
 
-        result = query.all()
-        print(f"[DEBUG] Retrieved {len(result)} users matching filter")
+@app.get("/users_total_usage_tokens")
+def users_total_usage_tokens(db: Session = Depends(get_db)):
+    # Query sum of tokens and cost dynamically per user
+    users = db.query(
+        CostPerInteraction.username,
+        func.sum(CostPerInteraction.total_tokens).label("total_tokens"),
+        func.sum(CostPerInteraction.prompt_tokens).label("total_prompt_tokens"),
+        func.sum(CostPerInteraction.completion_tokens).label("total_completion_tokens"),
+        func.sum(CostPerInteraction.cost_usd).label("old_total_cost")
+    ).group_by(CostPerInteraction.username).all()
 
-        users = []
-        for r in result:
-            user_data = {
-                "username": r.username,
-                "total_cost": float(r.total_cost),
-                "total_tokens": int(r.total_tokens)
-            }
-            print(f"[DEBUG] User data: {user_data}")
-            users.append(user_data)
+    response = []
+    for u in users:
+        # Compute USD using latest per-token rates
+        prompt_cost = MODEL_COST_PER_TOKEN["gpt-4o-mini"]["prompt"]
+        completion_cost = MODEL_COST_PER_TOKEN["gpt-4o-mini"]["completion"]
 
-        print(f"[DEBUG] Response content prepared with {len(users)} users")
-        return JSONResponse(content={"users": users})
+        total_usd = (u.total_prompt_tokens * prompt_cost) + (u.total_completion_tokens * completion_cost)
 
-    except Exception as e:
-        print(f"[ERROR] Exception in /users_total_usage: {e}")
-        return JSONResponse(content={"users": [], "error": str(e)}, status_code=500)        
+        response.append({
+            "username": u.username,
+            "total_tokens": int(u.total_tokens),
+            "total_usage_usd": float(total_usd)
+        })
+
+    return JSONResponse(content=response)
 
 #when start conversation is pressed
 @app.post("/chat_anz_way_model_evaluation")
@@ -5276,6 +5268,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
