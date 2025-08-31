@@ -1820,46 +1820,49 @@ def initialize_qa_chain_with_cost(bucket_name: str, folder_in_bucket: str, usern
         )
         print("[DEBUG] QA chain created successfully.")
 
-        # --- Wrap run() to log cost automatically ---
-        original_run = base_chain.run
+        # --- Wrapper class to log cost automatically ---
+        class QAChainWithCost:
+            def __init__(self, chain, username):
+                self.chain = chain
+                self.username = username
 
-        def run_with_cost(*args, **kwargs):
-            print("[DEBUG] Running QA chain...")
-            result = original_run(*args, **kwargs)
-            print("[DEBUG] QA chain run completed.")
+            def run(self, query: str):
+                print("[DEBUG] Running QA chain...")
+                result = self.chain.run(query)
+                print("[DEBUG] QA chain run completed.")
 
-            # Extract token usage
-            usage = getattr(base_chain.llm, "last_token_usage", {})
-            prompt_tokens = usage.get("prompt_tokens", 0)
-            completion_tokens = usage.get("completion_tokens", 0)
-            total_tokens = usage.get("total_tokens", 0)
-            print(f"[DEBUG] Token usage: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}")
+                # Extract token usage
+                usage = getattr(self.chain.llm, "last_token_usage", {})
+                prompt_tokens = usage.get("prompt_tokens", 0)
+                completion_tokens = usage.get("completion_tokens", 0)
+                total_tokens = usage.get("total_tokens", 0)
+                print(f"[DEBUG] Token usage: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}")
 
-            # Calculate cost
-            cost_usd = calculate_cost(base_chain.llm.model_name, prompt_tokens, completion_tokens)
+                # Calculate cost
+                cost_usd = calculate_cost(self.chain.llm.model_name, prompt_tokens, completion_tokens)
 
-            # Log to database
-            print("[DEBUG] Logging cost to database...")
-            try:
-                with SessionLocal() as session:
-                    interaction = CostPerInteraction(
-                        username=username,
-                        model=base_chain.llm.model_name,
-                        prompt_tokens=prompt_tokens,
-                        completion_tokens=completion_tokens,
-                        total_tokens=total_tokens,
-                        cost_usd=Decimal(cost_usd)
-                    )
-                    session.add(interaction)
-                    session.commit()
-                print("[DEBUG] Cost logged successfully.")
-            except Exception as e:
-                print(f"[ERROR] Failed to log cost: {e}")
+                # Log to database
+                print("[DEBUG] Logging cost to database...")
+                try:
+                    with SessionLocal() as session:
+                        interaction = CostPerInteraction(
+                            username=self.username,
+                            model=self.chain.llm.model_name,
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                            total_tokens=total_tokens,
+                            cost_usd=Decimal(cost_usd)
+                        )
+                        session.add(interaction)
+                        session.commit()
+                    print("[DEBUG] Cost logged successfully.")
+                except Exception as e:
+                    print(f"[ERROR] Failed to log cost: {e}")
 
-            return result
+                return result
 
-        base_chain.run = run_with_cost
-        qa_chain_anz_way = base_chain
+        # Wrap the chain
+        qa_chain_anz_way = QAChainWithCost(base_chain, username)
         print("[DEBUG] QA Chain (anz way) initialized successfully.")
         return qa_chain_anz_way
 
@@ -5315,6 +5318,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
