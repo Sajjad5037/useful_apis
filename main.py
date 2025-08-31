@@ -235,10 +235,13 @@ class StartConversationRequest(BaseModel):
     subject: str
     marks: int
     question_text: str
+    username: str  # new field for tracking the user
+
 class SendMessageRequest(BaseModel):
     id: int          # Unique identifier, e.g., student or message ID
     session_id: str
     message: str
+    
 class CostPerInteraction(Base):
     __tablename__ = "cost_per_interaction"
 
@@ -1753,9 +1756,12 @@ async def chat_with_ai(req: StartConversationRequest):
         subject = req.subject
         question_text = req.question_text
         marks = req.marks
+        username = req.username 
 
         print("\n[DEBUG] --- /chat_anz_way_model_evaluation called ---")
-        print(f"[DEBUG] Received request: subject='{subject}', marks={marks}, question_text='{question_text[:100]}...'")
+        print(f"[DEBUG] Received request: subject='{subject}', marks={marks}, "
+        f"question_text='{question_text[:100]}...', username='{req.username}'")
+
 
         # --- Step 1: Initialize QA chain ---
         print(f"[DEBUG] Initializing QA chain for subject '{subject}'...")
@@ -5151,6 +5157,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
