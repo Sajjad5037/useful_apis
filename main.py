@@ -2192,7 +2192,7 @@ async def send_message(
 
 # a new evaluate your essay so that anser could include diagrams
 async def evaluate_student_response_from_images_new(
-    db: Session,                 # <-- database session for logging
+    db,                 # <-- database session for logging
     images: List[UploadFile],
     question_text: str,
     total_marks: int,
@@ -2415,26 +2415,19 @@ async def run_vision_on_image(image_file):
 
 
 #a new train-on-images so that answers could include diagrams
-
 @app.post("/train-on-images-anz-way-new")
 async def train_on_images_anz_way(
+    db: Session = Depends(get_db),
     images: List[UploadFile] = File(...),
     subject: str = Form(...),
     question_text: str = Form(...),
     total_marks: int = Form(...),
-    minimum_word_count: int = Form(...),  # Added to match front-end
-    username: str = Form(...),             # Added to match front-end
+    minimum_word_count: int = Form(...),
+    username: str = Form(...),
     request: Request = None
 ):
-    
-    origin = request.headers.get("origin") if request else "*"
-    cors_headers = {
-        "Access-Control-Allow-Origin": origin,
-        "Access-Control-Allow-Credentials": "true"
-    }
 
     global qa_chain_anz_way
-
     print("\n[DEBUG] New request received")
     print(f"[DEBUG] Question: {question_text}")
     print(f"[DEBUG] Total Marks: {total_marks}")
@@ -2450,32 +2443,19 @@ async def train_on_images_anz_way(
             )
             print(f"[DEBUG] qa_chain_anz_way initialized successfully for subject: {subject}")
         except Exception as e:
-            print(f"[ERROR] Failed to initialize QA chain for subject {subject}: {str(e)}")
-            return JSONResponse(
-                content={"status": "error", "detail": str(e)},
-                headers=cors_headers
-            )
+            print(f"[ERROR] Failed to initialize QA chain: {str(e)}")
+            return JSONResponse(content={"status": "error", "detail": str(e)}, headers=cors_headers)
 
     # Word count mapping
-    word_count_map = {
-        4: 50,     # 2–3 sentences, one developed point
-        6: 80,     # 2 developed points, brief examples
-        8: 120,    # 2–3 developed points, some application
-        10: 150,   # mini-essay, developed reasons + evidence
-        26: 450    # full essay, intro + multiple points + evaluation + conclusion
-    }
-
+    word_count_map = {4: 50, 6: 80, 8: 120, 10: 150, 26: 450}
     if total_marks not in word_count_map:
         return JSONResponse(
-            content={
-                "status": "error",
-                "detail": f"Invalid total_marks {total_marks}. Allowed values: {list(word_count_map.keys())}"
-            },
+            content={"status": "error", "detail": f"Invalid total_marks {total_marks}. Allowed: {list(word_count_map.keys())}"},
             headers=cors_headers
         )
     minimum_word_count = word_count_map[total_marks]
 
-    # Process images
+    # Process images: OCR + Vision AI
     combined_essay_text = ""
     combined_diagram_notes = ""
     for idx, image_file in enumerate(images, start=1):
@@ -2485,40 +2465,37 @@ async def train_on_images_anz_way(
         ocr_text = run_ocr_on_image(image_file)
         combined_essay_text += "\n" + ocr_text
 
-        # Vision AI (await properly)
-    diagram_notes = await run_vision_on_image(image_file)
-    combined_diagram_notes += "\n" + diagram_notes
-    print(f"[DEBUG] combined diagram notes: {combined_diagram_notes}")
+        # Vision AI
+        diagram_notes = await run_vision_on_image(image_file)
+        combined_diagram_notes += "\n" + diagram_notes
+
+    print(f"[DEBUG] Combined diagram notes: {combined_diagram_notes}")
     diagram_section = combined_diagram_notes.strip()
     if not diagram_section or diagram_section == "[No diagram analysis produced]":
         student_response = f"Extracted Essay Text:\n{combined_essay_text.strip()}"
     else:
-        student_response = f"""
-        Extracted Essay Text:
-        {combined_essay_text.strip()}
-        
-        Diagram Interpretation:
-        {diagram_section}
-        """
+        student_response = f"""Extracted Essay Text:
+{combined_essay_text.strip()}
 
-    
+Diagram Interpretation:
+{diagram_section}"""
 
     print("[DEBUG] Combined student response prepared.")
 
     # Run evaluation
     print("[DEBUG] Sending student response for evaluation...")
     eval_result = await evaluate_student_response_from_images_new(
+        db=db,  # <-- pass database session for logging
         images=images,
         question_text=question_text,
         total_marks=total_marks,
         qa_chain=qa_chain_anz_way,
         minimum_word_count=minimum_word_count,
         student_response=student_response,
-        username=username  # <-- added username argument
+        username=username  # <-- pass username for logging
     )
 
-
-    # Prepare response for frontend
+    # Prepare frontend response
     response_payload = {
         "status": "success",
         "evaluation_text": eval_result.get("evaluation_text", "[No feedback returned]"),
@@ -2529,6 +2506,8 @@ async def train_on_images_anz_way(
 
     print("[DEBUG] Returning response to frontend.")
     return JSONResponse(content=response_payload, headers=cors_headers)
+
+
 
 
 
@@ -5211,6 +5190,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
