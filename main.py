@@ -1924,6 +1924,7 @@ def check_user_access(username: str, db: Session = Depends(get_db)):
     print(f"[DEBUG] Response content prepared: {response_content}")
 
     return JSONResponse(content=response_content)
+    
 @app.get("/users_total_usage")
 def users_total_usage(
     min_usage: float = Query(0.0, description="Minimum usage to filter users"),
@@ -1934,11 +1935,12 @@ def users_total_usage(
     print(f"[DEBUG] min_usage: {min_usage}, max_usage: {max_usage}")
 
     try:
-        # Query total cost per user
+        # Query total cost and total tokens per user
         query = (
             db.query(
                 CostPerInteraction.username,
-                func.sum(CostPerInteraction.cost_usd).label("total_cost")
+                func.sum(CostPerInteraction.cost_usd).label("total_cost"),
+                func.sum(CostPerInteraction.total_tokens).label("total_tokens")
             )
             .group_by(CostPerInteraction.username)
             .having(func.sum(CostPerInteraction.cost_usd) >= min_usage)
@@ -1950,7 +1952,11 @@ def users_total_usage(
 
         users = []
         for r in result:
-            user_data = {"username": r.username, "total_cost": float(r.total_cost)}
+            user_data = {
+                "username": r.username,
+                "total_cost": float(r.total_cost),
+                "total_tokens": int(r.total_tokens)
+            }
             print(f"[DEBUG] User data: {user_data}")
             users.append(user_data)
 
@@ -1959,8 +1965,7 @@ def users_total_usage(
 
     except Exception as e:
         print(f"[ERROR] Exception in /users_total_usage: {e}")
-        return JSONResponse(content={"users": [], "error": str(e)}, status_code=500)
-        
+        return JSONResponse(content={"users": [], "error": str(e)}, status_code=500)        
 
 #when start conversation is pressed
 @app.post("/chat_anz_way_model_evaluation")
@@ -5271,6 +5276,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
