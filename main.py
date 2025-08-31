@@ -2426,6 +2426,11 @@ async def train_on_images_anz_way(
     username: str = Form(...),
     request: Request = None
 ):
+    origin = request.headers.get("origin") if request else "*"
+    cors_headers = {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true"
+    }
 
     global qa_chain_anz_way
     print("\n[DEBUG] New request received")
@@ -5190,6 +5195,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
