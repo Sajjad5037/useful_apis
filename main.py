@@ -1745,8 +1745,122 @@ def get_student_report(req: StudentReportRequest, db: Session = Depends(get_db))
     except Exception as e:
         print("Error fetching student report:", e)
         raise HTTPException(status_code=500, detail="Internal server error")
-
         
+
+def calculate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """
+    Calculate the approximate cost of an OpenAI API call in USD.
+    Adjust the rates according to OpenAI's pricing for each model.
+    """
+    rates = {
+        "gpt-4o-mini": {"prompt": 0.0015, "completion": 0.002},  # $ per 1k tokens
+        "text-embedding-3-small": {"prompt": 0.0004, "completion": 0},
+    }
+
+    model_rates = rates.get(model_name)
+    if not model_rates:
+        print(f"[WARNING] No cost info for model '{model_name}', defaulting to 0")
+        return 0.0
+
+    cost = (prompt_tokens / 1000) * model_rates["prompt"] + \
+           (completion_tokens / 1000) * model_rates["completion"]
+
+    print(f"[DEBUG] Calculated cost for model '{model_name}': "
+          f"prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}, cost_usd={cost:.6f}")
+
+    return round(cost, 6)
+
+
+def initialize_qa_chain_with_cost(bucket_name: str, folder_in_bucket: str, username: str):
+    global qa_chain_anz_way
+
+    print(f"[DEBUG] Initializing QA Chain for bucket='{bucket_name}', folder='{folder_in_bucket}', username='{username}'")
+
+    try:
+        # Step 1: Download vector store
+        print("[DEBUG] Downloading vector store from GCS...")
+        temp_dir = download_vectorstore_from_gcs(bucket_name, folder_in_bucket)
+        print(f"[DEBUG] Vector store downloaded to temporary directory: {temp_dir}")
+
+        # Step 2: Recreate embeddings
+        print("[DEBUG] Creating embeddings...")
+        embeddings = OpenAIEmbeddings(
+            model="text-embedding-3-small",
+            openai_api_key=openai_api_key
+        )
+        print("[DEBUG] Embeddings created successfully.")
+
+        # Step 3: Load FAISS index
+        print("[DEBUG] Loading FAISS vector store...")
+        vectorstore = FAISS.load_local(
+            temp_dir,
+            embeddings,
+            allow_dangerous_deserialization=True
+        )
+        print("[DEBUG] FAISS vector store loaded successfully.")
+
+        # Step 4: Create retriever
+        print("[DEBUG] Creating retriever...")
+        retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 6})
+        print("[DEBUG] Retriever created successfully.")
+
+        # Step 5: Create QA chain
+        print("[DEBUG] Creating RetrievalQA chain...")
+        base_chain = RetrievalQA.from_chain_type(
+            llm=ChatOpenAI(model="gpt-4o-mini", openai_api_key=openai_api_key),
+            retriever=retriever,
+            chain_type="stuff"
+        )
+        print("[DEBUG] QA chain created successfully.")
+
+        # --- Wrap run() to log cost automatically ---
+        original_run = base_chain.run
+
+        def run_with_cost(*args, **kwargs):
+            print("[DEBUG] Running QA chain...")
+            result = original_run(*args, **kwargs)
+            print("[DEBUG] QA chain run completed.")
+
+            # Extract token usage
+            usage = getattr(base_chain.llm, "last_token_usage", {})
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            total_tokens = usage.get("total_tokens", 0)
+            print(f"[DEBUG] Token usage: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}")
+
+            # Calculate cost
+            cost_usd = calculate_cost(base_chain.llm.model_name, prompt_tokens, completion_tokens)
+
+            # Log to database
+            print("[DEBUG] Logging cost to database...")
+            try:
+                with SessionLocal() as session:
+                    interaction = CostPerInteraction(
+                        username=username,
+                        model=base_chain.llm.model_name,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        total_tokens=total_tokens,
+                        cost_usd=Decimal(cost_usd)
+                    )
+                    session.add(interaction)
+                    session.commit()
+                print("[DEBUG] Cost logged successfully.")
+            except Exception as e:
+                print(f"[ERROR] Failed to log cost: {e}")
+
+            return result
+
+        base_chain.run = run_with_cost
+        qa_chain_anz_way = base_chain
+        print("[DEBUG] QA Chain (anz way) initialized successfully.")
+        return qa_chain_anz_way
+
+    except Exception as e:
+        print(f"[ERROR] Failed to initialize QA Chain (anz way): {e}")
+        traceback.print_exc()
+
+
 
 
 #when start conversation is pressed
@@ -1767,10 +1881,12 @@ async def chat_with_ai(req: StartConversationRequest):
         print(f"[DEBUG] Initializing QA chain for subject '{subject}'...")
         try:
             folder_in_bucket = f"{subject}_instructions.faiss"
-            qa_chain_anz_way = initialize_qa_chain_anz_way(
+            qa_chain_anz_way = initialize_qa_chain_with_cost(
                 bucket_name="sociology_anz_way",
-                folder_in_bucket=folder_in_bucket
+                folder_in_bucket=f"{subject}_instructions.faiss",
+                username=req.username
             )
+
             print(f"[DEBUG] QA chain initialized successfully for subject: {subject}")
         except Exception as e:
             print(f"[ERROR] Failed to initialize QA chain for subject {subject}: {str(e)}")
@@ -5157,6 +5273,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
