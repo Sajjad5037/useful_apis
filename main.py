@@ -87,10 +87,11 @@ import tempfile
 
 
 MODEL_COSTS = {
-    "gpt-4o-mini": {"prompt": 0.00000015, "completion": 0.00000060},  # USD per token
-    "gpt-4": {"prompt": 0.0000030, "completion": 0.0000060},
-    # add other models if needed
+    "gpt-4o-mini": {"prompt": 0.00000015, "completion": 0.0000006},  # per token
+    "text-embedding-3-small": {"embedding": 0.00000002},   # $0.02 / 1M tokens
+    "text-embedding-3-large": {"embedding": 0.00000013},   # $0.13 / 1M tokens
 }
+
 
 USAGE_LIMIT_INCREASE = 5.0  # dollars
 vertexai.init(project="dazzling-tensor-455512-j1", location="us-central1")
@@ -248,6 +249,7 @@ class SendMessageRequest(BaseModel):
     id: int          # Unique identifier, e.g., student or message ID
     session_id: str
     message: str
+    username: str  # <-- added username
     
 class CostPerInteraction(Base):
     __tablename__ = "cost_per_interaction"
@@ -1834,21 +1836,26 @@ def initialize_qa_chain_with_cost(bucket_name: str, folder_in_bucket: str, usern
 def log_to_db(
     db: Session,
     username: str,
-    prompt_tokens: int,
-    completion_tokens: int,
-    total_tokens: int,
-    model_name: str
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    total_tokens: int = 0,
+    model_name: str = "",
+    is_embedding: bool = False
 ):
     """Logs token usage + cost into the DB using SQLAlchemy ORM session."""
 
-    # Get token pricing (fallback = 0)
-    cost_info = MODEL_COSTS.get(model_name, {"prompt": 0, "completion": 0})
+    cost_info = MODEL_COSTS.get(model_name, {})
 
-    # Calculate cost
-    cost_usd = (
-        (prompt_tokens * cost_info["prompt"]) +
-        (completion_tokens * cost_info["completion"])
-    )
+    if is_embedding:
+        # Embedding cost = total_tokens × per-token embedding price
+        embedding_cost = cost_info.get("embedding", 0)
+        cost_usd = total_tokens * embedding_cost
+    else:
+        # Chat/Completion cost
+        cost_usd = (
+            (prompt_tokens * cost_info.get("prompt", 0)) +
+            (completion_tokens * cost_info.get("completion", 0))
+        )
 
     new_entry = CostPerInteraction(
         username=username,
@@ -1863,7 +1870,8 @@ def log_to_db(
     db.commit()
     db.refresh(new_entry)
 
-    print(f"[DEBUG] Token usage logged for user={username}, model={model_name}, total={total_tokens}, cost=${cost_usd:.6f}")
+    print(f"[DEBUG] Token usage logged: user={username}, model={model_name}, tokens={total_tokens}, cost=${cost_usd:.6f}")
+
 
 #when start conversation is pressed
 @app.post("/chat_anz_way_model_evaluation")
@@ -2075,6 +2083,7 @@ async def send_message(
             except Exception as e:
                 db.rollback()
                 print("[ERROR] Failed to save student reflection:", e)
+            
         
             # Return response to frontend
             return JSONResponse(
@@ -2123,6 +2132,18 @@ async def send_message(
         # Save AI reply
         session_history.append({"role": "assistant", "content": reply})
         print(f"[DEBUG] Appended AI reply. Session length now: {len(session_history)}")
+
+        usage = response.usage
+        log_to_db(
+            db,
+            username=req.username,            # Use the username from the request
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
+            model_name="gpt-4o-mini"
+        )
+
+        
 
         return JSONResponse(
             content={
@@ -5281,6 +5302,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
