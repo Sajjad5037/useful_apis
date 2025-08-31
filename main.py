@@ -1813,15 +1813,15 @@ def initialize_qa_chain_with_cost(bucket_name: str, folder_in_bucket: str, usern
         )
         print("[DEBUG] QA chain created successfully.")
 
-        # --- Wrap run() to log cost automatically ---
-        original_run = base_chain.run
+        # --- Wrap the chain call to log cost ---
+        original_call = base_chain.__call__
 
-        def run_with_cost(*args, **kwargs):
-            print("[DEBUG] Running QA chain...")
-            result = original_run(*args, **kwargs)
-            print("[DEBUG] QA chain run completed.")
+        def call_with_cost(*args, **kwargs):
+            print("[DEBUG] Calling QA chain...")
+            result = original_call(*args, **kwargs)
+            print("[DEBUG] QA chain call completed.")
 
-            # Extract token usage
+            # Extract token usage if available
             usage = getattr(base_chain.llm, "last_token_usage", {})
             prompt_tokens = usage.get("prompt_tokens", 0)
             completion_tokens = usage.get("completion_tokens", 0)
@@ -1831,8 +1831,7 @@ def initialize_qa_chain_with_cost(bucket_name: str, folder_in_bucket: str, usern
             # Calculate cost
             cost_usd = calculate_cost(base_chain.llm.model_name, prompt_tokens, completion_tokens)
 
-            # Log to database
-            print("[DEBUG] Logging cost to database...")
+            # Log cost to DB
             try:
                 with SessionLocal() as session:
                     interaction = CostPerInteraction(
@@ -1845,13 +1844,15 @@ def initialize_qa_chain_with_cost(bucket_name: str, folder_in_bucket: str, usern
                     )
                     session.add(interaction)
                     session.commit()
-                print("[DEBUG] Cost logged successfully.")
+                print(f"[DEBUG] Cost logged successfully for user '{username}'")
             except Exception as e:
                 print(f"[ERROR] Failed to log cost: {e}")
 
             return result
 
-        base_chain.run = run_with_cost
+        # Assign the wrapped call
+        base_chain.__call__ = call_with_cost
+
         qa_chain_anz_way = base_chain
         print("[DEBUG] QA Chain (anz way) initialized successfully.")
         return qa_chain_anz_way
@@ -1859,6 +1860,7 @@ def initialize_qa_chain_with_cost(bucket_name: str, folder_in_bucket: str, usern
     except Exception as e:
         print(f"[ERROR] Failed to initialize QA Chain (anz way): {e}")
         traceback.print_exc()
+        return None
 
 
 
@@ -5273,6 +5275,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
