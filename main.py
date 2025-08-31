@@ -1820,8 +1820,7 @@ def initialize_qa_chain_with_cost(bucket_name: str, folder_in_bucket: str, usern
         )
         print("[DEBUG] QA chain created successfully.")
 
-        # Attach username so run() calls can log cost later
-        qa_chain_anz_way.username = username  
+        
 
         print("[DEBUG] QA Chain (anz way) initialized successfully.")
         return qa_chain_anz_way
@@ -5282,6 +5281,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
