@@ -2192,21 +2192,20 @@ async def send_message(
 
 # a new evaluate your essay so that anser could include diagrams
 async def evaluate_student_response_from_images_new(
-    db,                 # <-- database session for logging
+    db: Session,                # <-- database session for logging
     images: List[UploadFile],
     question_text: str,
     total_marks: int,
-    qa_chain,                    # RetrievalQA
+    qa_chain,                   # RetrievalQA
     minimum_word_count: int = 80,
     student_response: str = None,
-    username: str = None         # <-- username for cost logging
+    username: str = None        # <-- added username for logging
 ):
-
     """
     Evaluate a student's response (text + optional diagrams) against a question.
-    Returns structured, free-form text suitable for front-end display.
-    Explicitly informs the model about total marks and marking rules for consistency.
-    Logs token usage if available.
+    Works with OCR-only or pre-combined OCR+Vision input.
+    Returns free-form structured text suitable for front-end display.
+    Logs token usage roughly based on word count if username is provided.
     """
     print("\n[DEBUG] === Student Response Evaluation Started ===")
 
@@ -2216,6 +2215,7 @@ async def evaluate_student_response_from_images_new(
     else:
         print("[DEBUG] No pre-combined response provided. Falling back to OCR-only.")
         extracted_texts = []
+
         for idx, image in enumerate(images):
             print(f"[DEBUG] Processing image {idx + 1}/{len(images)}: {image.filename}")
             contents = await image.read()
@@ -2233,7 +2233,8 @@ async def evaluate_student_response_from_images_new(
                 extracted_texts.append("")
 
         student_response = "\n".join(extracted_texts).strip()
-        print("[DEBUG] Final OCR-only extracted response length:", len(student_response.split()), "words")
+        print("[DEBUG] Final OCR-only extracted response length:",
+              len(student_response.split()), "words")
 
     if not student_response.strip():
         print("[DEBUG] No student response extracted. Returning 0 marks.")
@@ -2244,7 +2245,11 @@ async def evaluate_student_response_from_images_new(
         }
 
     # Step 2: Retrieve authoritative instructions
-    retrieval_query = f"Provide all instructions, features, and marking rules relevant for answering: {question_text}"
+    retrieval_query = (
+        f"Provide all instructions, features, and marking rules relevant for answering: "
+        f"{question_text}"
+    )
+
     retriever = qa_chain.retriever
     retrieved_docs = retriever.get_relevant_documents(retrieval_query)
     if not retrieved_docs:
@@ -2270,66 +2275,70 @@ Question:
 Student Response:
 {student_response}
 
-Total Marks for this Question: {total_marks}
-Maximum Features to Reward: {total_marks // 2}  # Approximation if 2 marks per feature
-Minimum Word Count: {minimum_word_count}
-
 Task:
 
 1. **Improved Response:**
    - Rewrite the student response into the strongest possible version that would receive maximum marks STRICTLY based on the retrieved instructions.
    - Include ONLY points, features, or examples explicitly mentioned in the instructions.
    - Keep the response concise but complete.
-   - Ensure the response meets the minimum word count.
+   - Ensure the response meets the minimum word count of {minimum_word_count} words.
 
 2. **Detailed Marking and Feedback (STRICT Scheme Compliance):**
-   - Identify all attempted features in the response.
-   - For each attempted feature, present:
-     - **Attempted Feature:** <text from response>
-     - **Closest matching phrase in instructions:** <text>
-     - **Marks awarded:** <marks, max 2 per feature>
-   - Assign marks strictly based on instructions. Do NOT over-award.
-   - Ensure the total awarded marks do not exceed {total_marks}.
+   - Identify all attempted features or points in the response.
+   - For each attempted feature, present it in the following format:
+     - **Attempted Feature:** <text>
+     - **Closest matching phrase:** <text from instructions>
+     - **Marks awarded:** <marks>
+   - Assign marks strictly based on the retrieved instructions.
+   - Do NOT reward more features than allowed by the instructions.
    - Features cannot be double-counted.
-   - Include optional notes (clarity, spelling, grammar) if relevant.
+   - Ensure total marks do not exceed {total_marks}.
+   - Provide optional notes (e.g., spelling, grammar, minor clarity issues).
 
 3. **Overall Assessment:**
-   - Summarize how well the response aligns with instructions.
-   - Confirm whether minimum word count is achieved.
-   - Give overall mark in the format: **Overall Mark: <score/{total_marks}>**.
-   - Only give advice if marks are not full, strictly based on instructions.
+   - Summarize how well the response meets the retrieved instructions.
+   - Confirm whether the minimum word count was achieved.
+   - Provide practical advice strictly tied to instructions **only if the response did not achieve the maximum marks**.
+   - State the final mark in the format: **Overall Mark: <score/{total_marks}>**.
 
-Format output as **structured, human-readable text** with headings and bullet points.
-Do NOT return JSON or any other structured format.
+Format your answer as clear, structured text using headings, bullet points, and bold formatting for front-end display.
+Do NOT return JSON or any structured data format.
 """
+
     print("[DEBUG][PROMPT] Evaluation prompt sent to QA chain:")
     print(evaluation_prompt)
     print("=" * 80)
 
-    # Step 4: Call underlying LLM directly to capture usage
+    # Step 4: Run evaluation
     try:
-        llm = qa_chain.llm  # ChatOpenAI instance
-        response = await llm.acall([{"role": "user", "content": evaluation_prompt}])
-        evaluation_text = response.content
-        usage = getattr(response, "usage", None)
+        evaluation_result = qa_chain.run(evaluation_prompt)
+        print("[DEBUG] Received evaluation result from QA chain (raw):")
+        print(evaluation_result)
+        print("=" * 80)
 
-        # Step 5: Log usage to DB if available
-        if usage and username:
+        # Step 5: Rough cost logging
+        if username:
+            # Estimate tokens roughly based on word count
+            def estimate_tokens(text: str) -> int:
+                return int(len(text.split()) / 0.75)  # ~1 token ≈ 0.75 words
+
+            prompt_tokens = estimate_tokens(evaluation_prompt)
+            completion_tokens = estimate_tokens(evaluation_result)
+            total_tokens = prompt_tokens + completion_tokens
+
             log_to_db(
-                db,
+                db=db,
                 username=username,
-                prompt_tokens=usage.prompt_tokens,
-                completion_tokens=usage.completion_tokens,
-                total_tokens=usage.total_tokens,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
                 model_name="gpt-4o-mini"
             )
-            print("[DEBUG] Token usage logged successfully.")
-        else:
-            print("[DEBUG] No usage info available to log.")
+            print("[DEBUG] Logged token usage to DB.")
 
         return {
             "status": "success",
-            "evaluation_text": evaluation_text,
+            "evaluation_text": evaluation_result,
             "total_marks": total_marks,
             "minimum_word_count": minimum_word_count,
             "student_response": student_response
@@ -2337,7 +2346,11 @@ Do NOT return JSON or any other structured format.
 
     except Exception as e:
         print(f"[ERROR] Evaluation failed: {e}")
-        return {"status": "error", "detail": str(e)}
+        return {
+            "status": "error",
+            "detail": str(e)
+        }
+
 
 
 
@@ -5195,6 +5208,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
