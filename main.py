@@ -89,9 +89,20 @@ import tempfile
 
 MAX_USER_COST = 0.4 #dollars
 MODEL_COSTS = {
-    "gpt-4o-mini": {"prompt": 0.00000015, "completion": 0.0000006},  # per token
-    "text-embedding-3-small": {"embedding": 0.00000002},   # $0.02 / 1M tokens
-    "text-embedding-3-large": {"embedding": 0.00000013},   # $0.13 / 1M tokens
+    "gpt-4o-mini": {
+        "prompt": 0.00000015,      # cost per prompt token in USD
+        "completion": 0.0000006    # cost per completion token in USD
+    },
+    "gpt-4o-mini-tts": {
+        "prompt": 0.00000015,      # TTS uses same per-token pricing as gpt-4o-mini
+        "completion": 0.0000006
+    },
+    "text-embedding-3-small": {
+        "embedding": 0.00000002    # $0.02 per 1M tokens
+    },
+    "text-embedding-3-large": {
+        "embedding": 0.00000013    # $0.13 per 1M tokens
+    }
 }
 MODEL_COST_PER_TOKEN = {
     "gpt-4o-mini": {"prompt": 0.000000056, "completion": 0.000000223},
@@ -2002,24 +2013,26 @@ async def chat_with_ai(req: StartConversationRequest, db: Session = Depends(get_
         sessions[session_id] = []
 
         # --- AI Prompt ---
-        ai_prompt = f"""
-You are an expert exam tutor guiding a student in {subject}. The student has asked:
+        prompt = f"""
+        You are an expert exam tutor in {subject}. A student asks:
+        
+        Question: {question_text}
+        Marks: {marks}
+        
+        Context from syllabus/vector store:
+        {retrieved_context}
+        
+        Instructions:
+        1. Start by clearly showing the marking scheme with key points and mark allocation.
+        2. Give a concise explanation of the answer (≤100 words).
+        3. Ask 1–2 brief questions to guide the student’s thinking.
+        4. Stay on-topic; do not include unrelated info.
+        5. Use a friendly, encouraging tone.
+        
+        Example output:
+        "🤖 Marking Scheme: 1 mark for identifying a feature, 1 mark for describing it (4 marks total). Laboratory experiments have features like controlled environment and variable manipulation. These help isolate variables to test hypotheses. Question: Which feature will you mention first? How does it help test hypotheses?"
+        """
 
-Question: {question_text}
-Marks: {marks}
-
-Context/Instructions/Marking scheme:
-{retrieved_context}
-
-Instructions for the AI:
-1. Present marking scheme first.
-2. Guide the student step by step in a friendly tone.
-3. Ask interactive questions to gauge understanding.
-4. Reference marking scheme for scoring feedback.
-5. Highlight strengths, gently point out improvements.
-6. Stay on-topic.
-7. Keep explanations clear, structured, concise.
-"""
 
         # --- Get AI text ---
         response = client.chat.completions.create(
@@ -5417,6 +5430,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
