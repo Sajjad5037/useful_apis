@@ -2080,7 +2080,7 @@ async def generate_audio(session_id: str, ai_reply_text: str, username: str, db:
             total_chars = len(ai_reply_text)
             estimated_tokens = total_chars // 4
             prompt_tokens = estimated_tokens
-            completion_tokens = 0
+            completion_tokens = estimated_tokens
             total_tokens = estimated_tokens
 
         log_to_db(db, username, prompt_tokens, completion_tokens, total_tokens, "gpt-4o-mini-tts")
@@ -5421,6 +5421,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
