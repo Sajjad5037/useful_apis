@@ -1964,6 +1964,138 @@ def users_total_usage(
 
     return JSONResponse(content=response)
     
+#when the start conversation is pressed (audio ai conversation)
+
+
+@app.post("/chat_anz_way_model_evaluation_audio")
+async def chat_with_ai(
+    req: StartConversationRequest,
+    db: Session = Depends(get_db)   # Inject DB session
+):
+    try:
+        subject = req.subject
+        question_text = req.question_text
+        marks = req.marks
+        username = req.username
+
+        print("\n[DEBUG] --- /chat_anz_way_model_evaluation called ---")
+        print(f"[DEBUG] Received request: subject='{subject}', marks={marks}, "
+              f"question_text='{question_text[:100]}...', username='{username}'")
+
+        # --- Step 1: Initialize QA chain ---
+        try:
+            folder_in_bucket = f"{subject}_instructions.faiss"
+            qa_chain_anz_way = initialize_qa_chain_with_cost(
+                bucket_name="sociology_anz_way",
+                folder_in_bucket=folder_in_bucket,
+                username=username
+            )
+            print(f"[DEBUG] QA chain initialized successfully for subject: {subject}")
+        except Exception as e:
+            print(f"[ERROR] Failed to initialize QA chain: {str(e)}")
+            return JSONResponse(content={"status": "error", "detail": str(e)})
+
+        # --- Step 2: Retrieve relevant instructions/context ---
+        retrieval_query = f"Provide all instructions, features, and marking rules relevant for answering: {question_text}"
+        print(f"[DEBUG] Retrieval query: {retrieval_query[:100]}...")
+
+        retriever = qa_chain_anz_way.retriever
+        retrieved_docs = retriever.get_relevant_documents(retrieval_query)
+        if not retrieved_docs:
+            print("[WARNING] No instructions retrieved from vector store")
+            retrieved_context = "No instructions retrieved. Model should give 0 marks for all features."
+        else:
+            retrieved_context = "\n".join([doc.page_content for doc in retrieved_docs])
+            print(f"[DEBUG] Retrieved {len(retrieved_docs)} documents, total length: {len(retrieved_context)} chars")
+
+        # --- Step 3: Generate session ID ---
+        session_id = str(uuid.uuid4())
+        sessions[session_id] = []
+        print(f"[DEBUG] New session created: session_id={session_id}")
+
+        # --- Step 4: Compose AI prompt ---
+        prompt = f"""
+        You are an expert exam tutor guiding a student in {subject}. The student has asked the following question:
+
+        Question: {question_text}
+        Marks: {marks}
+
+        Context/Instructions/Marking scheme from syllabus/vector store:
+        {retrieved_context}
+
+        Instructions for your reply:
+        1. Start by explicitly presenting the marking scheme.
+        2. Adopt the tone of a friendly, encouraging teacher.
+        3. Ask interactive questions to gauge the student’s understanding.
+        4. For each student response, reference the marking scheme to indicate likely score.
+        5. Encourage learning: highlight strengths, point out areas to improve, provide actionable tips.
+        6. Stay strictly on-topic; do not answer unrelated questions.
+        """
+
+        print(f"[DEBUG] AI prompt composed, length={len(prompt)} chars")
+
+        # --- Step 5: Call OpenAI API for text response ---
+        print("[DEBUG] Sending prompt to OpenAI API...")
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an AI assistant that tutors students using provided instructions and marking scheme."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+        )
+
+        ai_reply_text = response.choices[0].message.content.strip()
+        print(f"[DEBUG] Received AI reply (truncated 200 chars): {ai_reply_text[:200]}")
+
+        # --- Step 6: Log usage ---
+        usage = response.usage
+        log_to_db(db, username, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-mini")
+        print(f"[DEBUG] Logged chat API usage: prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}")
+
+        # --- Step 7: Generate TTS audio ---
+        print("[DEBUG] Generating TTS audio from AI reply...")
+        audio_response = client.audio.speech.create(
+            model="gpt-4o-mini-tts",
+            voice="alloy",
+            input=ai_reply_text
+        )
+
+        # --- Step 8: Log TTS usage ---
+        # --- Log TTS API usage if available ---
+        tts_usage = getattr(audio_response, "usage", None)
+        if tts_usage:
+            prompt_tokens = getattr(tts_usage, "prompt_tokens", 0)
+            completion_tokens = getattr(tts_usage, "completion_tokens", 0)
+            total_tokens = getattr(tts_usage, "total_tokens", 0)
+        
+            log_to_db(db, username, prompt_tokens, completion_tokens, total_tokens, "gpt-4o-mini-tts")
+            print(f"[DEBUG] Logged TTS API usage: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}")
+            print("[DEBUG] Audio usage entry was successfully made in the DB")
+        else:
+            print("[DEBUG] No TTS usage info available to log")
+
+        # --- Step 9: Convert audio to base64 for frontend ---
+        audio_b64 = base64.b64encode(audio_response.audio_data).decode("utf-8")
+        print(f"[DEBUG] Audio generated: {len(audio_response.audio_data)} bytes, base64 length: {len(audio_b64)}")
+
+        # --- Step 10: Store session messages ---
+        sessions[session_id].append({"role": "user", "content": question_text})
+        sessions[session_id].append({"role": "assistant", "content": ai_reply_text})
+        print(f"[DEBUG] Session messages stored. Total messages: {len(sessions[session_id])}")
+
+        # --- Step 11: Return audio base64 and session ID ---
+        print("[DEBUG] Returning audio response to frontend")
+        return JSONResponse(content={
+            "audio_base64": audio_b64,
+            "session_id": session_id
+        })
+
+    except Exception as e:
+        print(f"[ERROR] Unexpected error: {str(e)}")
+        print(traceback.format_exc())
+        return JSONResponse(content={"status": "error", "detail": str(e)})
+
 #when start conversation is pressed
 @app.post("/chat_anz_way_model_evaluation")
 async def chat_with_ai(
@@ -5273,6 +5405,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
