@@ -2039,7 +2039,7 @@ async def chat_with_ai(req: StartConversationRequest, db: Session = Depends(get_
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are an AI assistant that tutors students using instructions and marking scheme."},
-                {"role": "user", "content": ai_prompt}
+                {"role": "user", "content": prompt}
             ],
             temperature=0.2,
         )
@@ -5430,6 +5430,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
