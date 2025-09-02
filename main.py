@@ -2087,8 +2087,9 @@ async def chat_with_ai(
         # --- Step 11: Return audio base64 and session ID ---
         print("[DEBUG] Returning audio response to frontend")
         return JSONResponse(content={
+            "session_id": session_id,
             "audio_base64": audio_b64,
-            "session_id": session_id
+            "text_reply": ai_reply_text
         })
 
     except Exception as e:
@@ -5405,6 +5406,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
