@@ -1968,28 +1968,6 @@ def users_total_usage(
 #when the start conversation is pressed (audio ai conversation)
 
 
-import base64
-import traceback
-import uuid
-from fastapi import FastAPI, Depends
-from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
-
-# Example imports — adjust as per your project
-# from your_db_module import get_db, log_to_db
-# from your_ai_module import initialize_qa_chain_with_cost, client, sessions
-
-app = FastAPI()
-
-class StartConversationRequest(BaseModel):
-    subject: str
-    marks: int
-    question_text: str
-    username: str
-
-sessions = {}  # Temporary in-memory session storage
-
 @app.post("/chat_anz_way_model_evaluation_audio")
 async def chat_with_ai(req: StartConversationRequest, db: Session = Depends(get_db)):
     try:
@@ -5427,6 +5405,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
