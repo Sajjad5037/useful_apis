@@ -2078,11 +2078,11 @@ async def generate_audio(session_id: str, ai_reply_text: str, username: str, db:
             total_tokens = getattr(tts_usage, "total_tokens", 0)
         else:
             total_chars = len(ai_reply_text)
-            estimated_tokens = total_chars // 4
+            # Use 3.5 chars per token for better estimation
+            estimated_tokens = max(1, round(total_chars / 3.5))
             prompt_tokens = estimated_tokens
             completion_tokens = estimated_tokens
-            total_tokens = estimated_tokens
-
+            total_tokens = prompt_tokens + completion_tokens
         log_to_db(db, username, prompt_tokens, completion_tokens, total_tokens, "gpt-4o-mini-tts")
 
         # --- Convert audio ---
@@ -2166,33 +2166,29 @@ async def chat_with_ai(
 
         # --- Step 4: Compose AI prompt ---
         prompt = f"""
-        You are an expert exam tutor guiding a student in {subject}. The student has asked the following question:
-
+        You are an expert exam tutor in {subject}. A student asks:
+        
         Question: {question_text}
         Marks: {marks}
         
         Context/Instructions/Marking scheme from syllabus/vector store:
         {retrieved_context}
         
-        Your instructions:
+        Instructions:
+        1. Start by clearly presenting the marking scheme from the retrieved context, highlighting key points and mark allocation.
+        2. Guide the student step by step on how to answer, in a friendly, encouraging tone.
+        3. Ask one or two brief questions to check understanding.
+        4. Keep explanations clear, structured, and concise (max ~100 words).
+        5. Stay on-topic; do not give unrelated information.
         
-        1. **Start your first response by explicitly presenting the marking scheme** for this question as extracted from the retrieved context. Make it clear which points or features are expected and how marks are allocated.
-        2. After presenting the marking scheme, adopt the tone of a **friendly, encouraging teacher**. Guide the student step by step on how to approach and answer the question.
-        3. Ask interactive questions to gauge the student’s understanding.
-        4. For each student response, reference the marking scheme to indicate how well they would score.
-        5. Encourage learning: highlight strengths, gently point out areas to improve, and provide actionable tips to help them score better.
-        6. Stay strictly on-topic; do not answer unrelated questions.
-        7. Keep explanations clear, structured, and concise so the student can follow easily.
+        Example flow:
         
-        Example behavior:
+        - “Here is the marking scheme for this question: …”
+        - “Can you explain how you would approach the first part of the question?”
         
-        - Begin: “Here is the marking scheme for this question: …”
-        - Then ask: “Can you explain your approach to the first part of the question?”
-        - After student response: “Based on your answer, you are likely to score X out of {marks}. To improve, consider Y.”
-        
-        Remember: Your goal is to simulate a patient, interactive tutor who helps the student understand the question, improve their answer, and maximize their marks.
-
+        Goal: Simulate a patient, interactive tutor who helps the student understand and improve their answer, referencing the marking scheme at all times.
         """
+
 
         print(f"[DEBUG] AI prompt composed, length={len(prompt)} chars")
 
@@ -5421,6 +5417,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
