@@ -98,7 +98,7 @@ MODEL_COST_PER_TOKEN = {
     "text-embedding-3-large": {"embedding": 0.00000013},
 }
 
-
+audio_store = {}
 
 USAGE_LIMIT_INCREASE = 5.0  # dollars
 vertexai.init(project="dazzling-tensor-455512-j1", location="us-central1")
@@ -5420,6 +5420,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
