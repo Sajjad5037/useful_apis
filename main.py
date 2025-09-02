@@ -1977,7 +1977,6 @@ async def chat_with_ai(req: StartConversationRequest, db: Session = Depends(get_
         username = req.username
 
         print("[DEBUG] --- /chat_anz_way_model_evaluation_audio called ---")
-        print(f"[DEBUG] Request: subject='{subject}', marks={marks}, question_text='{question_text[:100]}...', username='{username}'")
 
         # --- Initialize QA chain ---
         folder_in_bucket = f"{subject}_instructions.faiss"
@@ -1986,26 +1985,22 @@ async def chat_with_ai(req: StartConversationRequest, db: Session = Depends(get_
             folder_in_bucket=folder_in_bucket,
             username=username
         )
-        print(f"[DEBUG] QA chain initialized for subject '{subject}'")
 
-        # --- Retrieve context/instructions ---
+        # --- Retrieve context ---
         retrieval_query = f"Provide all instructions, features, and marking rules relevant for answering: {question_text}"
         retriever = qa_chain_anz_way.retriever
         retrieved_docs = retriever.get_relevant_documents(retrieval_query)
 
         if not retrieved_docs:
             retrieved_context = "No instructions retrieved. Model should give 0 marks for all features."
-            print("[WARNING] No documents retrieved from vector store")
         else:
             retrieved_context = "\n".join([doc.page_content for doc in retrieved_docs])
-            print(f"[DEBUG] Retrieved {len(retrieved_docs)} documents, total length={len(retrieved_context)} chars")
 
-        # --- Generate session ID ---
+        # --- Session ID ---
         session_id = str(uuid.uuid4())
         sessions[session_id] = []
-        print(f"[DEBUG] Created new session: {session_id}")
 
-        # --- Compose AI prompt ---
+        # --- AI Prompt ---
         ai_prompt = f"""
 You are an expert exam tutor guiding a student in {subject}. The student has asked:
 
@@ -2025,7 +2020,7 @@ Instructions for the AI:
 7. Keep explanations clear, structured, concise.
 """
 
-        print("[DEBUG] Sending prompt to OpenAI chat API...")
+        # --- Get AI text ---
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -2036,20 +2031,38 @@ Instructions for the AI:
         )
 
         ai_reply_text = response.choices[0].message.content.strip()
-        print(f"[DEBUG] AI reply received (truncated 200 chars): {ai_reply_text[:200]}")
 
-        # --- Log chat API usage ---
+        # --- Log usage ---
         if hasattr(response, "usage"):
             usage = response.usage
             log_to_db(db, username, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-mini")
-            print(f"[DEBUG] Logged chat usage: prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}")
         else:
             total_tokens = len(ai_reply_text) // 4
             log_to_db(db, username, total_tokens, 0, total_tokens, "gpt-4o-mini")
-            print(f"[DEBUG] No usage info from chat API, estimated tokens={total_tokens}")
 
-        # --- Generate TTS audio ---
-        print("[DEBUG] Generating TTS audio from AI reply...")
+        # --- Store session messages ---
+        sessions[session_id].append({"role": "user", "content": question_text})
+        sessions[session_id].append({"role": "assistant", "content": ai_reply_text})
+
+        # --- Generate audio in background ---
+        asyncio.create_task(generate_audio(session_id, ai_reply_text, username, db))
+
+        # --- Return text immediately ---
+        return JSONResponse(content={
+            "session_id": session_id,
+            "text_reply": ai_reply_text,
+            "audio_ready": False
+        })
+
+    except Exception as e:
+        print(f"[ERROR] Unexpected error: {str(e)}")
+        print(traceback.format_exc())
+        return JSONResponse(content={"status": "error", "detail": str(e)})
+
+
+async def generate_audio(session_id: str, ai_reply_text: str, username: str, db: Session):
+    """Generate TTS audio asynchronously and store it"""
+    try:
         audio_response = client.audio.speech.create(
             model="gpt-4o-mini-tts",
             voice="alloy",
@@ -2062,39 +2075,41 @@ Instructions for the AI:
             prompt_tokens = getattr(tts_usage, "prompt_tokens", 0)
             completion_tokens = getattr(tts_usage, "completion_tokens", 0)
             total_tokens = getattr(tts_usage, "total_tokens", 0)
-            print("[DEBUG] TTS usage info received from API")
         else:
             total_chars = len(ai_reply_text)
             estimated_tokens = total_chars // 4
             prompt_tokens = estimated_tokens
             completion_tokens = 0
             total_tokens = estimated_tokens
-            print(f"[DEBUG] No TTS usage info from API; estimated tokens={estimated_tokens}")
 
         log_to_db(db, username, prompt_tokens, completion_tokens, total_tokens, "gpt-4o-mini-tts")
-        print(f"[DEBUG] Logged TTS API usage: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}")
 
-        # --- Convert audio bytes to base64 ---
-        audio_bytes = audio_response.read()  # Read raw binary content
+        # --- Convert audio ---
+        audio_bytes = audio_response.read()
         audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-        print(f"[DEBUG] Audio generated: {len(audio_bytes)} bytes, base64 length={len(audio_b64)}")
 
-        # --- Store session messages ---
-        sessions[session_id].append({"role": "user", "content": question_text})
-        sessions[session_id].append({"role": "assistant", "content": ai_reply_text})
-        print(f"[DEBUG] Session messages stored. Total messages: {len(sessions[session_id])}")
+        audio_store[session_id] = audio_b64
 
-        # --- Return audio and session ID ---
-        return JSONResponse(content={
-            "audio_base64": audio_b64,
-            "session_id": session_id,
-            "text_reply": ai_reply_text  # include text for frontend display
-        })
+        print(f"[DEBUG] Audio stored for session {session_id}, {len(audio_bytes)} bytes")
 
     except Exception as e:
-        print(f"[ERROR] Unexpected error: {str(e)}")
-        print(traceback.format_exc())
-        return JSONResponse(content={"status": "error", "detail": str(e)})
+        print(f"[ERROR] Audio generation failed for {session_id}: {str(e)}")
+        audio_store[session_id] = None
+
+
+@app.get("/get-audio/{session_id}")
+async def get_audio(session_id: str):
+    """Frontend polls this to fetch audio when ready"""
+    if session_id not in audio_store:
+        return {"audio_ready": False}
+
+    if audio_store[session_id] is None:
+        return JSONResponse(status_code=500, content={"error": "Audio generation failed"})
+
+    return {
+        "audio_ready": True,
+        "audio_base64": audio_store[session_id]
+    }
 
 #when start conversation is pressed
 @app.post("/chat_anz_way_model_evaluation")
@@ -5405,6 +5420,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
