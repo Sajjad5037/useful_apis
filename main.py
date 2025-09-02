@@ -97,6 +97,9 @@ MODEL_COSTS = {
         "prompt": 0.00000015,      # TTS uses same per-token pricing as gpt-4o-mini
         "completion": 0.0000006
     },
+    "gpt-4o-transcribe": {
+        "per_minute": 0.006        # cost per minute of audio in USD
+    },
     "text-embedding-3-small": {
         "embedding": 0.00000002    # $0.02 per 1M tokens
     },
@@ -1979,7 +1982,6 @@ def users_total_usage(
     
 #when the start conversation is pressed (audio ai conversation)
 
-
 @app.post("/chat_anz_way_model_evaluation_audio")
 async def chat_with_ai(req: StartConversationRequest, db: Session = Depends(get_db)):
     try:
@@ -2124,6 +2126,142 @@ async def get_audio(session_id: str):
         "audio_ready": True,
         "audio_base64": audio_store[session_id]
     }
+#when the sudent ask the question for the audio AI
+
+@app.post("/send_audio_message")
+async def send_audio_message(
+    audio: UploadFile = File(...),
+    session_id: str = Form(...),
+    username: str = Form(...),
+    id: int = Form(...),
+    db: Session = Depends(get_db)
+):
+    global sessions, audio_store
+
+    try:
+        print(f"\n[DEBUG] --- Incoming request to /send_audio_message ---")
+        print(f"[DEBUG] session_id={session_id}, username={username}, file={audio.filename}, content_type={audio.content_type}")
+
+        # --- Step 0: Validate session ---
+        if session_id not in sessions:
+            print(f"[DEBUG] Invalid session_id={session_id}. Known sessions: {list(sessions.keys())}")
+            return JSONResponse(
+                status_code=400,
+                content={"reply": "⚠️ Invalid session_id. Start a new conversation first."}
+            )
+        print(f"[DEBUG] Session {session_id} found. History length={len(sessions[session_id])}")
+
+        session_history = sessions[session_id]
+
+        # --- Step 1: Transcribe audio ---
+        raw_audio = await audio.read()
+        print(f"[DEBUG] Received audio file: {len(raw_audio)} bytes")
+
+        transcription = client.audio.transcriptions.create(
+            model="gpt-4o-transcribe",  # or "whisper-1"
+            file=raw_audio
+        )
+        user_message = transcription.text.strip()
+        print(f"[DEBUG] Transcription complete. First 100 chars: {user_message[:100]}")
+
+        # --- Step 1b: Log transcription usage ---
+        if hasattr(transcription, "usage"):
+            usage = transcription.usage
+            print(f"[DEBUG] Transcription usage -> prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}")
+            log_to_db(db, username, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-transcribe")
+        else:
+            total_tokens = max(1, len(user_message) // 4)
+            print(f"[DEBUG] Estimated transcription tokens={total_tokens}")
+            log_to_db(db, username, total_tokens, 0, total_tokens, "gpt-4o-transcribe")
+
+        # --- Step 2: Handle max exchanges ---
+        if len(session_history) >= MAX_EXCHANGES * 2:
+            print(f"[DEBUG] Session {session_id} reached max exchanges ({MAX_EXCHANGES}). Ending conversation.")
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "reply": "✅ Conversation ended. Please start a new session.",
+                    "session_id": session_id,
+                    "conversation_ended": True
+                }
+            )
+
+        # --- Step 3: Append user message ---
+        session_history.append({"role": "user", "content": user_message})
+        print(f"[DEBUG] Appended user message. History length now {len(session_history)}")
+
+        # --- Step 4: Build system prompt ---
+        system_prompt = (
+            "You are an AI tutor helping a student prepare for a sociology exam. "
+            "You already know the current exam question and its marking scheme. "
+            "Your goal is to guide the student so they gain the knowledge needed to answer this specific question well and maximize marks. "
+            "Keep explanations short and clear (under 100 words), highlight the key marking points naturally, and ask 1–2 guiding questions to prompt the student’s thinking. "
+            "Stay focused only on the current question and marking scheme, and politely decline or redirect if the student asks unrelated questions. "
+            "Always use a friendly and encouraging tone."
+        )
+        messages = [{"role": "system", "content": system_prompt}] + session_history
+        print(f"[DEBUG] Built messages payload with {len(messages)} entries")
+
+        # --- Step 5: Get AI reply ---
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages
+        )
+        ai_reply = response.choices[0].message.content.strip()
+        print(f"[DEBUG] AI reply generated. First 100 chars: {ai_reply[:100]}")
+        session_history.append({"role": "assistant", "content": ai_reply})
+        print(f"[DEBUG] Appended AI reply. History length now {len(session_history)}")
+
+        # --- Step 6: Convert AI reply to audio ---
+        audio_response = client.audio.speech.create(
+            model="gpt-4o-mini-tts",
+            voice="alloy",
+            input=ai_reply
+        )
+        audio_bytes = audio_response.read()
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        audio_store[session_id] = audio_b64
+        print(f"[DEBUG] Generated TTS audio: {len(audio_bytes)} bytes stored in audio_store for session {session_id}")
+
+        # --- Step 7: Log chat usage ---
+        if hasattr(response, "usage"):
+            usage = response.usage
+            print(f"[DEBUG] Chat usage -> prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}")
+            log_to_db(
+                db,
+                username=username,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                total_tokens=usage.total_tokens,
+                model_name="gpt-4o-mini"
+            )
+        else:
+            total_tokens = max(1, len(ai_reply) // 4)
+            print(f"[DEBUG] Estimated chat tokens={total_tokens}")
+            log_to_db(db, username, total_tokens, total_tokens, total_tokens * 2, "gpt-4o-mini")
+
+        # --- Step 8: Return response ---
+        print(f"[DEBUG] Returning final response for session {session_id}")
+        return JSONResponse(
+            content={
+                "reply": ai_reply,
+                "audio_url": f"data:audio/mp3;base64,{audio_b64}",
+                "session_id": session_id,
+                "conversation_ended": False
+            }
+        )
+
+    except Exception as e:
+        print("[ERROR] Exception while processing /send_audio_message")
+        print(traceback.format_exc())
+        return JSONResponse(
+            status_code=500,
+            content={
+                "reply": "⚠️ Server error. Please try again later.",
+                "detail": str(e)
+            }
+        )
+
 
 #when start conversation is pressed
 @app.post("/chat_anz_way_model_evaluation")
@@ -5430,6 +5568,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
