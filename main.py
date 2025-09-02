@@ -6,6 +6,7 @@ import sys
 import fitz 
 from google.cloud import storage
 import base64
+import asyncio
 
 from vertexai.generative_models import GenerativeModel, Part
 from uuid import uuid4
@@ -5420,6 +5421,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
