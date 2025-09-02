@@ -2064,18 +2064,28 @@ async def chat_with_ai(
 
         # --- Step 8: Log TTS usage ---
         # --- Log TTS API usage if available ---
+        # --- Log TTS API usage or estimate ---
         tts_usage = getattr(audio_response, "usage", None)
+        
         if tts_usage:
+            # If the SDK provides usage, log it directly
             prompt_tokens = getattr(tts_usage, "prompt_tokens", 0)
             completion_tokens = getattr(tts_usage, "completion_tokens", 0)
             total_tokens = getattr(tts_usage, "total_tokens", 0)
-        
-            log_to_db(db, username, prompt_tokens, completion_tokens, total_tokens, "gpt-4o-mini-tts")
-            print(f"[DEBUG] Logged TTS API usage: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}")
-            print("[DEBUG] Audio usage entry was successfully made in the DB")
+            print("[DEBUG] TTS usage info received from API")
         else:
-            print("[DEBUG] No TTS usage info available to log")
-
+            # Estimate usage based on text length
+            total_chars = len(ai_reply_text)
+            # Approximation: assume 1 token ≈ 4 characters
+            estimated_tokens = total_chars // 4
+            prompt_tokens = estimated_tokens
+            completion_tokens = 0
+            total_tokens = estimated_tokens
+            print(f"[DEBUG] No TTS usage info from API; estimated tokens={estimated_tokens}")
+        
+        # Log to DB
+        log_to_db(db, username, prompt_tokens, completion_tokens, total_tokens, "gpt-4o-mini-tts")
+        print(f"[DEBUG] Logged TTS API usage: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}")
         # --- Step 9: Convert audio to base64 for frontend ---
         audio_b64 = base64.b64encode(audio_response.audio_data).decode("utf-8")
         print(f"[DEBUG] Audio generated: {len(audio_response.audio_data)} bytes, base64 length: {len(audio_b64)}")
@@ -5407,6 +5417,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
