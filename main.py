@@ -2552,9 +2552,12 @@ Output JSON format (strictly):
                 "role": "system",
                 "content": (
                     "You are an AI evaluator. Assess the student's last response in the context of the ongoing conversation. "
+                    "Relevance is defined as how well the student is using the AI to prepare for the exam, "
+                    "including asking clarifying questions, following step-by-step guidance, attempting answers, "
+                    "and showing engagement with the material. "
                     "Return a JSON object ONLY with the following fields:\n"
-                    "- relevance_score (0-100): numeric score indicating how relevant the student's message was.\n"
-                    "- estimated_time_minutes: estimate of time student took to respond.\n"
+                    "- relevance_score (0-100): numeric score indicating how constructively the student is using AI for exam preparation.\n"
+                    "- estimated_time_minutes: estimate of time the student spent to respond.\n"
                     "- comment: short explanation for auditing purposes."
                 )
             },
@@ -5647,6 +5650,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
