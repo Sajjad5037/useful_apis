@@ -276,18 +276,16 @@ class SendMessageRequest(BaseModel):
     message: str
     username: str  # <-- added username
     
-class CostPerInteraction(Base):
-    __tablename__ = "cost_per_interaction"
+class StudentEvaluation(Base):
+    __tablename__ = "student_evaluations"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     username = Column(String(100), nullable=False)
-    model = Column(String(50), nullable=False)
-    prompt_tokens = Column(Integer, nullable=False)
-    completion_tokens = Column(Integer, nullable=False)
-    total_tokens = Column(Integer, nullable=False)
-    cost_usd = Column(Numeric(10, 6), nullable=False)
+    time_taken = Column(Float, nullable=True)            # Estimated time in minutes
+    relevance_score = Column(Integer, nullable=True)     # 0-100
+    comment = Column(Text, nullable=True)                # Optional auditing comment
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
+    
 class Campaign(Base):
     __tablename__ = "campaigns"
 
@@ -2528,6 +2526,65 @@ async def send_message(
             total_tokens=usage.total_tokens,
             model_name="gpt-4o-mini"
         )
+        #second api call to openai to know students' seriousness
+        evaluation_prompt = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an AI evaluator. Assess the student's last response in the context of the ongoing conversation. "
+                    "Return a JSON object ONLY with the following fields:\n"
+                    "- relevance_score (0-100): numeric score indicating how relevant the student's message was.\n"
+                    "- estimated_time_minutes: estimate of time student took to respond.\n"
+                    "- comment: short explanation for auditing purposes."
+                )
+            },
+            {
+                "role": "user",
+                "content": f"Student message:\n{req.message}\n\nConversation context:\n{session_history}"
+            }
+        ]
+        
+        print("[DEBUG] Sending evaluation request to OpenAI API...")
+        evaluation_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=evaluation_prompt
+        )
+        
+        evaluation_reply = evaluation_response.choices[0].message.content
+        print(f"[DEBUG] Evaluation reply (truncated 150 chars): {evaluation_reply[:150]}")
+        
+        # Parse JSON safely
+        try:
+            evaluation_data = json.loads(evaluation_reply)
+        except json.JSONDecodeError:
+            evaluation_data = {
+                "relevance_score": None,
+                "estimated_time_minutes": None,
+                "comment": evaluation_reply
+            }
+        
+        # Log token usage of evaluation API call
+        evaluation_usage = evaluation_response.usage
+        log_to_db(
+            db,
+            username=req.username,
+            prompt_tokens=evaluation_usage.prompt_tokens,
+            completion_tokens=evaluation_usage.completion_tokens,
+            total_tokens=evaluation_usage.total_tokens
+        )
+        
+        # Save evaluation data to separate table
+         # --- Direct DB entry ---
+        new_evaluation = StudentEvaluation(
+            username=req.username,
+            time_taken=evaluation_data.get("estimated_time_minutes"),
+            relevance_score=evaluation_data.get("relevance_score"),
+            comment=evaluation_data.get("comment")
+        )
+        db.add(new_evaluation)
+        db.commit()
+        db.refresh(new_evaluation)
+        
 
         
 
@@ -5568,6 +5625,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
