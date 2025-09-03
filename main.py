@@ -1991,26 +1991,6 @@ def users_total_usage(
     return JSONResponse(content=response)
 
 
-from fastapi import FastAPI, Query, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from typing import Optional
-from datetime import datetime
-from models import StudentEvaluation, get_db  # adjust this import according to your project
-
-app = FastAPI()
-
-# Enable CORS for your frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # replace "*" with your frontend domain in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-
 @app.get("/response_analyzer_anzway")
 def response_analyzer(
     username: str = Query(..., description="The student's username"),
@@ -5733,6 +5713,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
