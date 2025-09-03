@@ -203,7 +203,17 @@ s3 = boto3.client(
     aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
     region_name=AWS_REGION
 )
-# for solving math problem after exxtracing from images
+
+
+class StudentEvaluation(Base):
+    __tablename__ = "student_evaluation"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username = Column(String(100), nullable=False)
+    time_taken = Column(Float, nullable=True)  # in minutes, can be None
+    relevance_score = Column(Float, nullable=True)  # 0-100 scale
+    comment = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class StudentUsageRequest(BaseModel):
     student_name: str
@@ -2379,6 +2389,7 @@ async def chat_with_ai(
 
 
 MAX_EXCHANGES = 5  # 5 exchanges = 10 messages (user+assistant)
+
 @app.post("/send_message_anz_way_model_evaluation")
 async def send_message(
     req: SendMessageRequest,
@@ -2389,9 +2400,9 @@ async def send_message(
     try:
         print("\n[DEBUG] Received message request:")
         print(f"  session_id: {req.session_id}")
-        print(f"  user_message: {req.message[:100]}")  # truncate for readability
+        print(f"  user_message (truncated 100 chars): {req.message[:100]}")
 
-        # Validate session
+        # --- Validate session ---
         if req.session_id not in sessions:
             print("[WARNING] Invalid session_id received.")
             return JSONResponse(
@@ -2401,61 +2412,67 @@ async def send_message(
 
         session_history = sessions[req.session_id]
         print(f"[DEBUG] Current session length: {len(session_history)} messages")
+        print(f"[DEBUG] Last 3 messages: {session_history[-3:]}")  # preview last 3 messages
 
-        # Check if max exchanges reached
+        # --- Check if max exchanges reached ---
         if len(session_history) >= MAX_EXCHANGES * 2:
             print(f"[INFO] Max exchanges reached for session {req.session_id}")
-        
-            # --- Evaluate preparedness before ending session ---
+
             try:
                 print("[DEBUG] Preparing final AI evaluation for DB save")
-            
-                # Construct prompt for AI to extract question and preparedness
-                final_prompt = f"""
-                You are an AI tutor evaluating a student's exam preparation.
-                
-                Instructions:
-                1. From the conversation below, extract the main exam question that the student was preparing for. Use the **most recent relevant question**.
-                2. Assess the student's preparedness using **exactly one of these labels**: "Well prepared", "Needs improvement", "Not prepared".
-                3. Return the result **strictly in pure JSON only** — do not include backticks, markdown, explanations, or any extra text.
-                
-                Conversation:
-                {session_history}
-                
-                Output JSON format (strictly):
-                {{
-                    "question_text": "...",
-                    "preparedness_level": "..."
-                }}
-                """
 
-                print(f"[DEBUG] Sending final evaluation prompt to OpenAI (truncated 200 chars): {final_prompt[:200]}...")
-            
-                # Call OpenAI API
+                # --- Format conversation for AI ---
+                conversation_text = "\n".join(
+                    [f"{m['role'].capitalize()}: {m['content']}" for m in session_history]
+                )
+                final_prompt = f"""
+You are an AI tutor evaluating a student's exam preparation.
+
+Instructions:
+1. From the conversation below, extract the main exam question that the student was preparing for. Use the **most recent relevant question**.
+2. Assess the student's preparedness using **exactly one of these labels**: "Well prepared", "Needs improvement", "Not prepared".
+3. Return the result **strictly in pure JSON only** — do not include backticks, markdown, explanations, or any extra text.
+
+Conversation:
+{conversation_text}
+
+Output JSON format (strictly):
+{{
+    "question_text": "...",
+    "preparedness_level": "..."
+}}
+"""
+                print(f"[DEBUG] Final evaluation prompt prepared (truncated 200 chars): {final_prompt[:200]}...")
+
+                # --- Call OpenAI API ---
                 response = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[{"role": "user", "content": final_prompt}]
                 )
-            
                 reply_content = response.choices[0].message.content
-                print(f"[DEBUG] Received final AI evaluation reply (truncated 200 chars): {reply_content[:200]}")
-            
-                # Parse JSON response
-                summary = json.loads(reply_content)
+                print(f"[DEBUG] Final AI evaluation reply (truncated 200 chars): {reply_content[:200]}")
+
+                # --- Parse JSON ---
+                try:
+                    summary = json.loads(reply_content)
+                except json.JSONDecodeError:
+                    print("[WARNING] Invalid JSON from final evaluation API")
+                    summary = {"question_text": "N/A", "preparedness_level": "Not prepared"}
+
                 extracted_question = summary.get("question_text", "N/A")
                 ai_label = summary.get("preparedness_level", "Not prepared")
                 print(f"[DEBUG] Extracted question (truncated 100 chars): {extracted_question[:100]}")
                 print(f"[DEBUG] AI reported preparedness level: {ai_label}")
-            
-                # Convert AI string to Enum
+
+                # --- Convert label to Enum ---
                 ai_enum_value = ai_label.lower().replace(" ", "_")
                 try:
                     preparedness_enum = PreparednessLevel(ai_enum_value)
                 except ValueError:
-                    print(f"[WARNING] AI returned unexpected preparedness value '{ai_label}', defaulting to 'needs_improvement'")
+                    print(f"[WARNING] Unexpected AI label '{ai_label}', defaulting to 'needs_improvement'")
                     preparedness_enum = PreparednessLevel.needs_improvement
-            
-                # Save evaluation to database
+
+                # --- Save reflection to DB ---
                 new_reflection = StudentReflection(
                     student_id=req.id,
                     question_text=extracted_question,
@@ -2465,13 +2482,11 @@ async def send_message(
                 db.commit()
                 db.refresh(new_reflection)
                 print(f"[DB] Saved student reflection with ID {new_reflection.id}")
-            
+
             except Exception as e:
                 db.rollback()
                 print("[ERROR] Failed to save student reflection:", e)
-            
-        
-            # Return response to frontend
+
             return JSONResponse(
                 status_code=200,
                 content={
@@ -2479,12 +2494,13 @@ async def send_message(
                     "session_id": req.session_id,
                     "conversation_ended": True
                 }
-            ) 
-        # Append user message to session
+            )
+
+        # --- Append user message ---
         session_history.append({"role": "user", "content": req.message})
         print(f"[DEBUG] Appended user message. Session length now: {len(session_history)}")
 
-        # System prompt
+        # --- System prompt ---
         system_prompt = (
             "You are a helpful AI tutor for sociology exam preparation. "
             "Always stay focused on the specific exam question being attempted. "
@@ -2494,43 +2510,104 @@ async def send_message(
             "❌ Do not drift into general sociology or unrelated examples. "
             "If the student goes off-topic, politely redirect them back to the current question."
         )
-
-
         print("[DEBUG] System prompt prepared.")
 
-        # Combine system prompt + session history
+        # --- Combine messages ---
         messages = [{"role": "system", "content": system_prompt}] + session_history
-        print("[DEBUG] Combined messages to send to OpenAI API:")
-        for idx, m in enumerate(messages):
+        print(f"[DEBUG] Prepared {len(messages)} messages for OpenAI API")
+        for idx, m in enumerate(messages[-5:]):  # show last 5 messages
             preview = m['content'][:80].replace("\n", " ")
             print(f"  {idx+1}. {m['role']}: {preview}...")
 
-        # Call OpenAI API
+        # --- AI reply ---
         print("[DEBUG] Sending request to OpenAI API...")
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages
         )
-
         reply = response.choices[0].message.content
         print(f"[DEBUG] Received AI reply (truncated 150 chars): {reply[:150]}")
 
-        # Save AI reply
+        # --- Save AI reply ---
         session_history.append({"role": "assistant", "content": reply})
         print(f"[DEBUG] Appended AI reply. Session length now: {len(session_history)}")
 
         usage = response.usage
         log_to_db(
             db,
-            username=req.username,            # Use the username from the request
+            username=req.username,
             prompt_tokens=usage.prompt_tokens,
             completion_tokens=usage.completion_tokens,
             total_tokens=usage.total_tokens,
             model_name="gpt-4o-mini"
         )
+        print("[DEBUG] Logged token usage for AI reply.")
 
-        
+        # --- Evaluation API call ---
+        conversation_text = "\n".join(
+            [f"{m['role'].capitalize()}: {m['content']}" for m in session_history]
+        )
+        evaluation_prompt = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an AI evaluator. Assess the student's last response in the context of the ongoing conversation. "
+                    "Return a JSON object ONLY with the following fields:\n"
+                    "- relevance_score (0-100): numeric score indicating how relevant the student's message was.\n"
+                    "- estimated_time_minutes: estimate of time student took to respond.\n"
+                    "- comment: short explanation for auditing purposes."
+                )
+            },
+            {
+                "role": "user",
+                "content": f"Student message:\n{req.message}\n\nConversation context:\n{conversation_text}"
+            }
+        ]
 
+        print("[DEBUG] Sending evaluation request to OpenAI API...")
+        evaluation_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=evaluation_prompt
+        )
+        evaluation_reply = evaluation_response.choices[0].message.content
+        print(f"[DEBUG] Evaluation reply (truncated 150 chars): {evaluation_reply[:150]}")
+
+        # --- Parse evaluation JSON ---
+        try:
+            evaluation_data = json.loads(evaluation_reply)
+        except json.JSONDecodeError:
+            print("[WARNING] Invalid JSON from evaluation API")
+            evaluation_data = {
+                "relevance_score": None,
+                "estimated_time_minutes": None,
+                "comment": evaluation_reply
+            }
+
+        # --- Log evaluation usage ---
+        eval_usage = evaluation_response.usage
+        log_to_db(
+            db,
+            username=req.username,
+            prompt_tokens=eval_usage.prompt_tokens,
+            completion_tokens=eval_usage.completion_tokens,
+            total_tokens=eval_usage.total_tokens,
+            model_name="gpt-4o-mini"
+        )
+        print("[DEBUG] Logged token usage for evaluation call.")
+
+        # --- Save evaluation to DB ---
+        new_evaluation = StudentEvaluation(
+            username=req.username,
+            time_taken=evaluation_data.get("estimated_time_minutes"),
+            relevance_score=evaluation_data.get("relevance_score"),
+            comment=evaluation_data.get("comment")
+        )
+        db.add(new_evaluation)
+        db.commit()
+        db.refresh(new_evaluation)
+        print(f"[DB] Saved student evaluation with ID {new_evaluation.id}")
+
+        # --- Return reply ---
         return JSONResponse(
             content={
                 "reply": reply,
@@ -2549,6 +2626,8 @@ async def send_message(
                 "detail": str(e)
             }
         )
+
+
 
 # a new evaluate your essay so that anser could include diagrams
 async def evaluate_student_response_from_images_new(
@@ -5568,6 +5647,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
