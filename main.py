@@ -1989,6 +1989,89 @@ def users_total_usage(
             })
 
     return JSONResponse(content=response)
+
+
+from fastapi import FastAPI, Query, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from typing import Optional
+from datetime import datetime
+from models import StudentEvaluation, get_db  # adjust this import according to your project
+
+app = FastAPI()
+
+# Enable CORS for your frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # replace "*" with your frontend domain in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+
+@app.get("/response_analyzer_anzway")
+def response_analyzer(
+    username: str = Query(..., description="The student's username"),
+    db: Session = Depends(get_db)
+):
+    try:
+        print(f"\n[DEBUG] Received request for username: {username}")
+
+        # Fetch all entries for this student
+        student_records = db.query(StudentEvaluation).filter(StudentEvaluation.username == username).all()
+        print(f"[DEBUG] Fetched {len(student_records)} records from the database")
+
+        if not student_records:
+            return JSONResponse(
+                status_code=404,
+                content={"detail": f"No records found for username '{username}'"}
+            )
+
+        total_minutes = 0
+        total_relevance = 0
+        entries = []
+
+        for idx, record in enumerate(student_records, start=1):
+            mins = record.time_taken or 0
+            relevancy = record.relevance_score or 0
+
+            print(f"[DEBUG] Record {idx}: mins={mins}, relevancy={relevancy}, comment='{record.comment}', created_at={record.created_at}")
+
+            total_minutes += mins
+            total_relevance += relevancy
+
+            entries.append({
+                "mins": mins,
+                "relevancy_percentage": relevancy,
+                "comment": record.comment,
+                "created_at": record.created_at.isoformat()
+            })
+
+        average_relevancy = round(total_relevance / len(student_records), 2)
+        print(f"[DEBUG] Calculated total_minutes={total_minutes}, average_relevancy_percentage={average_relevancy}")
+
+        response = {
+            "total_minutes": total_minutes,
+            "average_relevancy_percentage": average_relevancy,
+            "student_entries": entries
+        }
+
+        print(f"[DEBUG] Sending response: {response}")
+
+        return JSONResponse(content=response)
+
+    except Exception as e:
+        print("[ERROR] Exception occurred in /response_analyzer_anzway")
+        print(traceback.format_exc())
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Server error occurred", "error": str(e)}
+        )
+
+
+
     
 #when the start conversation is pressed (audio ai conversation)
 
@@ -5650,6 +5733,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
