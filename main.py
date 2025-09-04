@@ -2248,9 +2248,8 @@ async def send_audio_message(
 
         
         
+        
         # --- Step 1: Receive and transcribe audio ---
-        
-        
         print("[DEBUG] Reading uploaded audio file...")
         raw_audio = await audio.read()
         print(f"[DEBUG] Received audio file: {len(raw_audio)} bytes")
@@ -2259,7 +2258,7 @@ async def send_audio_message(
         audio_file_like = io.BytesIO(raw_audio)
         
         try:
-            # Detect format from incoming file (WebM, OGG, etc.)
+            # Detect format from incoming file (WebM, OGG, etc.) and convert
             print("[DEBUG] Converting audio to 16kHz mono 16-bit WAV in-memory...")
             audio_segment = AudioSegment.from_file(audio_file_like)  # auto-detect format
             audio_segment = audio_segment.set_frame_rate(16000)      # 16kHz
@@ -2272,6 +2271,11 @@ async def send_audio_message(
             wav_io.seek(0)
             wav_io.name = "audio.wav"  # OpenAI expects a filename
             print("[DEBUG] Audio conversion complete. WAV bytes:", len(wav_io.getvalue()))
+        
+            # Calculate audio duration in seconds
+            audio_duration_seconds = len(audio_segment) / 1000
+            print(f"[DEBUG] Audio duration: {audio_duration_seconds:.2f} seconds")
+        
         except Exception as e:
             print(f"[ERROR] Audio conversion failed: {e}")
             raise
@@ -2291,20 +2295,33 @@ async def send_audio_message(
         user_message = transcription.text.strip()
         print(f"[DEBUG] Transcription complete. First 100 chars: {user_message[:100]}")
         
-        # Optional: log token usage
+        # --- Log usage and cost ---
         if "usage" in transcription and isinstance(transcription["usage"], dict):
+            # Token-based usage (rare for transcription)
             usage = transcription["usage"]
             log_to_db(
                 db,
                 username,
-                usage.get("prompt_tokens", 0),
-                usage.get("completion_tokens", 0),
-                usage.get("total_tokens", 0),
-                "gpt-4o-transcribe"
+                prompt_tokens=usage.get("prompt_tokens", 0),
+                completion_tokens=usage.get("completion_tokens", 0),
+                total_tokens=usage.get("total_tokens", 0),
+                model_name="gpt-4o-transcribe",
+                audio_duration_seconds=audio_duration_seconds  # new param for transcription cost
             )
         else:
+            # Estimate tokens for fallback
             total_tokens = max(1, len(user_message) // 4)
-            log_to_db(db, username, total_tokens, 0, total_tokens, "gpt-4o-transcribe")
+            log_to_db(
+                db,
+                username,
+                prompt_tokens=total_tokens,
+                completion_tokens=0,
+                total_tokens=total_tokens,
+                model_name="gpt-4o-transcribe",
+                audio_duration_seconds=audio_duration_seconds
+            )
+
+        
 
 
         # --- Step 2: Check max exchanges ---
@@ -5814,6 +5831,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
