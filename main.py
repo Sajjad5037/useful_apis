@@ -2229,18 +2229,20 @@ async def send_audio_message(
         session_history = sessions[session_id]
 
         # --- Step 1: Transcribe audio ---
+        print("[DEBUG] Reading audio file...")
         raw_audio = await audio.read()
         print(f"[DEBUG] Received audio file: {len(raw_audio)} bytes")
-
-        # Wrap bytes in a file-like object
-        audio_file = io.BytesIO(raw_audio)
-
+    
+        audio_file = io.BytesIO(raw_audio)  # file-like object
+        print("[DEBUG] Wrapped audio bytes in io.BytesIO")
+    
+        print("[DEBUG] Sending audio to OpenAI transcription endpoint...")
         transcription = client.audio.transcriptions.create(
             model="gpt-4o-transcribe",  # or "whisper-1"
-            file=audio_file,
-            filename=audio.filename  # provide original filename
+            file=audio_file
         )
-
+    
+        print("[DEBUG] Transcription successful")
         user_message = transcription.text.strip()
         print(f"[DEBUG] Transcription complete. First 100 chars: {user_message[:100]}")
 
@@ -5759,6 +5761,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
