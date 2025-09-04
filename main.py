@@ -2230,7 +2230,8 @@ async def send_audio_message(
 
         session_history = sessions[session_id]
 
-        # --- Step 1: Transcribe audio ---
+        
+        # --- Step 1: Receive and transcribe audio ---
         print("[DEBUG] Reading uploaded audio file...")
         raw_audio = await audio.read()
         print(f"[DEBUG] Received audio file: {len(raw_audio)} bytes")
@@ -2238,27 +2239,37 @@ async def send_audio_message(
         # Wrap bytes in a BytesIO object
         audio_file_like = io.BytesIO(raw_audio)
         
-        # Convert WebM → WAV (16kHz, mono) using pydub
-        print("[DEBUG] Converting audio to WAV in-memory...")
-        audio_segment = AudioSegment.from_file(audio_file_like, format="webm")
-        audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
+        # Convert WebM → WAV (16kHz, mono) in-memory using pydub
+        try:
+            print("[DEBUG] Converting audio to WAV in-memory...")
+            audio_segment = AudioSegment.from_file(audio_file_like, format="webm")
+            audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
         
-        # Export to in-memory WAV file
-        wav_io = io.BytesIO()
-        audio_segment.export(wav_io, format="wav")
-        wav_io.seek(0)
-        print("[DEBUG] Audio conversion complete")
+            # Export to in-memory WAV file
+            wav_io = io.BytesIO()
+            audio_segment.export(wav_io, format="wav")
+            wav_io.seek(0)
+            print("[DEBUG] Audio conversion complete")
+        except Exception as e:
+            print(f"[ERROR] Audio conversion failed: {e}")
+            raise
         
         # Send WAV to OpenAI transcription endpoint
-        print("[DEBUG] Sending audio to OpenAI transcription endpoint...")
-        transcription = client.audio.transcriptions.create(
-            model="gpt-4o-transcribe",  # or "whisper-1"
-            file=wav_io
-        )
-        print("[DEBUG] Transcription successful")
+        try:
+            print("[DEBUG] Sending audio to OpenAI transcription endpoint...")
+            transcription = client.audio.transcriptions.create(
+                model="gpt-4o-transcribe",  # or "whisper-1"
+                file=wav_io
+            )
+            print("[DEBUG] Transcription successful")
+        except Exception as e:
+            print(f"[ERROR] Transcription failed: {e}")
+            raise
         
+        # Extract the text
         user_message = transcription.text.strip()
         print(f"[DEBUG] Transcription complete. First 100 chars: {user_message[:100]}")
+
         #here
         # --- Step 1b: Log transcription usage ---
         if hasattr(transcription, "usage"):
@@ -5775,6 +5786,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
