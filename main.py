@@ -2231,25 +2231,36 @@ async def send_audio_message(
         session_history = sessions[session_id]
 
         
+        
         # --- Step 1: Receive and transcribe audio ---
+        print("[DEBUG] --- Step 1: Start ---")
         print("[DEBUG] Reading uploaded audio file...")
-        raw_audio = await audio.read()
-        print(f"[DEBUG] Received audio file: {len(raw_audio)} bytes")
+        
+        try:
+            raw_audio = await audio.read()
+            print(f"[DEBUG] Received audio file: {len(raw_audio)} bytes")
+        except Exception as e:
+            print(f"[ERROR] Failed to read uploaded audio: {e}")
+            raise
         
         # Wrap bytes in a BytesIO object
         audio_file_like = io.BytesIO(raw_audio)
+        print("[DEBUG] Wrapped audio bytes in io.BytesIO")
         
         # Convert WebM → WAV (16kHz, mono) in-memory using pydub
         try:
-            print("[DEBUG] Converting audio to WAV in-memory...")
+            print("[DEBUG] Converting audio to WAV in-memory using pydub...")
             audio_segment = AudioSegment.from_file(audio_file_like, format="webm")
+            print(f"[DEBUG] Original audio frame rate: {audio_segment.frame_rate}, channels: {audio_segment.channels}")
+        
             audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
+            print(f"[DEBUG] Converted audio frame rate: {audio_segment.frame_rate}, channels: {audio_segment.channels}")
         
             # Export to in-memory WAV file
             wav_io = io.BytesIO()
             audio_segment.export(wav_io, format="wav")
             wav_io.seek(0)
-            print("[DEBUG] Audio conversion complete")
+            print(f"[DEBUG] Audio conversion complete. WAV size: {wav_io.getbuffer().nbytes} bytes")
         except Exception as e:
             print(f"[ERROR] Audio conversion failed: {e}")
             raise
@@ -2261,23 +2272,30 @@ async def send_audio_message(
                 model="gpt-4o-transcribe",  # or "whisper-1"
                 file=wav_io
             )
-            print("[DEBUG] Transcription successful")
+            print("[DEBUG] Transcription request completed successfully")
         except Exception as e:
             print(f"[ERROR] Transcription failed: {e}")
             raise
         
         # Extract the text
         user_message = transcription.text.strip()
-        print(f"[DEBUG] Transcription complete. First 100 chars: {user_message[:100]}")
-
-        #here
+        print(f"[DEBUG] Transcription complete. Text length: {len(user_message)}")
+        print(f"[DEBUG] First 100 chars: {user_message[:100]}")
+        
         # --- Step 1b: Log transcription usage ---
-        if hasattr(transcription, "usage"):
-            usage = transcription.usage
-            log_to_db(db, username, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-transcribe")
-        else:
-            total_tokens = max(1, len(user_message) // 4)
-            log_to_db(db, username, total_tokens, 0, total_tokens, "gpt-4o-transcribe")
+        try:
+            if hasattr(transcription, "usage"):
+                usage = transcription.usage
+                print(f"[DEBUG] Logging usage: prompt_tokens={usage.prompt_tokens}, "
+                      f"completion_tokens={usage.completion_tokens}, total_tokens={usage.total_tokens}")
+                log_to_db(db, username, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-transcribe")
+            else:
+                total_tokens = max(1, len(user_message) // 4)
+                print(f"[DEBUG] Logging estimated usage: total_tokens={total_tokens}")
+                log_to_db(db, username, total_tokens, 0, total_tokens, "gpt-4o-transcribe")
+        except Exception as e:
+            print(f"[ERROR] Failed to log usage to DB: {e}")
+
 
         # --- Step 2: Check max exchanges ---
         if len(session_history) >= MAX_EXCHANGES * 2:
@@ -5786,6 +5804,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
