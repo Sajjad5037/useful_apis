@@ -1,4 +1,5 @@
 from enum import Enum
+import subprocess
 import docx2txt
 import os
 import vertexai
@@ -2229,23 +2230,35 @@ async def send_audio_message(
         session_history = sessions[session_id]
 
         # --- Step 1: Transcribe audio ---
-        print("[DEBUG] Reading audio file...")
+        print("[DEBUG] Reading uploaded audio file...")
         raw_audio = await audio.read()
         print(f"[DEBUG] Received audio file: {len(raw_audio)} bytes")
     
-        audio_file = io.BytesIO(raw_audio)  # file-like object
-        print("[DEBUG] Wrapped audio bytes in io.BytesIO")
+        # --- Step 1a: Save WebM temporarily ---
+        webm_path = "temp_audio.webm"
+        wav_path = "temp_audio.wav"
+        with open(webm_path, "wb") as f:
+            f.write(raw_audio)
+        print(f"[DEBUG] Saved WebM audio to {webm_path}")
     
-        print("[DEBUG] Sending audio to OpenAI transcription endpoint...")
-        transcription = client.audio.transcriptions.create(
-            model="gpt-4o-transcribe",  # or "whisper-1"
-            file=audio_file
-        )
+        # --- Step 1b: Convert WebM → WAV (16kHz, mono) ---
+        print("[DEBUG] Converting WebM → WAV using ffmpeg...")
+        subprocess.run([
+            "ffmpeg", "-y", "-i", webm_path, "-ar", "16000", "-ac", "1", wav_path
+        ], check=True)
+        print(f"[DEBUG] Conversion complete. WAV file at {wav_path}")
     
-        print("[DEBUG] Transcription successful")
+        # --- Step 1c: Open WAV for transcription ---
+        with open(wav_path, "rb") as f:
+            print("[DEBUG] Sending WAV audio to OpenAI transcription endpoint...")
+            transcription = client.audio.transcriptions.create(
+                model="gpt-4o-transcribe",  # or "whisper-1"
+                file=f
+            )
+    
         user_message = transcription.text.strip()
-        print(f"[DEBUG] Transcription complete. First 100 chars: {user_message[:100]}")
-
+        print(f"[DEBUG] Transcription successful. First 100 chars: {user_message[:100]}")(f"[DEBUG] Transcription complete. First 100 chars: {user_message[:100]}")
+        #here
         # --- Step 1b: Log transcription usage ---
         if hasattr(transcription, "usage"):
             usage = transcription.usage
@@ -5761,6 +5774,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
