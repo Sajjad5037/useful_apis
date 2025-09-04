@@ -1880,6 +1880,8 @@ def initialize_qa_chain_with_cost(bucket_name: str, folder_in_bucket: str, usern
         return None
 
 
+#here
+
 def log_to_db(
     db: Session,
     username: str,
@@ -1887,18 +1889,28 @@ def log_to_db(
     completion_tokens: int = 0,
     total_tokens: int = 0,
     model_name: str = "",
-    is_embedding: bool = False
+    is_embedding: bool = False,
+    audio_duration_seconds: float = 0.0  # New optional param for audio
 ):
-    """Logs token usage + cost into the DB using SQLAlchemy ORM session."""
+    """
+    Logs usage/cost into DB. Supports:
+    - Chat/completion tokens
+    - Embeddings
+    - Audio transcription/TTS (per-minute pricing)
+    """
 
     cost_info = MODEL_COSTS.get(model_name, {})
 
     if is_embedding:
-        # Embedding cost = total_tokens × per-token embedding price
+        # Embedding cost
         embedding_cost = cost_info.get("embedding", 0)
         cost_usd = total_tokens * embedding_cost
+    elif "per_minute" in cost_info and audio_duration_seconds > 0:
+        # Audio cost
+        minutes = audio_duration_seconds / 60.0
+        cost_usd = minutes * cost_info["per_minute"]
     else:
-        # Chat/Completion cost
+        # Chat/completion token cost
         cost_usd = (
             (prompt_tokens * cost_info.get("prompt", 0)) +
             (completion_tokens * cost_info.get("completion", 0))
@@ -1917,7 +1929,11 @@ def log_to_db(
     db.commit()
     db.refresh(new_entry)
 
-    print(f"[DEBUG] Token usage logged: user={username}, model={model_name}, tokens={total_tokens}, cost=${cost_usd:.6f}")
+    print(
+        f"[DEBUG] Token/audio usage logged: user={username}, model={model_name}, "
+        f"tokens={total_tokens}, audio_sec={audio_duration_seconds:.2f}, cost=${cost_usd:.6f}"
+    )
+
 
 @app.post("/student_total_usage")
 def get_student_total_usage(req: StudentUsageRequest, db: Session = Depends(get_db)):
@@ -5798,6 +5814,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
