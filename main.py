@@ -10,6 +10,7 @@ import base64
 import asyncio
 import io
 import tempfile
+from pydub import AudioSegment
 from vertexai.generative_models import GenerativeModel, Part
 from uuid import uuid4
 from sqlalchemy.dialects.postgresql import JSONB
@@ -2234,27 +2235,27 @@ async def send_audio_message(
         raw_audio = await audio.read()
         print(f"[DEBUG] Received audio file: {len(raw_audio)} bytes")
         
-        # Save uploaded audio to a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp_in:
-            tmp_in.write(raw_audio)
-            tmp_in_path = tmp_in.name
+        # Wrap bytes in a BytesIO object
+        audio_file_like = io.BytesIO(raw_audio)
         
-        # Convert WebM → WAV (16kHz, mono) using ffmpeg
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_out:
-            tmp_out_path = tmp_out.name
+        # Convert WebM → WAV (16kHz, mono) using pydub
+        print("[DEBUG] Converting audio to WAV in-memory...")
+        audio_segment = AudioSegment.from_file(audio_file_like, format="webm")
+        audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
         
-        print(f"[DEBUG] Converting audio to WAV for OpenAI transcription...")
-        subprocess.run([
-            "ffmpeg", "-y", "-i", tmp_in_path, "-ar", "16000", "-ac", "1", tmp_out_path
-        ], check=True)
+        # Export to in-memory WAV file
+        wav_io = io.BytesIO()
+        audio_segment.export(wav_io, format="wav")
+        wav_io.seek(0)
+        print("[DEBUG] Audio conversion complete")
         
-        # Read WAV and send to OpenAI
-        with open(tmp_out_path, "rb") as wav_file:
-            print("[DEBUG] Sending converted WAV audio to OpenAI transcription endpoint...")
-            transcription = client.audio.transcriptions.create(
-                model="gpt-4o-transcribe",
-                file=wav_file
-            )
+        # Send WAV to OpenAI transcription endpoint
+        print("[DEBUG] Sending audio to OpenAI transcription endpoint...")
+        transcription = client.audio.transcriptions.create(
+            model="gpt-4o-transcribe",  # or "whisper-1"
+            file=wav_io
+        )
+        print("[DEBUG] Transcription successful")
         
         user_message = transcription.text.strip()
         print(f"[DEBUG] Transcription complete. First 100 chars: {user_message[:100]}")
@@ -5774,6 +5775,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
