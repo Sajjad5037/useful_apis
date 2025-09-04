@@ -11,6 +11,9 @@ python-multipart>=0.0.7
 google-cloud-aiplatform>=1.70.0
 starlette  # let pip pick compatible version
 
+pydub>=0.25.1
+
+
 # Data / NLP
 nltk>=3.8.1
 sympy==1.12
@@ -67,6 +70,7 @@ pydantic==2.9.2
 
 
 #
+
 
 
 
