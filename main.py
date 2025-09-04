@@ -2201,6 +2201,9 @@ async def get_audio(session_id: str):
     }
 #when the sudent ask the question for the audio AI
 
+
+MAX_EXCHANGES = 5
+
 @app.post("/send_audio_message")
 async def send_audio_message(
     audio: UploadFile = File(...),
@@ -2212,17 +2215,15 @@ async def send_audio_message(
     global sessions, audio_store
 
     try:
-        print(f"\n[DEBUG] --- Incoming request to /send_audio_message ---")
+        print(f"\n[DEBUG] --- Incoming request ---")
         print(f"[DEBUG] session_id={session_id}, username={username}, file={audio.filename}, content_type={audio.content_type}")
 
         # --- Step 0: Validate session ---
         if session_id not in sessions:
-            print(f"[DEBUG] Invalid session_id={session_id}. Known sessions: {list(sessions.keys())}")
             return JSONResponse(
                 status_code=400,
                 content={"reply": "⚠️ Invalid session_id. Start a new conversation first."}
             )
-        print(f"[DEBUG] Session {session_id} found. History length={len(sessions[session_id])}")
 
         session_history = sessions[session_id]
 
@@ -2230,26 +2231,28 @@ async def send_audio_message(
         raw_audio = await audio.read()
         print(f"[DEBUG] Received audio file: {len(raw_audio)} bytes")
 
+        # Wrap bytes in a file-like object
+        audio_file = io.BytesIO(raw_audio)
+
         transcription = client.audio.transcriptions.create(
             model="gpt-4o-transcribe",  # or "whisper-1"
-            file=raw_audio
+            file=audio_file,
+            filename=audio.filename  # provide original filename
         )
+
         user_message = transcription.text.strip()
         print(f"[DEBUG] Transcription complete. First 100 chars: {user_message[:100]}")
 
         # --- Step 1b: Log transcription usage ---
         if hasattr(transcription, "usage"):
             usage = transcription.usage
-            print(f"[DEBUG] Transcription usage -> prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}")
             log_to_db(db, username, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-transcribe")
         else:
             total_tokens = max(1, len(user_message) // 4)
-            print(f"[DEBUG] Estimated transcription tokens={total_tokens}")
             log_to_db(db, username, total_tokens, 0, total_tokens, "gpt-4o-transcribe")
 
-        # --- Step 2: Handle max exchanges ---
+        # --- Step 2: Check max exchanges ---
         if len(session_history) >= MAX_EXCHANGES * 2:
-            print(f"[DEBUG] Session {session_id} reached max exchanges ({MAX_EXCHANGES}). Ending conversation.")
             return JSONResponse(
                 status_code=200,
                 content={
@@ -2261,29 +2264,83 @@ async def send_audio_message(
 
         # --- Step 3: Append user message ---
         session_history.append({"role": "user", "content": user_message})
-        print(f"[DEBUG] Appended user message. History length now {len(session_history)}")
 
         # --- Step 4: Build system prompt ---
         system_prompt = (
             "You are an AI tutor helping a student prepare for a sociology exam. "
-            "You already know the current exam question and its marking scheme. "
-            "Your goal is to guide the student so they gain the knowledge needed to answer this specific question well and maximize marks. "
-            "Keep explanations short and clear (under 100 words), highlight the key marking points naturally, and ask 1–2 guiding questions to prompt the student’s thinking. "
-            "Stay focused only on the current question and marking scheme, and politely decline or redirect if the student asks unrelated questions. "
-            "Always use a friendly and encouraging tone."
+            "Focus on the current question and marking scheme. "
+            "Keep explanations short, highlight key points, and ask 1–2 guiding questions. "
+            "Stay polite, friendly, and encouraging."
         )
         messages = [{"role": "system", "content": system_prompt}] + session_history
-        print(f"[DEBUG] Built messages payload with {len(messages)} entries")
 
-        # --- Step 5: Get AI reply ---
+        # --- Step 5: Generate AI reply ---
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages
         )
         ai_reply = response.choices[0].message.content.strip()
-        print(f"[DEBUG] AI reply generated. First 100 chars: {ai_reply[:100]}")
         session_history.append({"role": "assistant", "content": ai_reply})
-        print(f"[DEBUG] Appended AI reply. History length now {len(session_history)}")
+
+        #step 5b
+        # --- NEW Step 5b: Evaluate student response ---
+        evaluation_prompt = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an AI evaluator. Assess the student's last response in the context of the ongoing conversation. "
+                    "Relevance is defined as how well the student is using the AI to prepare for the exam, "
+                    "including asking clarifying questions, following step-by-step guidance, attempting answers, "
+                    "and showing engagement with the material. "
+                    "Return a JSON object ONLY with the following fields:\n"
+                    "- relevance_score (0-100): numeric score indicating constructiveness.\n"
+                    "- estimated_time_minutes: estimate of time spent.\n"
+                    "- comment: short explanation."
+                )
+            },
+            {
+                "role": "user",
+                "content": f"Student message:\n{user_message}\n\nConversation context:\n{''.join([m['content'] for m in session_history[:-1]])}"
+            }
+        ]
+        
+        evaluation_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=evaluation_prompt
+        )
+        evaluation_reply = evaluation_response.choices[0].message.content
+        
+        # Parse evaluation safely
+        try:
+            evaluation_data = json.loads(evaluation_reply)
+        except json.JSONDecodeError:
+            evaluation_data = {
+                "relevance_score": None,
+                "estimated_time_minutes": None,
+                "comment": evaluation_reply
+            }
+        
+        # Log evaluation usage
+        eval_usage = evaluation_response.usage
+        log_to_db(
+            db,
+            username=username,
+            prompt_tokens=eval_usage.prompt_tokens,
+            completion_tokens=eval_usage.completion_tokens,
+            total_tokens=eval_usage.total_tokens,
+            model_name="gpt-4o-mini"
+        )
+        
+        # Save evaluation to DB
+        new_evaluation = StudentEvaluation(
+            username=username,
+            time_taken=evaluation_data.get("estimated_time_minutes"),
+            relevance_score=evaluation_data.get("relevance_score"),
+            comment=evaluation_data.get("comment")
+        )
+        db.add(new_evaluation)
+        db.commit()
+        db.refresh(new_evaluation)
 
         # --- Step 6: Convert AI reply to audio ---
         audio_response = client.audio.speech.create(
@@ -2294,27 +2351,18 @@ async def send_audio_message(
         audio_bytes = audio_response.read()
         audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
         audio_store[session_id] = audio_b64
-        print(f"[DEBUG] Generated TTS audio: {len(audio_bytes)} bytes stored in audio_store for session {session_id}")
 
         # --- Step 7: Log chat usage ---
         if hasattr(response, "usage"):
             usage = response.usage
-            print(f"[DEBUG] Chat usage -> prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}")
-            log_to_db(
-                db,
-                username=username,
-                prompt_tokens=usage.prompt_tokens,
-                completion_tokens=usage.completion_tokens,
-                total_tokens=usage.total_tokens,
-                model_name="gpt-4o-mini"
-            )
+            log_to_db(db, username=username, prompt_tokens=usage.prompt_tokens, 
+                      completion_tokens=usage.completion_tokens, total_tokens=usage.total_tokens,
+                      model_name="gpt-4o-mini")
         else:
             total_tokens = max(1, len(ai_reply) // 4)
-            print(f"[DEBUG] Estimated chat tokens={total_tokens}")
             log_to_db(db, username, total_tokens, total_tokens, total_tokens * 2, "gpt-4o-mini")
 
-        # --- Step 8: Return response ---
-        print(f"[DEBUG] Returning final response for session {session_id}")
+        # --- Step 8: Return final response ---
         return JSONResponse(
             content={
                 "reply": ai_reply,
@@ -2329,10 +2377,7 @@ async def send_audio_message(
         print(traceback.format_exc())
         return JSONResponse(
             status_code=500,
-            content={
-                "reply": "⚠️ Server error. Please try again later.",
-                "detail": str(e)
-            }
+            content={"reply": "⚠️ Server error. Please try again later.", "detail": str(e)}
         )
 
 
@@ -5713,6 +5758,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
