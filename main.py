@@ -2276,16 +2276,19 @@ async def send_audio_message(
         print(f"[DEBUG] Transcription complete. First 100 chars: {user_message[:100]}")
         
         # Optional: log token usage
-        if hasattr(transcription, "usage"):
-            usage = transcription.usage
-            log_to_db(db, username, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-transcribe")
+        if "usage" in transcription and isinstance(transcription["usage"], dict):
+            usage = transcription["usage"]
+            log_to_db(
+                db,
+                username,
+                usage.get("prompt_tokens", 0),
+                usage.get("completion_tokens", 0),
+                usage.get("total_tokens", 0),
+                "gpt-4o-transcribe"
+            )
         else:
             total_tokens = max(1, len(user_message) // 4)
             log_to_db(db, username, total_tokens, 0, total_tokens, "gpt-4o-transcribe")
-
-        
-        
-
 
 
         # --- Step 2: Check max exchanges ---
@@ -5795,6 +5798,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
