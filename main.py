@@ -3413,34 +3413,57 @@ async def train_on_images(
         <<< END IMPROVED TEXT >>>
         """
 
+       
+
         # ------------------------------------------------
         # STEP 5: Mistake analysis (AI -> JSON format)
         # ------------------------------------------------
         analysis_prompt = f"""
         You are an expert essay analysis assistant.
-
-        Compare the original and improved essay.
-        For each correction, create an object with:
+        
+        Task:
+        Compare the original essay and the improved essay.
+        For each correction, create an object with the following fields:
         - "original_text": the exact original fragment
         - "corrected_text": the improved fragment
         - "category": one of ["Grammar", "Punctuation", "Vocabulary", "Sentence structure / flow", "Redundancy / conciseness"]
         - "explanation": a concise explanation of why the change was made
-
-        Produce ONLY a JSON array of objects.
-        If there are no corrections, return [].
-
+        
+        Instructions:
+        1. Produce ONLY a JSON array of objects.
+        2. Do NOT include any text, commentary, or explanations outside the JSON array.
+        3. If there are no corrections, return an empty array: []
+        
         Original Essay:
-        <<< BEGIN ORIGINAL >>>
+        <<<BEGIN ORIGINAL>>>
         {combined_text.strip()}
-        <<< END ORIGINAL >>>
-
+        <<<END ORIGINAL>>>
+        
         Improved Essay:
-        <<< BEGIN IMPROVED >>>
+        <<<BEGIN IMPROVED>>>
         {improved_text}
-        <<< END IMPROVED >>>
+        <<<END IMPROVED>>>
+        
+        Example valid output:
+        [
+          {{
+            "original_text": "The cat are on the mat.",
+            "corrected_text": "The cat is on the mat.",
+            "category": "Grammar",
+            "explanation": "Corrected subject-verb agreement."
+          }},
+          {{
+            "original_text": "It is very good, very good indeed.",
+            "corrected_text": "It is excellent.",
+            "category": "Redundancy / conciseness",
+            "explanation": "Removed redundant phrasing."
+          }}
+        ]
         """
-
+        
         analysis_response = None
+        mistake_patterns_data = []
+        
         try:
             analysis_response = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -3450,23 +3473,12 @@ async def train_on_images(
                 ],
                 temperature=0,
             )
-        except Exception as e:
-            print(f"[ERROR] Failed to get essay analysis: {e}")
-
-
-        mistake_patterns_data = []
-
-        if analysis_response:
             raw_content = analysis_response.choices[0].message.content.strip()
-            print(f">>> [DEBUG] Raw analysis_response content:\n{raw_content}\n")
-            print(f">>> [DEBUG] Raw content length = {len(raw_content)}")
+            print(f">>> [DEBUG] Raw analysis_response content length = {len(raw_content)}")
         
-            # Parse JSON safely
             try:
                 mistake_patterns_data = json.loads(raw_content)
                 print(f">>> [DEBUG] Parsed {len(mistake_patterns_data)} mistake objects")
-                for i, m in enumerate(mistake_patterns_data, start=1):
-                    print(f">>> [DEBUG] Mistake #{i}: {m}")
             except json.JSONDecodeError as e:
                 print(f">>> [ERROR] Failed to parse AI JSON: {e}")
                 mistake_patterns_data = []
@@ -3476,27 +3488,19 @@ async def train_on_images(
                 if hasattr(analysis_response, "usage"):
                     usage = analysis_response.usage
                     print(f">>> [DEBUG] Logging GPT usage: prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}")
-                    log_to_db(
-                        db,
-                        username_for_interactive_session,
-                        usage.prompt_tokens,
-                        usage.completion_tokens,
-                        usage.total_tokens,
-                        "gpt-4o-mini"
-                    )
+                    log_to_db(db, username_for_interactive_session,
+                              usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
+                              "gpt-4o-mini")
                 else:
                     total_tokens = len(raw_content) // 4
                     print(f">>> [DEBUG] Logging GPT usage (approx): total_tokens={total_tokens}")
-                    log_to_db(
-                        db,
-                        username_for_interactive_session,
-                        total_tokens,
-                        0,
-                        total_tokens,
-                        "gpt-4o-mini"
-                    )
+                    log_to_db(db, username_for_interactive_session, total_tokens, 0, total_tokens, "gpt-4o-mini")
             except Exception as e:
                 print(f">>> [ERROR] Logging GPT usage failed: {e}")
+        
+        except Exception as e:
+            print(f">>> [ERROR] Failed to get essay analysis: {e}")
+            mistake_patterns_data = []
         
         # ------------------------------------------------
         # STEP 6: Save mistakes into DB
@@ -3504,30 +3508,30 @@ async def train_on_images(
         saved_count = 0
         if not mistake_patterns_data:
             print(">>> [WARNING] No mistakes found to save in DB")
-        else:
-            for idx, mistake in enumerate(mistake_patterns_data, start=1):
-                try:
-                    print(f">>> [DEBUG] Creating DB record for mistake #{idx}")
-                    mistake_record = CommonMistake(
-                        session_id=username_for_interactive_session,  # Using username instead of session_id
-                        original_text=mistake.get("original_text", ""),
-                        corrected_text=mistake.get("corrected_text", ""),
-                        category=mistake.get("category", ""),
-                        explanation=mistake.get("explanation", ""),
-                        created_at=datetime.utcnow(),
-                    )
-                    db.add(mistake_record)
-                    saved_count += 1
-                    print(f">>> [DEBUG] Added mistake #{idx} to DB session")
-                except Exception as e:
-                    print(f">>> [ERROR] Failed to create mistake record #{idx}: {e}")
         
+        for idx, mistake in enumerate(mistake_patterns_data, start=1):
             try:
-                db.commit()
-                print(f">>> [DEBUG] Successfully committed {saved_count} mistakes to DB")
+                mistake_record = CommonMistake(
+                    session_id=username_for_interactive_session,  # Using username instead of session_id
+                    original_text=mistake.get("original_text", ""),
+                    corrected_text=mistake.get("corrected_text", ""),
+                    category=mistake.get("category", ""),
+                    explanation=mistake.get("explanation", ""),
+                    created_at=datetime.utcnow(),
+                )
+                db.add(mistake_record)
+                saved_count += 1
+                print(f">>> [DEBUG] Prepared mistake {idx} for DB insertion")
             except Exception as e:
-                db.rollback()
-                print(f">>> [ERROR] DB commit failed: {e}")
+                print(f">>> [ERROR] Failed to create mistake record {idx}: {e}")
+        
+        try:
+            db.commit()
+            print(f">>> [DEBUG] Successfully committed {saved_count} mistakes to DB")
+        except Exception as e:
+            db.rollback()
+            print(f">>> [ERROR] DB commit failed: {e}")
+
         
 
 
@@ -6114,6 +6118,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
