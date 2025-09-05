@@ -3617,8 +3617,11 @@ async def train_on_pdf(
     client_vision_api = vision.ImageAnnotatorClient()
 
     # Process PDFs
+    images_processed = 0
     for pdf_index, pdf in enumerate(pdfs, start=1):
         pdf_bytes = await pdf.read()
+        pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
+        images_processed += len(pdf_document)  # number of pages
         print(f"[DEBUG] Read PDF #{pdf_index}: {pdf.filename}, size={len(pdf_bytes)} bytes")
 
         try:
@@ -3847,11 +3850,7 @@ Improved Essay:
         "mistake_patterns": mistake_patterns_data,
     }
     #counting the images processed:
-    images_processed = 0
-    for pdf in pdfs:
-        pdf_bytes = await pdf.read()
-        pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
-        images_processed += len(pdf_document.pages)
+    
 
     return JSONResponse(
         content={
@@ -6189,6 +6188,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
