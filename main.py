@@ -3453,16 +3453,20 @@ async def train_on_images(
         except Exception as e:
             print(f"[ERROR] Failed to get essay analysis: {e}")
 
-        # Parse JSON safely
+
         mistake_patterns_data = []
+
         if analysis_response:
             raw_content = analysis_response.choices[0].message.content.strip()
-            print(f">>> [DEBUG] Raw analysis_response content length = {len(raw_content)}")
+            print(f">>> [DEBUG] Raw analysis_response content:\n{raw_content}\n")
+            print(f">>> [DEBUG] Raw content length = {len(raw_content)}")
         
             # Parse JSON safely
             try:
                 mistake_patterns_data = json.loads(raw_content)
                 print(f">>> [DEBUG] Parsed {len(mistake_patterns_data)} mistake objects")
+                for i, m in enumerate(mistake_patterns_data, start=1):
+                    print(f">>> [DEBUG] Mistake #{i}: {m}")
             except json.JSONDecodeError as e:
                 print(f">>> [ERROR] Failed to parse AI JSON: {e}")
                 mistake_patterns_data = []
@@ -3472,39 +3476,62 @@ async def train_on_images(
                 if hasattr(analysis_response, "usage"):
                     usage = analysis_response.usage
                     print(f">>> [DEBUG] Logging GPT usage: prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}")
-                    log_to_db(db, username_for_interactive_session, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-mini")
+                    log_to_db(
+                        db,
+                        username_for_interactive_session,
+                        usage.prompt_tokens,
+                        usage.completion_tokens,
+                        usage.total_tokens,
+                        "gpt-4o-mini"
+                    )
                 else:
                     total_tokens = len(raw_content) // 4
                     print(f">>> [DEBUG] Logging GPT usage (approx): total_tokens={total_tokens}")
-                    log_to_db(db, username_for_interactive_session, total_tokens, 0, total_tokens, "gpt-4o-mini")
+                    log_to_db(
+                        db,
+                        username_for_interactive_session,
+                        total_tokens,
+                        0,
+                        total_tokens,
+                        "gpt-4o-mini"
+                    )
             except Exception as e:
                 print(f">>> [ERROR] Logging GPT usage failed: {e}")
+        
         # ------------------------------------------------
         # STEP 6: Save mistakes into DB
         # ------------------------------------------------
         saved_count = 0
-        for idx, mistake in enumerate(mistake_patterns_data, start=1):
-            try:
-                mistake_record = CommonMistake(
-                    session_id=username_for_interactive_session,  # Using username instead of session_id
-                    original_text=mistake.get("original_text", ""),
-                    corrected_text=mistake.get("corrected_text", ""),
-                    category=mistake.get("category", ""),
-                    explanation=mistake.get("explanation", ""),
-                    created_at=datetime.utcnow(),
-                )
-                db.add(mistake_record)
-                saved_count += 1
-                print(f">>> [DEBUG] Saved mistake {idx} to DB")
-            except Exception as e:
-                print(f">>> [ERROR] Failed to create mistake record {idx}: {e}")
+        if not mistake_patterns_data:
+            print(">>> [WARNING] No mistakes found to save in DB")
+        else:
+            for idx, mistake in enumerate(mistake_patterns_data, start=1):
+                try:
+                    print(f">>> [DEBUG] Creating DB record for mistake #{idx}")
+                    mistake_record = CommonMistake(
+                        session_id=username_for_interactive_session,  # Using username instead of session_id
+                        original_text=mistake.get("original_text", ""),
+                        corrected_text=mistake.get("corrected_text", ""),
+                        category=mistake.get("category", ""),
+                        explanation=mistake.get("explanation", ""),
+                        created_at=datetime.utcnow(),
+                    )
+                    db.add(mistake_record)
+                    saved_count += 1
+                    print(f">>> [DEBUG] Added mistake #{idx} to DB session")
+                except Exception as e:
+                    print(f">>> [ERROR] Failed to create mistake record #{idx}: {e}")
         
-        try:
-            db.commit()
-            print(f">>> [DEBUG] Successfully committed {saved_count} mistakes to DB")
-        except Exception as e:
-            db.rollback()
-            print(f">>> [ERROR] DB commit failed: {e}")
+            try:
+                db.commit()
+                print(f">>> [DEBUG] Successfully committed {saved_count} mistakes to DB")
+            except Exception as e:
+                db.rollback()
+                print(f">>> [ERROR] DB commit failed: {e}")
+        
+
+
+        
         # ------------------------------------------------
         # STEP 7: Save session + Return response
         # ------------------------------------------------
@@ -6087,6 +6114,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
