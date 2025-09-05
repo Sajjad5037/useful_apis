@@ -3624,7 +3624,7 @@ async def train_on_pdf(
         images_processed += len(pdf_document)  # number of pages
         print(f"[DEBUG] Read PDF #{pdf_index}: {pdf.filename}, size={len(pdf_bytes)} bytes")
 
-        if images_processed > 3:
+        if images_processed > 30:
             print(f"[WARNING] images_processed exceeded limit: {images_processed}")
             return JSONResponse(
                 content={
@@ -6200,6 +6200,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
