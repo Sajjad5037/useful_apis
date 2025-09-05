@@ -3624,6 +3624,18 @@ async def train_on_pdf(
         images_processed += len(pdf_document)  # number of pages
         print(f"[DEBUG] Read PDF #{pdf_index}: {pdf.filename}, size={len(pdf_bytes)} bytes")
 
+        if images_processed > 3:
+            print(f"[WARNING] images_processed exceeded limit: {images_processed}")
+            return JSONResponse(
+                content={
+                    "status": "error",
+                    "message": "Please upload PDFs with a combined total of 30 pages or less.",
+                    "images_processed": images_processed,
+                },
+                status_code=400,
+                headers=cors_headers,
+            )
+
         try:
             pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
         except Exception as e:
@@ -6188,6 +6200,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
