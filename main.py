@@ -3391,10 +3391,10 @@ async def train_on_images(
         #log usage
         if hasattr(improvement_response, "usage"):
             usage = improvement_response.usage
-            log_to_db(db, username, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-mini")
+            log_to_db(db, username_for_interactive_session, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-mini")
         else:
             total_tokens = len(improved_text) // 4
-            log_to_db(db, username, total_tokens, 0, total_tokens, "gpt-4o-mini")
+            log_to_db(db, username_for_interactive_session, total_tokens, 0, total_tokens, "gpt-4o-mini")
 
         # ------------------------------------------------
         # STEP 4: Merge original + improved essay
@@ -3463,10 +3463,10 @@ async def train_on_images(
             #log usage
             if hasattr(analysis_response, "usage"):
                 usage = analysis_response.usage
-                log_to_db(db, username, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-mini")
+                log_to_db(db, username_for_interactive_session, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-mini")
             else:
                 total_tokens = len(raw_content) // 4
-                log_to_db(db, username, total_tokens, 0, total_tokens, "gpt-4o-mini")
+                log_to_db(db, username_for_interactive_session, total_tokens, 0, total_tokens, "gpt-4o-mini")
 
         # ------------------------------------------------
         # STEP 6: Save mistakes into DB
@@ -5845,6 +5845,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
