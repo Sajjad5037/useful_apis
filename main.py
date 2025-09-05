@@ -3846,12 +3846,18 @@ Improved Essay:
         "doctorData": doctor,
         "mistake_patterns": mistake_patterns_data,
     }
+    #counting the images processed:
+    images_processed = 0
+    for pdf in pdfs:
+        pdf_bytes = await pdf.read()
+        pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
+        images_processed += len(pdf_document.pages)
 
     return JSONResponse(
         content={
             "status": "success",
             "session_id": session_id,
-            "images_processed": sum(len(fitz.open(stream=await pdf.read(), filetype='pdf').pages) for pdf in pdfs),
+            "images_processed": images_processed,
             "total_text_length": len(final_output),
             "corrected_text": final_output,
             "mistake_patterns": mistake_patterns_data,
@@ -6183,6 +6189,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
