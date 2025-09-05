@@ -13,7 +13,7 @@ starlette  # let pip pick compatible version
 
 pydub>=0.25.1
 pdf2image>=1.16.0
-
+Pillow>=10.0.0 
 
 
 # Data / NLP
@@ -72,6 +72,7 @@ pydantic==2.9.2
 
 
 #
+
 
 
 
