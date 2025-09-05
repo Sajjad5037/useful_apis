@@ -3566,7 +3566,6 @@ async def train_on_images(
             headers=cors_headers,
         )
 
-
 @app.post("/train-on-images-pdf")
 async def train_on_pdf(
     pdfs: List[UploadFile] = File(...),
@@ -3574,323 +3573,291 @@ async def train_on_pdf(
     request: Request = None,
     db: Session = Depends(get_db),
 ):
-        """Endpoint: Upload PDFs -> extract images -> OCR -> corrected_text -> Mistake analysis -> Save to DB"""
-    
-        origin = request.headers.get("origin") if request else None
-        cors_headers = {
-            "Access-Control-Allow-Origin": origin if origin else "*",
-            "Access-Control-Allow-Credentials": "true",
-        }
-    
-        if not pdfs:
-            print("[DEBUG] No PDFs uploaded")
+    """Endpoint: Upload PDFs -> extract images -> OCR -> corrected_text -> Mistake analysis -> Save to DB"""
+
+    origin = request.headers.get("origin") if request else None
+    cors_headers = {
+        "Access-Control-Allow-Origin": origin if origin else "*",
+        "Access-Control-Allow-Credentials": "true",
+    }
+
+    if not pdfs:
+        print("[DEBUG] No PDFs uploaded")
+        return JSONResponse(
+            content={"detail": "No PDFs uploaded"},
+            status_code=400,
+            headers=cors_headers,
+        )
+
+    # Parse doctorData JSON
+    doctor = {}
+    if doctorData:
+        try:
+            doctor = json.loads(doctorData)
+            print(f"[DEBUG] doctorData parsed successfully: {doctor}")
+        except json.JSONDecodeError as e:
+            print(f"[ERROR] Failed to parse doctorData JSON: {e}")
             return JSONResponse(
-                content={"detail": "No PDFs uploaded"},
+                content={"detail": "Invalid doctorData JSON"},
                 status_code=400,
                 headers=cors_headers,
             )
-    
-        # Parse doctorData JSON
-        doctor = {}
-        if doctorData:
-            try:
-                doctor = json.loads(doctorData)
-                print(f"[DEBUG] doctorData parsed successfully: {doctor}")
-            except json.JSONDecodeError as e:
-                print(f"[ERROR] Failed to parse doctorData JSON: {e}")
-                return JSONResponse(
-                    content={"detail": "Invalid doctorData JSON"},
-                    status_code=400,
-                    headers=cors_headers,
-                )
-    
-        global username_for_interactive_session
-        username_for_interactive_session = doctor.get("name") if doctor else None
-        print(f"[DEBUG] username_for_interactive_session = {username_for_interactive_session}")
-    
-        # Prepare output
-        combined_text = ""
-        output_dir = "/tmp/extracted_images"  # Ephemeral storage on Railway
-        os.makedirs(output_dir, exist_ok=True)
-        print(f"[DEBUG] Output directory for extracted images: {output_dir}")
-    
-        # Initialize Google Vision client
-        client = vision.ImageAnnotatorClient()
-    
-        for pdf_index, pdf in enumerate(pdfs, start=1):
-            pdf_bytes = await pdf.read()
-            print(f"[DEBUG] Read PDF #{pdf_index}: {pdf.filename}, size={len(pdf_bytes)} bytes")
-    
-            try:
-                pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
-            except Exception as e:
-                print(f"[ERROR] Failed to open PDF {pdf.filename}: {e}")
-                continue
-    
-            print(f"[DEBUG] Processing PDF: {pdf.filename}, pages={len(pdf_document)}")
-    
-            for page_number in range(len(pdf_document)):
-                page = pdf_document[page_number]
-                image_list = page.get_images(full=True)
-                print(f"[DEBUG] Page {page_number + 1}: Found {len(image_list)} images")
-    
-                for img_index, img in enumerate(image_list, start=1):
-                    try:
-                        xref = img[0]
-                        base_image = pdf_document.extract_image(xref)
-                        image_bytes = base_image["image"]
-                        image_ext = base_image["ext"]
-                        image = Image.open(io.BytesIO(image_bytes))
-                    except Exception as e:
-                        print(f"[ERROR] Failed to extract image {img_index} on page {page_number + 1}: {e}")
-                        continue
-    
-                    # Save image to ephemeral storage
-                    try:
-                        image_filename = os.path.join(
-                            output_dir, f"{pdf.filename}_page{page_number+1}_img{img_index}.{image_ext}"
-                        )
-                        image.save(image_filename)
-                        print(f"[DEBUG] Saved image: {image_filename}")
-                    except Exception as e:
-                        print(f"[ERROR] Failed to save image {image_filename}: {e}")
-    
-                    # OCR with Google Vision
-                    try:
-                        image_for_ocr = vision.Image(content=image_bytes)
-                        response = client.text_detection(image=image_for_ocr)
-                        texts = response.text_annotations
-                        if texts:
-                            combined_text += texts[0].description.strip() + "\n\n"
-                            print(f"[DEBUG] OCR extracted {len(texts[0].description.strip())} chars from page {page_number + 1}, image {img_index}")
-                        else:
-                            print(f"[WARNING] No text found in page {page_number + 1}, image {img_index}")
-                    except Exception as e:
-                        print(f"[ERROR] Google Vision OCR failed for page {page_number + 1}, image {img_index}: {e}")
-    
-        if not combined_text.strip():
-            print("[WARNING] No text extracted from any PDF images")
-            return JSONResponse(
-                content={"detail": "No text extracted from PDF images"},
-                status_code=400,
-                headers=cors_headers,
-            )
-    
-        # At this point, combined_text contains text from all images in all PDFs
-        corrected_text = combined_text.strip()
-        print(f"[DEBUG] Total corrected_text length = {len(corrected_text)}")
-        # ------------------------------------------------
-        # STEP 3: Improve essay quality with feedback
-        # ------------------------------------------------
-        improvement_prompt = f"""
-    You are an expert creative writing tutor. Your goal is to help a student improve their writing skills.
-    
-    1. Rewrite the following essay with:
-       - Better overall structure and flow
-       - Clear grammar, punctuation, and sentence construction
-       - Richer and more precise vocabulary
-       - Logical organization and smooth transitions
-       - Formal academic style appropriate for A-level essays
-    
-    2. Keep the original meaning intact. Do not add new ideas.
-    
-    3. Wrap **only the words, phrases, or sentences that are changed or improved** in double asterisks to highlight the actual improvements. Do NOT wrap the parts that remain unchanged.
-    
-    4. After the essay, provide a short note (2–3 sentences) summarizing key improvements.
-    
-    Original OCR-corrected essay:
-    <<< BEGIN TEXT >>>
-    {corrected_text}
-    <<< END TEXT >>>
-    """
-        improvement_response = client.chat.completions.create(
+
+    global username_for_interactive_session
+    username_for_interactive_session = doctor.get("name") if doctor else None
+    print(f"[DEBUG] username_for_interactive_session = {username_for_interactive_session}")
+
+    # Prepare output
+    combined_text = ""
+    output_dir = "/tmp/extracted_images"  # Ephemeral storage on Railway
+    os.makedirs(output_dir, exist_ok=True)
+    print(f"[DEBUG] Output directory for extracted images: {output_dir}")
+
+    # Initialize Google Vision client
+    client = vision.ImageAnnotatorClient()
+
+    # Process PDFs
+    for pdf_index, pdf in enumerate(pdfs, start=1):
+        pdf_bytes = await pdf.read()
+        print(f"[DEBUG] Read PDF #{pdf_index}: {pdf.filename}, size={len(pdf_bytes)} bytes")
+
+        try:
+            pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
+        except Exception as e:
+            print(f"[ERROR] Failed to open PDF {pdf.filename}: {e}")
+            continue
+
+        print(f"[DEBUG] Processing PDF: {pdf.filename}, pages={len(pdf_document)}")
+
+        for page_number in range(len(pdf_document)):
+            page = pdf_document[page_number]
+            image_list = page.get_images(full=True)
+            print(f"[DEBUG] Page {page_number + 1}: Found {len(image_list)} images")
+
+            for img_index, img in enumerate(image_list, start=1):
+                try:
+                    xref = img[0]
+                    base_image = pdf_document.extract_image(xref)
+                    image_bytes = base_image["image"]
+                    image_ext = base_image["ext"]
+                    image = Image.open(io.BytesIO(image_bytes))
+                except Exception as e:
+                    print(f"[ERROR] Failed to extract image {img_index} on page {page_number + 1}: {e}")
+                    continue
+
+                # Save image to ephemeral storage
+                try:
+                    image_filename = os.path.join(
+                        output_dir, f"{pdf.filename}_page{page_number+1}_img{img_index}.{image_ext}"
+                    )
+                    image.save(image_filename)
+                    print(f"[DEBUG] Saved image: {image_filename}")
+                except Exception as e:
+                    print(f"[ERROR] Failed to save image {image_filename}: {e}")
+
+                # OCR with Google Vision
+                try:
+                    image_for_ocr = vision.Image(content=image_bytes)
+                    response = client.text_detection(image=image_for_ocr)
+                    texts = response.text_annotations
+                    if texts:
+                        combined_text += texts[0].description.strip() + "\n\n"
+                        print(f"[DEBUG] OCR extracted {len(texts[0].description.strip())} chars from page {page_number + 1}, image {img_index}")
+                    else:
+                        print(f"[WARNING] No text found in page {page_number + 1}, image {img_index}")
+                except Exception as e:
+                    print(f"[ERROR] Google Vision OCR failed for page {page_number + 1}, image {img_index}: {e}")
+
+    if not combined_text.strip():
+        print("[WARNING] No text extracted from any PDF images")
+        return JSONResponse(
+            content={"detail": "No text extracted from PDF images"},
+            status_code=400,
+            headers=cors_headers,
+        )
+
+    # ------------------------------------------------
+    # STEP 3: Improve essay quality with feedback
+    # ------------------------------------------------
+    corrected_text = combined_text.strip()
+    print(f"[DEBUG] Total corrected_text length = {len(corrected_text)}")
+
+    improvement_prompt = f"""
+You are an expert creative writing tutor. Your goal is to help a student improve their writing skills.
+
+1. Rewrite the following essay with:
+   - Better overall structure and flow
+   - Clear grammar, punctuation, and sentence construction
+   - Richer and more precise vocabulary
+   - Logical organization and smooth transitions
+   - Formal academic style appropriate for A-level essays
+
+2. Keep the original meaning intact. Do not add new ideas.
+
+3. Wrap **only the words, phrases, or sentences that are changed or improved** in double asterisks to highlight the actual improvements. Do NOT wrap the parts that remain unchanged.
+
+4. After the essay, provide a short note (2–3 sentences) summarizing key improvements.
+
+Original OCR-corrected essay:
+<<< BEGIN TEXT >>>
+{corrected_text}
+<<< END TEXT >>>
+"""
+
+    improvement_response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a creative writing tutor helping a student improve their essay."},
+            {"role": "user", "content": improvement_prompt},
+        ],
+        temperature=0.3,
+    )
+    improved_text = improvement_response.choices[0].message.content.strip()
+
+    # Log usage
+    if hasattr(improvement_response, "usage"):
+        usage = improvement_response.usage
+        log_to_db(db, username_for_interactive_session, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-mini")
+    else:
+        total_tokens = len(improved_text) // 4
+        log_to_db(db, username_for_interactive_session, total_tokens, 0, total_tokens, "gpt-4o-mini")
+
+    # ------------------------------------------------
+    # STEP 4: Merge original + improved essay
+    # ------------------------------------------------
+    final_output = f"""
+Original Text:
+<<< BEGIN ORIGINAL TEXT >>>
+{combined_text.strip()}
+<<< END ORIGINAL TEXT >>>
+
+Improved Text:
+<<< BEGIN IMPROVED TEXT >>>
+{improved_text}
+<<< END IMPROVED TEXT >>>
+"""
+
+    # ------------------------------------------------
+    # STEP 5: Mistake analysis (AI -> JSON format)
+    # ------------------------------------------------
+    analysis_prompt = f"""
+You are an expert essay analysis assistant.
+
+Compare the original essay and the improved essay.
+For each correction, create an object with the following fields:
+- "original_text": the exact original fragment
+- "corrected_text": the improved fragment
+- "category": one of ["Grammar", "Punctuation", "Vocabulary", "Sentence structure / flow", "Redundancy / conciseness"]
+- "explanation": a concise explanation of why the change was made
+
+Instructions:
+1. Produce ONLY a JSON array of objects.
+2. Do NOT include any text, commentary, or explanations outside the JSON array.
+3. If there are no corrections, return an empty array: []
+
+Original Essay:
+<<<BEGIN ORIGINAL>>>
+{combined_text.strip()}
+<<<END ORIGINAL>>>
+
+Improved Essay:
+<<<BEGIN IMPROVED>>>
+{improved_text}
+<<<END IMPROVED>>>
+"""
+
+    analysis_response = None
+    mistake_patterns_data = []
+
+    try:
+        analysis_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are a creative writing tutor helping a student improve their essay.",
-                },
-                {"role": "user", "content": improvement_prompt},
+                {"role": "system", "content": "You output only clean, parsable JSON for essay mistake patterns."},
+                {"role": "user", "content": analysis_prompt},
             ],
-            temperature=0.3,
+            temperature=0,
         )
-        improved_text = improvement_response.choices[0].message.content.strip()
+        raw_content = analysis_response.choices[0].message.content.strip()
+        print(f">>> [DEBUG] Raw analysis_response content length = {len(raw_content)}")
 
-        #log usage
-        if hasattr(improvement_response, "usage"):
-            usage = improvement_response.usage
-            log_to_db(db, username_for_interactive_session, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-mini")
-        else:
-            total_tokens = len(improved_text) // 4
-            log_to_db(db, username_for_interactive_session, total_tokens, 0, total_tokens, "gpt-4o-mini")
-
-        # ------------------------------------------------
-        # STEP 4: Merge original + improved essay
-        # ------------------------------------------------
-        final_output = f"""
-        Original Text:
-        <<< BEGIN ORIGINAL TEXT >>>
-        {combined_text.strip()}
-        <<< END ORIGINAL TEXT >>>
-
-        Improved Text:
-        <<< BEGIN IMPROVED TEXT >>>
-        {improved_text}
-        <<< END IMPROVED TEXT >>>
-        """
-
-       
-
-        # ------------------------------------------------
-        # STEP 5: Mistake analysis (AI -> JSON format)
-        # ------------------------------------------------
-        analysis_prompt = f"""
-        You are an expert essay analysis assistant.
-        
-        Task:
-        Compare the original essay and the improved essay.
-        For each correction, create an object with the following fields:
-        - "original_text": the exact original fragment
-        - "corrected_text": the improved fragment
-        - "category": one of ["Grammar", "Punctuation", "Vocabulary", "Sentence structure / flow", "Redundancy / conciseness"]
-        - "explanation": a concise explanation of why the change was made
-        
-        Instructions:
-        1. Produce ONLY a JSON array of objects.
-        2. Do NOT include any text, commentary, or explanations outside the JSON array.
-        3. If there are no corrections, return an empty array: []
-        
-        Original Essay:
-        <<<BEGIN ORIGINAL>>>
-        {combined_text.strip()}
-        <<<END ORIGINAL>>>
-        
-        Improved Essay:
-        <<<BEGIN IMPROVED>>>
-        {improved_text}
-        <<<END IMPROVED>>>
-        
-        Example valid output:
-        [
-          {{
-            "original_text": "The cat are on the mat.",
-            "corrected_text": "The cat is on the mat.",
-            "category": "Grammar",
-            "explanation": "Corrected subject-verb agreement."
-          }},
-          {{
-            "original_text": "It is very good, very good indeed.",
-            "corrected_text": "It is excellent.",
-            "category": "Redundancy / conciseness",
-            "explanation": "Removed redundant phrasing."
-          }}
-        ]
-        """
-        
-        analysis_response = None
-        mistake_patterns_data = []
-        
         try:
-            analysis_response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You output only clean, parsable JSON for essay mistake patterns."},
-                    {"role": "user", "content": analysis_prompt},
-                ],
-                temperature=0,
-            )
-            raw_content = analysis_response.choices[0].message.content.strip()
-            print(f">>> [DEBUG] Raw analysis_response content length = {len(raw_content)}")
-        
-            try:
-                mistake_patterns_data = json.loads(raw_content)
-                print(f">>> [DEBUG] Parsed {len(mistake_patterns_data)} mistake objects")
-            except json.JSONDecodeError as e:
-                print(f">>> [ERROR] Failed to parse AI JSON: {e}")
-                mistake_patterns_data = []
-        
-            # Log GPT usage safely
-            try:
-                if hasattr(analysis_response, "usage"):
-                    usage = analysis_response.usage
-                    print(f">>> [DEBUG] Logging GPT usage: prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}")
-                    log_to_db(db, username_for_interactive_session,
-                              usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
-                              "gpt-4o-mini")
-                else:
-                    total_tokens = len(raw_content) // 4
-                    print(f">>> [DEBUG] Logging GPT usage (approx): total_tokens={total_tokens}")
-                    log_to_db(db, username_for_interactive_session, total_tokens, 0, total_tokens, "gpt-4o-mini")
-            except Exception as e:
-                print(f">>> [ERROR] Logging GPT usage failed: {e}")
-        
-        except Exception as e:
-            print(f">>> [ERROR] Failed to get essay analysis: {e}")
+            mistake_patterns_data = json.loads(raw_content)
+            print(f">>> [DEBUG] Parsed {len(mistake_patterns_data)} mistake objects")
+        except json.JSONDecodeError as e:
+            print(f">>> [ERROR] Failed to parse AI JSON: {e}")
             mistake_patterns_data = []
-        
-        # ------------------------------------------------
-        # STEP 6: Save mistakes into DB
-        # ------------------------------------------------
-        saved_count = 0
-        if not mistake_patterns_data:
-            print(">>> [WARNING] No mistakes found to save in DB")
-        
-        for idx, mistake in enumerate(mistake_patterns_data, start=1):
-            try:
-                mistake_record = CommonMistake(
-                    session_id=username_for_interactive_session,  # Using username instead of session_id
-                    original_text=mistake.get("original_text", ""),
-                    corrected_text=mistake.get("corrected_text", ""),
-                    category=mistake.get("category", ""),
-                    explanation=mistake.get("explanation", ""),
-                    created_at=datetime.utcnow(),
-                )
-                db.add(mistake_record)
-                saved_count += 1
-                print(f">>> [DEBUG] Prepared mistake {idx} for DB insertion")
-            except Exception as e:
-                print(f">>> [ERROR] Failed to create mistake record {idx}: {e}")
-        
+
+        # Log GPT usage safely
         try:
-            db.commit()
-            print(f">>> [DEBUG] Successfully committed {saved_count} mistakes to DB")
+            if hasattr(analysis_response, "usage"):
+                usage = analysis_response.usage
+                print(f">>> [DEBUG] Logging GPT usage: prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}")
+                log_to_db(db, username_for_interactive_session,
+                          usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
+                          "gpt-4o-mini")
+            else:
+                total_tokens = len(raw_content) // 4
+                print(f">>> [DEBUG] Logging GPT usage (approx): total_tokens={total_tokens}")
+                log_to_db(db, username_for_interactive_session, total_tokens, 0, total_tokens, "gpt-4o-mini")
         except Exception as e:
-            db.rollback()
-            print(f">>> [ERROR] DB commit failed: {e}")
-
-        
-
-
-        
-        # ------------------------------------------------
-        # STEP 7: Save session + Return response
-        # ------------------------------------------------
-        session_id = str(uuid4())
-        session_texts[session_id] = {
-            "text": final_output,
-            "doctorData": doctor,
-            "mistake_patterns": mistake_patterns_data,
-        }
-
-        return JSONResponse(
-            content={
-                "status": "success",
-                "session_id": session_id,
-                "images_processed": len(images),
-                "total_text_length": len(final_output),
-                "corrected_text": final_output,
-                "mistake_patterns": mistake_patterns_data,
-            },
-            headers=cors_headers,
-        )
+            print(f">>> [ERROR] Logging GPT usage failed: {e}")
 
     except Exception as e:
-        tb_str = traceback.format_exc()
-        return JSONResponse(
-            content={"detail": f"Unexpected server error: {str(e)}\n{tb_str}"},
-            status_code=500,
-            headers=cors_headers,
-        )
+        print(f">>> [ERROR] Failed to get essay analysis: {e}")
+        mistake_patterns_data = []
+
+    # ------------------------------------------------
+    # STEP 6: Save mistakes into DB
+    # ------------------------------------------------
+    saved_count = 0
+    if not mistake_patterns_data:
+        print(">>> [WARNING] No mistakes found to save in DB")
+
+    for idx, mistake in enumerate(mistake_patterns_data, start=1):
+        try:
+            mistake_record = CommonMistake(
+                session_id=username_for_interactive_session,
+                original_text=mistake.get("original_text", ""),
+                corrected_text=mistake.get("corrected_text", ""),
+                category=mistake.get("category", ""),
+                explanation=mistake.get("explanation", ""),
+                created_at=datetime.utcnow(),
+            )
+            db.add(mistake_record)
+            saved_count += 1
+            print(f">>> [DEBUG] Prepared mistake {idx} for DB insertion")
+        except Exception as e:
+            print(f">>> [ERROR] Failed to create mistake record {idx}: {e}")
+
+    try:
+        db.commit()
+        print(f">>> [DEBUG] Successfully committed {saved_count} mistakes to DB")
+    except Exception as e:
+        db.rollback()
+        print(f">>> [ERROR] DB commit failed: {e}")
+
+    # ------------------------------------------------
+    # STEP 7: Save session + Return response
+    # ------------------------------------------------
+    session_id = str(uuid4())
+    session_texts[session_id] = {
+        "text": final_output,
+        "doctorData": doctor,
+        "mistake_patterns": mistake_patterns_data,
+    }
+
+    return JSONResponse(
+        content={
+            "status": "success",
+            "session_id": session_id,
+            "images_processed": sum(len(fitz.open(stream=await pdf.read(), filetype='pdf').pages) for pdf in pdfs),
+            "total_text_length": len(final_output),
+            "corrected_text": final_output,
+            "mistake_patterns": mistake_patterns_data,
+        },
+        headers=cors_headers,
+    )
 
 
 
@@ -6216,6 +6183,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
