@@ -3525,6 +3525,8 @@ async def train_on_images(
             headers=cors_headers,
         )
 
+
+
 @app.post("/train-on-images-pdf")
 async def train_on_pdf(
     pdfs: List[UploadFile] = File(...),
@@ -3534,23 +3536,18 @@ async def train_on_pdf(
 ):
     """Endpoint: Upload PDF(s) -> Convert to images -> OCR -> Correction -> Improvement -> Mistake analysis -> Save to DB"""
     
-    import io
-    import traceback
-    from datetime import datetime
-    from uuid import uuid4
-
     origin = request.headers.get("origin") if request else None
     cors_headers = {
         "Access-Control-Allow-Origin": origin if origin else "*",
         "Access-Control-Allow-Credentials": "true",
     }
 
-    print(">>> [DEBUG] train_on_pdf called", flush=True)
-    print(f">>> [DEBUG] Request origin: {origin}", flush=True)
-    print(f">>> [DEBUG] PDFs received: {len(pdfs) if pdfs else 0}", flush=True)
+    print(">>> [DEBUG] train_on_pdf called")
+    print(f">>> [DEBUG] Request origin: {origin}")
+    print(f">>> [DEBUG] PDFs received: {len(pdfs) if pdfs else 0}")
 
     if not pdfs:
-        print(">>> [ERROR] No PDFs provided in request", flush=True)
+        print(">>> [ERROR] No PDFs provided in request")
         return JSONResponse(
             content={"detail": "No PDF uploaded"},
             status_code=400,
@@ -3562,9 +3559,9 @@ async def train_on_pdf(
     if doctorData:
         try:
             doctor = json.loads(doctorData)
-            print(f">>> [DEBUG] doctorData parsed: {doctor}", flush=True)
+            print(f">>> [DEBUG] doctorData parsed: {doctor}")
         except json.JSONDecodeError as e:
-            print(f">>> [ERROR] Invalid doctorData JSON: {e}", flush=True)
+            print(f">>> [ERROR] Invalid doctorData JSON: {e}")
             return JSONResponse(
                 content={"detail": "Invalid doctorData JSON"},
                 status_code=400,
@@ -3573,10 +3570,12 @@ async def train_on_pdf(
 
     global username_for_interactive_session
     username_for_interactive_session = doctor.get("name") if doctor else None
-    print(f">>> [DEBUG] username_for_interactive_session = {username_for_interactive_session}", flush=True)
+    print(f">>> [DEBUG] username_for_interactive_session = {username_for_interactive_session}")
 
     try:
-        # STEP 1: Convert PDFs to images + OCR
+        # ------------------------------------------------
+        # STEP 1: Convert PDFs to images and OCR them
+        # ------------------------------------------------
         combined_text = ""
         pages_processed_count = 0
         pdfs_processed_count = 0
@@ -3584,21 +3583,21 @@ async def train_on_pdf(
         for idx_pdf, pdf in enumerate(pdfs, start=1):
             pdfs_processed_count += 1
             filename = getattr(pdf, "filename", f"pdf_{idx_pdf}")
-            print(f">>> [DEBUG] Processing PDF #{idx_pdf}: {filename}", flush=True)
+            print(f">>> [DEBUG] Processing PDF #{idx_pdf}: {filename}")
 
             pdf_bytes = await pdf.read()
-            print(f">>> [DEBUG] Read {len(pdf_bytes)} bytes from {filename}", flush=True)
+            print(f">>> [DEBUG] Read {len(pdf_bytes)} bytes from {filename}")
 
             try:
                 pages = convert_from_bytes(pdf_bytes)
-                print(f">>> [DEBUG] Converted '{filename}' into {len(pages)} page(s)", flush=True)
+                print(f">>> [DEBUG] Converted '{filename}' into {len(pages)} page(s)")
             except Exception as e:
-                print(f">>> [ERROR] Failed to convert '{filename}' into images: {e}", flush=True)
+                print(f">>> [ERROR] Failed to convert '{filename}' into images: {e}")
                 continue
 
             for idx_page, page in enumerate(pages, start=1):
                 pages_processed_count += 1
-                print(f">>> [DEBUG] OCR on page {idx_page} of '{filename}'", flush=True)
+                print(f">>> [DEBUG] OCR on page {idx_page} of '{filename}'")
 
                 buf = io.BytesIO()
                 page.save(buf, format="PNG")
@@ -3607,16 +3606,16 @@ async def train_on_pdf(
                 try:
                     result = await extract_text_helper(buf)
                     extracted_text = result.get("text", "") if isinstance(result, dict) else ""
-                    print(f">>> [DEBUG] Extracted {len(extracted_text)} chars from page {idx_page}", flush=True)
+                    print(f">>> [DEBUG] Extracted {len(extracted_text)} chars from page {idx_page}")
                 except Exception as e:
-                    print(f">>> [ERROR] OCR failed on page {idx_page} of '{filename}': {e}", flush=True)
+                    print(f">>> [ERROR] OCR failed on page {idx_page} of '{filename}': {e}")
                     extracted_text = ""
 
                 if extracted_text:
                     combined_text += extracted_text.strip() + "\n\n"
 
         if not combined_text.strip():
-            print(">>> [ERROR] No text extracted from PDFs", flush=True)
+            print(">>> [ERROR] No text extracted from PDFs")
             return JSONResponse(
                 content={"detail": "No text extracted from PDFs"},
                 status_code=400,
@@ -3624,55 +3623,76 @@ async def train_on_pdf(
             )
 
         corrected_text = combined_text.strip()
-        print(f">>> [DEBUG] Combined text length = {len(corrected_text)}", flush=True)
+        print(f">>> [DEBUG] Combined text length = {len(corrected_text)}")
 
+        # ------------------------------------------------
         # STEP 2: Call GPT for improvement
-        print(">>> [DEBUG] Sending text to GPT for improvement...", flush=True)
-        improvement_prompt = f"""Your improvement prompt with corrected_text here..."""
-
+        # ------------------------------------------------
+        print(">>> [DEBUG] Sending text to GPT for improvement...")
+        improvement_prompt = f"""
+You are an expert creative writing tutor. Improve the following essay.
+Original OCR-corrected essay:
+<<< BEGIN TEXT >>>
+{corrected_text}
+<<< END TEXT >>>
+"""
         improvement_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a creative writing tutor."},
+                {"role": "system", "content": "You are a creative writing tutor helping a student improve their essay."},
                 {"role": "user", "content": improvement_prompt},
             ],
             temperature=0.3,
         )
-
         improved_text = improvement_response.choices[0].message.content.strip()
-        print(f">>> [DEBUG] Received improved text length = {len(improved_text)}", flush=True)
+        print(f">>> [DEBUG] Received improved text length = {len(improved_text)}")
 
+        # Log usage
         if hasattr(improvement_response, "usage"):
             usage = improvement_response.usage
-            print(f">>> [DEBUG] GPT usage: prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}", flush=True)
+            print(f">>> [DEBUG] GPT usage: prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}")
             log_to_db(db, username_for_interactive_session, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-mini")
 
+        # ------------------------------------------------
         # STEP 3: Mistake analysis
-        print(">>> [DEBUG] Running mistake analysis...", flush=True)
-        analysis_prompt = f"""Your analysis prompt here..."""
+        # ------------------------------------------------
+        print(">>> [DEBUG] Running mistake analysis...")
+        analysis_prompt = f"""
+Compare the original and improved essay.
+Original:
+<<< BEGIN ORIGINAL >>>
+{corrected_text}
+<<< END ORIGINAL >>>
+Improved:
+<<< BEGIN IMPROVED >>>
+{improved_text}
+<<< END IMPROVED >>>
+"""
         analysis_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You output only clean, parsable JSON."},
+                {"role": "system", "content": "You output only clean, parsable JSON for essay mistake patterns."},
                 {"role": "user", "content": analysis_prompt},
             ],
             temperature=0,
         )
 
         raw_content = analysis_response.choices[0].message.content.strip()
-        print(f">>> [DEBUG] Analysis raw response length = {len(raw_content)}", flush=True)
+        print(f">>> [DEBUG] Analysis raw response length = {len(raw_content)}")
         try:
             mistake_patterns_data = json.loads(raw_content)
-            print(f">>> [DEBUG] Parsed {len(mistake_patterns_data)} mistakes", flush=True)
+            print(f">>> [DEBUG] Parsed {len(mistake_patterns_data)} mistakes")
         except Exception as e:
-            print(f">>> [ERROR] Failed parsing JSON: {e}", flush=True)
+            print(f">>> [ERROR] Failed parsing JSON: {e}")
             mistake_patterns_data = []
 
-        # STEP 4: Save mistakes into DB
+        # ------------------------------------------------
+        # STEP 4: Save mistakes to DB
+        # ------------------------------------------------
         saved_count = 0
         for idx, mistake in enumerate(mistake_patterns_data, start=1):
             try:
-                print(f">>> [DEBUG] Saving mistake {idx}", flush=True)
+                print(f">>> [DEBUG] Saving mistake {idx}")
                 mistake_record = CommonMistake(
                     session_id=username_for_interactive_session,
                     original_text=mistake.get("original_text", ""),
@@ -3684,20 +3704,31 @@ async def train_on_pdf(
                 db.add(mistake_record)
                 saved_count += 1
             except Exception as e:
-                print(f">>> [ERROR] Failed saving mistake {idx}: {e}", flush=True)
-
+                print(f">>> [ERROR] Failed saving mistake {idx}: {e}")
         try:
             db.commit()
-            print(f">>> [DEBUG] Saved {saved_count} mistakes to DB", flush=True)
+            print(f">>> [DEBUG] Saved {saved_count} mistakes to DB")
         except Exception as e:
             db.rollback()
-            print(f">>> [ERROR] Commit failed: {e}", flush=True)
+            print(f">>> [ERROR] Commit failed: {e}")
 
-        # STEP 5: Prepare response
+        # ------------------------------------------------
+        # STEP 5: Prepare final output & response
+        # ------------------------------------------------
         session_id = str(uuid4())
-        print(f">>> [DEBUG] Session created: {session_id}", flush=True)
+        print(f">>> [DEBUG] Session created: {session_id}")
 
-        final_output = f"""Your merged original + improved text here..."""
+        final_output = f"""
+Original Text:
+<<< BEGIN ORIGINAL TEXT >>>
+{corrected_text}
+<<< END ORIGINAL TEXT >>>
+
+Improved Text:
+<<< BEGIN IMPROVED TEXT >>>
+{improved_text}
+<<< END IMPROVED TEXT >>>
+"""
 
         return JSONResponse(
             content={
@@ -3714,14 +3745,13 @@ async def train_on_pdf(
 
     except Exception as e:
         tb_str = traceback.format_exc()
-        print(f">>> [FATAL] Unexpected server error: {e}", flush=True)
-        print(tb_str, flush=True)
+        print(f">>> [FATAL] Unexpected server error: {e}")
+        print(tb_str)
         return JSONResponse(
             content={"detail": f"Unexpected server error: {str(e)}\n{tb_str}"},
             status_code=500,
             headers=cors_headers,
         )
-
 
 
 
@@ -6047,6 +6077,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
