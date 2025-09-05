@@ -3614,7 +3614,7 @@ async def train_on_pdf(
     print(f"[DEBUG] Output directory for extracted images: {output_dir}")
 
     # Initialize Google Vision client
-    client = vision.ImageAnnotatorClient()
+    client_vision_api = vision.ImageAnnotatorClient()
 
     # Process PDFs
     for pdf_index, pdf in enumerate(pdfs, start=1):
@@ -3658,7 +3658,7 @@ async def train_on_pdf(
                 # OCR with Google Vision
                 try:
                     image_for_ocr = vision.Image(content=image_bytes)
-                    response = client.text_detection(image=image_for_ocr)
+                    response = client_vision_api.text_detection(image=image_for_ocr)
                     texts = response.text_annotations
                     if texts:
                         combined_text += texts[0].description.strip() + "\n\n"
@@ -6183,6 +6183,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
