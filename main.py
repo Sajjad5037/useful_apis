@@ -1,5 +1,5 @@
 from pdf2image import convert_from_bytes
-
+from PIL import Image
 from enum import Enum
 import subprocess
 import docx2txt
@@ -6183,6 +6183,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
