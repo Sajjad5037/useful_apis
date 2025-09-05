@@ -3523,6 +3523,212 @@ async def train_on_images(
             headers=cors_headers,
         )
 
+@app.post("/train-on-images-pdf")
+async def train_on_pdf(
+    pdfs: List[UploadFile] = File(...),
+    doctorData: Optional[str] = Form(None),
+    request: Request = None,
+    db: Session = Depends(get_db),
+):
+    """Endpoint: Upload PDF(s) -> Convert to images -> OCR -> Correction -> Improvement -> Mistake analysis -> Save to DB"""
+
+    origin = request.headers.get("origin") if request else None
+    cors_headers = {
+        "Access-Control-Allow-Origin": origin if origin else "*",
+        "Access-Control-Allow-Credentials": "true",
+    }
+
+    print(">>> [DEBUG] train_on_pdf called")
+    print(f">>> [DEBUG] Request origin: {origin}")
+    print(f">>> [DEBUG] PDFs received: {len(pdfs) if pdfs else 0}")
+
+    if not pdfs:
+        print(">>> [ERROR] No PDFs provided in request")
+        return JSONResponse(
+            content={"detail": "No PDF uploaded"},
+            status_code=400,
+            headers=cors_headers,
+        )
+
+    # Parse doctorData JSON
+    doctor = {}
+    if doctorData:
+        try:
+            doctor = json.loads(doctorData)
+            print(f">>> [DEBUG] doctorData parsed: {doctor}")
+        except json.JSONDecodeError as e:
+            print(f">>> [ERROR] Invalid doctorData JSON: {e}")
+            return JSONResponse(
+                content={"detail": "Invalid doctorData JSON"},
+                status_code=400,
+                headers=cors_headers,
+            )
+
+    global username_for_interactive_session
+    username_for_interactive_session = doctor.get("name") if doctor else None
+    print(f">>> [DEBUG] username_for_interactive_session = {username_for_interactive_session}")
+
+    try:
+        # ------------------------------------------------
+        # STEP 1: Convert PDFs to images and OCR them
+        # ------------------------------------------------
+        combined_text = ""
+        pages_processed_count = 0
+        pdfs_processed_count = 0
+
+        for idx_pdf, pdf in enumerate(pdfs, start=1):
+            pdfs_processed_count += 1
+            filename = getattr(pdf, "filename", f"pdf_{idx_pdf}")
+            print(f">>> [DEBUG] Processing PDF #{idx_pdf}: {filename}")
+
+            pdf_bytes = await pdf.read()
+            print(f">>> [DEBUG] Read {len(pdf_bytes)} bytes from {filename}")
+
+            try:
+                pages = convert_from_bytes(pdf_bytes)
+                print(f">>> [DEBUG] Converted '{filename}' into {len(pages)} page(s)")
+            except Exception as e:
+                print(f">>> [ERROR] Failed to convert '{filename}' into images: {e}")
+                continue
+
+            for idx_page, page in enumerate(pages, start=1):
+                pages_processed_count += 1
+                print(f">>> [DEBUG] OCR on page {idx_page} of '{filename}'")
+
+                import io
+                buf = io.BytesIO()
+                page.save(buf, format="PNG")
+                buf.seek(0)
+
+                try:
+                    result = await extract_text_helper(buf)
+                    extracted_text = result.get("text", "") if isinstance(result, dict) else ""
+                    print(f">>> [DEBUG] Extracted {len(extracted_text)} chars from page {idx_page}")
+                except Exception as e:
+                    print(f">>> [ERROR] OCR failed on page {idx_page} of '{filename}': {e}")
+                    extracted_text = ""
+
+                if extracted_text:
+                    combined_text += extracted_text.strip() + "\n\n"
+
+        if not combined_text.strip():
+            print(">>> [ERROR] No text extracted from PDFs")
+            return JSONResponse(
+                content={"detail": "No text extracted from PDFs"},
+                status_code=400,
+                headers=cors_headers,
+            )
+
+        corrected_text = combined_text.strip()
+        print(f">>> [DEBUG] Combined text length = {len(corrected_text)}")
+
+        # ------------------------------------------------
+        # STEP 3: Call GPT for improvement
+        # ------------------------------------------------
+        print(">>> [DEBUG] Sending text to GPT for improvement...")
+        improvement_prompt = f"""..."""  # keep your original prompt here
+
+        improvement_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a creative writing tutor helping a student improve their essay."},
+                {"role": "user", "content": improvement_prompt},
+            ],
+            temperature=0.3,
+        )
+        improved_text = improvement_response.choices[0].message.content.strip()
+        print(f">>> [DEBUG] Received improved text length = {len(improved_text)}")
+
+        # log usage
+        if hasattr(improvement_response, "usage"):
+            usage = improvement_response.usage
+            print(f">>> [DEBUG] GPT usage: prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}")
+            log_to_db(db, username_for_interactive_session, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-mini")
+
+        # ------------------------------------------------
+        # STEP 4: Mistake analysis
+        # ------------------------------------------------
+        print(">>> [DEBUG] Running mistake analysis...")
+        analysis_prompt = f"""..."""  # keep your original analysis prompt
+
+        analysis_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You output only clean, parsable JSON for essay mistake patterns."},
+                {"role": "user", "content": analysis_prompt},
+            ],
+            temperature=0,
+        )
+
+        raw_content = analysis_response.choices[0].message.content.strip()
+        print(f">>> [DEBUG] Analysis raw response length = {len(raw_content)}")
+        try:
+            mistake_patterns_data = json.loads(raw_content)
+            print(f">>> [DEBUG] Parsed {len(mistake_patterns_data)} mistakes")
+        except Exception as e:
+            print(f">>> [ERROR] Failed parsing JSON: {e}")
+            mistake_patterns_data = []
+
+        # ------------------------------------------------
+        # STEP 5: Save to DB
+        # ------------------------------------------------
+        saved_count = 0
+        for idx, mistake in enumerate(mistake_patterns_data, start=1):
+            try:
+                print(f">>> [DEBUG] Saving mistake {idx}")
+                mistake_record = CommonMistake(
+                    session_id=username_for_interactive_session,
+                    original_text=mistake.get("original_text", ""),
+                    corrected_text=mistake.get("corrected_text", ""),
+                    category=mistake.get("category", ""),
+                    explanation=mistake.get("explanation", ""),
+                    created_at=datetime.utcnow(),
+                )
+                db.add(mistake_record)
+                saved_count += 1
+            except Exception as e:
+                print(f">>> [ERROR] Failed saving mistake {idx}: {e}")
+        try:
+            db.commit()
+            print(f">>> [DEBUG] Saved {saved_count} mistakes to DB")
+        except Exception as e:
+            db.rollback()
+            print(f">>> [ERROR] Commit failed: {e}")
+
+        # ------------------------------------------------
+        # STEP 6: Prepare response
+        # ------------------------------------------------
+        session_id = str(uuid4())
+        print(f">>> [DEBUG] Session created: {session_id}")
+
+        final_output = f"""..."""  # keep your merged output
+
+        return JSONResponse(
+            content={
+                "status": "success",
+                "session_id": session_id,
+                "pdfs_processed": pdfs_processed_count,
+                "pages_processed": pages_processed_count,
+                "total_text_length": len(final_output),
+                "corrected_text": final_output,
+                "mistake_patterns": mistake_patterns_data,
+            },
+            headers=cors_headers,
+        )
+
+    except Exception as e:
+        tb_str = traceback.format_exc()
+        print(f">>> [FATAL] Unexpected server error: {e}")
+        print(tb_str)
+        return JSONResponse(
+            content={"detail": f"Unexpected server error: {str(e)}\n{tb_str}"},
+            status_code=500,
+            headers=cors_headers,
+        )
+
+
+
+
 
 # @app.post("/train-on-images")
 #previous working code for CSS_Academy1
@@ -5845,6 +6051,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
