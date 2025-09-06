@@ -5188,6 +5188,29 @@ def list_scheduled_posts(db: Session = Depends(get_db)):
     )
     return scheduled_posts
     
+@app.post("/suggestions/{suggestion_id}/schedule")
+def schedule_suggestion(
+    suggestion_id: int,
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    suggestion = db.get(CampaignSuggestion_ST, suggestion_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+    if suggestion.status != "approved":
+        raise HTTPException(status_code=400, detail="Only approved posts can be scheduled")
+
+    scheduled_time = payload.get("scheduled_time")
+    if not scheduled_time:
+        raise HTTPException(status_code=400, detail="scheduled_time is required")
+
+    suggestion.scheduled_time = scheduled_time
+    db.commit()
+    db.refresh(suggestion)
+
+    return {"success": True, "id": suggestion.id, "scheduled_time": suggestion.scheduled_time}
+
+
 @app.post("/solve_math_problem")
 async def solve_math_problem(image: UploadFile = File(...)):
     # Validate file type
@@ -6245,6 +6268,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
