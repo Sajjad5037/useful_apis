@@ -5157,6 +5157,21 @@ def reject_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"success": True}
 
+@app.get("/to-schedule")
+def list_posts_to_schedule(db: Session = Depends(get_db)):
+    """
+    Return approved posts that don't yet have a scheduled time.
+    """
+    posts = (
+        db.query(CampaignSuggestion_ST)
+        .filter(
+            CampaignSuggestion_ST.status == "approved",
+            CampaignSuggestion_ST.scheduled_time == None
+        )
+        .all()
+    )
+    return posts
+
 @router.get("/scheduled")
 def list_scheduled_posts(db: Session = Depends(get_db)):
     """
@@ -6230,6 +6245,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
