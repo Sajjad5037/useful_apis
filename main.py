@@ -316,7 +316,7 @@ class Campaign(Base):
 
     suggestions = Column(String, nullable=False)  # Store JSON array as string
 
-
+#does not include schedule time
 class CampaignSuggestion2(Base):
     __tablename__ = "campaign_suggestions2"
 
@@ -325,6 +325,21 @@ class CampaignSuggestion2(Base):
     campaign_id = Column(Integer, ForeignKey("campaigns.id"))
     status = Column(String, default="pending")
     user_id = Column(Integer)  # just a plain column, no FK
+    
+#new one to include schedule time
+class CampaignSuggestion_ST(Base):
+    __tablename__ = "campaign_suggestions_st"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content = Column(Text, nullable=False)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"))
+    status = Column(String, default="pending")
+    user_id = Column(Integer)  # plain column, no FK
+
+    # 🆕 Scheduled time column
+    scheduled_time = Column(DateTime, nullable=True, default=None)  
+
+
 
 
     
@@ -5078,7 +5093,7 @@ Important:
     # 3. Save suggestions
     try:
         for s in suggestions:
-            suggestion_entry = CampaignSuggestion2(
+            suggestion_entry = CampaignSuggestion_ST(
                 campaign_id=campaign.id,
                 content=s,
                 status="pending",
@@ -5101,7 +5116,7 @@ Important:
 @app.get("/queue/posts")
 def get_all_pending_suggestions(user_id: int, db: Session = Depends(get_db)):
     suggestions = (
-        db.query(CampaignSuggestion2)
+        db.query(CampaignSuggestion_ST)
         .filter_by(status="pending", user_id=user_id)
         .all()
     )
@@ -5118,7 +5133,7 @@ def get_all_pending_suggestions(user_id: int, db: Session = Depends(get_db)):
     return result
 @app.get("/campaigns/{campaign_id}/suggestions/pending")
 def get_pending_suggestions(campaign_id: int, db: Session = Depends(get_db)):
-    suggestions = db.query(CampaignSuggestion2).filter_by(
+    suggestions = db.query(CampaignSuggestion_ST).filter_by(
         campaign_id=campaign_id,
         status="pending"
     ).all()
@@ -5126,7 +5141,7 @@ def get_pending_suggestions(campaign_id: int, db: Session = Depends(get_db)):
 
 @app.post("/suggestions/{suggestion_id}/approve")
 def approve_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
-    suggestion = db.get(CampaignSuggestion2, suggestion_id)
+    suggestion = db.get(CampaignSuggestion_ST, suggestion_id)
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
     suggestion.status = "approved"
@@ -5135,7 +5150,7 @@ def approve_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
 
 @app.post("/suggestions/{suggestion_id}/reject")
 def reject_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
-    suggestion = db.get(CampaignSuggestion2, suggestion_id)
+    suggestion = db.get(CampaignSuggestion_ST, suggestion_id)
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
     suggestion.status = "rejected"
@@ -6200,6 +6215,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
