@@ -5156,7 +5156,22 @@ def reject_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
     suggestion.status = "rejected"
     db.commit()
     return {"success": True}
-    
+
+@router.get("/scheduled")
+def list_scheduled_posts(db: Session = Depends(get_db)):
+    """
+    Return all suggestions that are approved and have a scheduled_time set.
+    """
+    scheduled_posts = (
+        db.query(CampaignSuggestion_ST)
+        .filter(
+            CampaignSuggestion_ST.status == "approved",
+            CampaignSuggestion_ST.scheduled_time != None,
+            CampaignSuggestion_ST.scheduled_time > datetime.utcnow()
+        )
+        .all()
+    )
+    return scheduled_posts
     
 @app.post("/solve_math_problem")
 async def solve_math_problem(image: UploadFile = File(...)):
@@ -6215,6 +6230,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
