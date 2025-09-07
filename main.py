@@ -122,8 +122,8 @@ MODEL_COST_PER_TOKEN = {
 audio_store = {}
 GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
 PAGE_ID = "781314085068832"    
-PAGE_ACCESS_TOKEN = "EAAKNLPu3bV8BPVqU08Ag8eoWAzHQsOne3hnzHNliID9vXcDYBObL5AmQonxAoutE2ZAfAmXULszvNL7YZAdJBqX8Ca7DIKlFgaW6U7fd3ZCl8eKBUyswvITsdA6swIjAqo0gAmgw6RwkDEg8Ls1eySySwT0ApsZBAZBNpHZCZA4lXpHIoH2AlZCf2ieZBMES7ZCcCZBR6Fqnn5nIjOAEiE52xngkOaZCcqzWKVxd7v5mP436oXYb"
-
+USER_ACCESS_TOKEN = "EAAKNLPu3bV8BPVqU08Ag8eoWAzHQsOne3hnzHNliID9vXcDYBObL5AmQonxAoutE2ZAfAmXULszvNL7YZAdJBqX8Ca7DIKlFgaW6U7fd3ZCl8eKBUyswvITsdA6swIjAqo0gAmgw6RwkDEg8Ls1eySySwT0ApsZBAZBNpHZCZA4lXpHIoH2AlZCf2ieZBMES7ZCcCZBR6Fqnn5nIjOAEiE52xngkOaZCcqzWKVxd7v5mP436oXYb"
+PAGE_NAME = "AI Solutions"
 USAGE_LIMIT_INCREASE = 5.0  # dollars
 vertexai.init(project="dazzling-tensor-455512-j1", location="us-central1")
 vision_model = GenerativeModel("gemini-1.5-flash")
@@ -713,60 +713,50 @@ def job():
 # Run every minute to check for posts ready to be published
 scheduler.add_job(job, 'interval', minutes=1)
 
-def post_to_facebook(message: str):
-    url = f"{GRAPH_API_BASE}/{PAGE_ID}/feed"
-    data = {"message": message, "access_token": PAGE_ACCESS_TOKEN}
-    
-    print("📤 Posting to Facebook...")
-    print(f"URL: {url}")
-    print(f"Message: {message}")
-    
-    try:
-        res = requests.post(url, data=data).json()
-        print(f"✅ Facebook Response: {res}")
-        return res
-    except Exception as e:
-        print(f"❌ Exception while posting: {e}")
-        return {"error": str(e)}
+def get_page_token():
+    """
+    Exchange the USER token for a PAGE token dynamically.
+    """
+    url = f"{GRAPH_API_BASE}/me/accounts?access_token={USER_ACCESS_TOKEN}"
+    res = requests.get(url).json()
 
-def publish_scheduled_posts(db: Session):
-    now = datetime.utcnow()
-    print(f"\n⏰ Checking for scheduled posts at {now.isoformat()} UTC")
-    
-    posts = (
-        db.query(CampaignSuggestion_ST)
-        .filter(
-            CampaignSuggestion_ST.status == "approved",
-            CampaignSuggestion_ST.scheduled_time <= now,
-            CampaignSuggestion_ST.posted == False
-        )
-        .all()
-    )
+    if "data" not in res:
+        raise Exception(f"Error fetching pages: {res}")
 
-    if not posts:
-        print("ℹ️ No posts ready to publish at this time.")
-        return
+    for page in res["data"]:
+        if page["name"] == PAGE_NAME or page["id"] == PAGE_NAME:
+            return page["id"], page["access_token"]
 
-    print(f"📌 Found {len(posts)} post(s) to publish:")
-    
-    for post in posts:
-        print(f"\n---\nProcessing Post ID: {post.id}")
-        print(f"Content: {post.content}")
-        print(f"Scheduled Time: {post.scheduled_time}")
-        
-        result = post_to_facebook(post.content)
-        
-        if "id" in result:
-            print(f"✅ Successfully posted Post ID {post.id} as Facebook Post ID {result['id']}")
-            post.posted = True
-            db.commit()
-        else:
-            print(f"❌ Failed to post Post ID {post.id}")
-            if "error" in result:
-                print(f"Error Details: {result['error']}")
-            else:
-                print(f"Full Response: {result}")
-                
+    raise Exception(f"Page {PAGE_NAME} not found. Response: {res}")
+
+
+def publish_post(message):
+    """
+    Publish immediately to the page (always uses fresh Page Token).
+    """
+    page_id, page_token = get_page_token()
+
+    url = f"{GRAPH_API_BASE}/{page_id}/feed"
+    payload = {"message": message, "access_token": page_token}
+    res = requests.post(url, data=payload).json()
+    return res
+
+
+def schedule_post(message, schedule_time):
+    """
+    Schedule a post for the future.
+    """
+    page_id, page_token = get_page_token()
+
+    url = f"{GRAPH_API_BASE}/{page_id}/feed"
+    payload = {
+        "message": message,
+        "published": "false",
+        "scheduled_publish_time": schedule_time,
+        "access_token": page_token,
+    }
+    res = requests.post(url, data=payload).json()
+    return res                
 
 def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
     """
@@ -6341,6 +6331,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
