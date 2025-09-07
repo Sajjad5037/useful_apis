@@ -749,39 +749,53 @@ def generate_ai_reply(comment_text: str) -> str:
 
     ai_reply_text = response.choices[0].message.content.strip()
     return ai_reply_text
-    
+
+
 def publish_comment_replies(db):
     """
-    Automatically reply to comments on posts made by AI.
+    Fetches all published posts and replies to new comments using AI.
+    Logs every attempt for debugging.
     """
-    page_token = get_page_token()[1]  # Only need page_token here
+    try:
+        page_id, page_token = get_page_token()
+        posts = db.query(CampaignSuggestion_ST).filter(CampaignSuggestion_ST.posted == True).all()
 
-    posts = db.query(CampaignSuggestion_ST).filter(CampaignSuggestion_ST.posted == True).all()
-
-    for post in posts:
-        comments = get_post_comments(PAGE_ID, page_token, post.fb_post_id)
-
-        for comment in comments:
-            # Skip if already replied
-            exists = db.query(PostComments).filter_by(fb_comment_id=comment['id']).first()
-            if exists:
+        for post in posts:
+            if not post.fb_post_id:
+                print(f"[{datetime.utcnow()}] Skipping post {post.id}: No FB Post ID")
                 continue
 
-            # Generate AI reply
-            reply_text = generate_ai_reply(comment['message'])
+            comments = get_post_comments(page_id, page_token, post.fb_post_id)
+            print(f"[{datetime.utcnow()}] Found {len(comments)} comments on post {post.id}")
 
-            # Post reply
-            res = reply_to_comment(comment['id'], reply_text, page_token)
-            print(f"Replied to comment {comment['id']}: {res}")
+            for comment in comments:
+                # Skip if already replied
+                exists = db.query(PostComments).filter_by(fb_comment_id=comment['id']).first()
+                if exists:
+                    continue
 
-            # Save in DB
-            new_comment = PostComments(
-                fb_comment_id=comment['id'],
-                post_id=post.id,
-                replied=True
-            )
-            db.add(new_comment)
-            db.commit()
+                # Generate AI reply
+                reply_text = generate_ai_reply(comment['message'])
+                print(f"[{datetime.utcnow()}] Generated AI reply for comment {comment['id']}: {reply_text}")
+
+                # Post reply
+                res = reply_to_comment(comment['id'], reply_text, page_token)
+                print(f"[{datetime.utcnow()}] Reply response: {res}")
+
+                # Save in DB
+                new_comment = PostComments(
+                    fb_comment_id=comment['id'],
+                    post_id=post.id,
+                    replied=True
+                )
+                db.add(new_comment)
+                db.commit()
+                print(f"[{datetime.utcnow()}] Saved reply in DB for comment {comment['id']}")
+
+    except Exception as e:
+        print(f"[{datetime.utcnow()}] Exception in publish_comment_replies: {e}")
+
+
 #till here
 
 def publish_scheduled_posts(db):
@@ -822,43 +836,34 @@ def get_page_token():
 
 def publish_post(message, db, post_obj):
     """
-    Publish a post to the Facebook Page using a hardcoded Page ID
-    and the Page Access Token.
+    Publishes a post immediately to the Facebook Page.
+    Updates the post object with fb_post_id if successful.
     """
     try:
-        # Get Page Access Token using USER_ACCESS_TOKEN
-        url = f"{GRAPH_API_BASE}/me/accounts?access_token={USER_ACCESS_TOKEN}"
-        res = requests.get(url).json()
+        # Get Page ID and Page Token
+        page_id, page_token = get_page_token()
 
-        if "data" not in res or len(res["data"]) == 0:
-            print(f"Error fetching pages: {res}")
-            return False
-
-        # Find the page with hardcoded PAGE_ID
-        page_info = next((p for p in res["data"] if p["id"] == PAGE_ID), None)
-        if not page_info:
-            print(f"Page {PAGE_ID} not found in user's managed pages")
-            return False
-
-        page_token = page_info["access_token"]
-
-        # Post to Page feed
-        post_url = f"{GRAPH_API_BASE}/{PAGE_ID}/feed"
+        url = f"{GRAPH_API_BASE}/{page_id}/feed"
         payload = {"message": message, "access_token": page_token}
-        post_res = requests.post(post_url, data=payload).json()
 
-        # Save fb_post_id if successful
-        if "id" in post_res:
-            post_obj.fb_post_id = post_res["id"]
+        # Send request to Facebook
+        res = requests.post(url, data=payload).json()
+        print(f"[{datetime.utcnow()}] Attempting to post: {message}")
+        print(f"[{datetime.utcnow()}] Facebook response: {res}")
+
+        if "id" in res:
+            # Save Facebook Post ID in DB
+            post_obj.fb_post_id = res["id"]
+            post_obj.posted = True
             db.commit()
-            print(f"Post published successfully: {post_res['id']}")
+            print(f"[{datetime.utcnow()}] Post successful. FB Post ID: {res['id']}")
             return True
         else:
-            print(f"Failed to publish post: {post_res}")
+            print(f"[{datetime.utcnow()}] Failed to post. Response: {res}")
             return False
 
     except Exception as e:
-        print(f"Exception in publish_post: {e}")
+        print(f"[{datetime.utcnow()}] Exception in publish_post: {e}")
         return False
 
 def schedule_post(message, schedule_time):
@@ -6450,6 +6455,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
