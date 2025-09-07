@@ -798,73 +798,77 @@ def publish_comment_replies(db):
 
 #till here
 
+
+
 def publish_scheduled_posts(db):
-    now = datetime.utcnow()
-    posts = db.query(CampaignSuggestion_ST).filter(
-        CampaignSuggestion_ST.status == "approved",   # ✅ check status text
-        CampaignSuggestion_ST.scheduled_time <= now,
-        CampaignSuggestion_ST.posted == False
-    ).all()
-
-    for post in posts:
-        print(f"Processing Post ID: {post.id}")
-        res = publish_post(post.content)  # 👈 publish_post returns JSON response
-
-        if "id" in res:  # ✅ success check
-            post.posted = True
-            db.commit()
-            print(f"✅ Successfully posted Post ID {post.id}")
-        else:
-            print(f"❌ Failed to post Post ID {post.id}: {res}")
-            
-def get_page_token():
     """
-    Exchange the USER token for a PAGE token dynamically.
+    Publishes all approved and scheduled posts whose scheduled time has passed
+    and updates the DB with fb_post_id and posted=True.
+    Uses print statements for debugging.
     """
-    url = f"{GRAPH_API_BASE}/me/accounts?access_token={USER_ACCESS_TOKEN}"
-    res = requests.get(url).json()
+    try:
+        now = datetime.utcnow()
+        posts = db.query(CampaignSuggestion_ST).filter(
+            CampaignSuggestion_ST.status == "approved",
+            CampaignSuggestion_ST.scheduled_time <= now,
+            CampaignSuggestion_ST.posted == False
+        ).all()
 
-    if "data" not in res:
-        raise Exception(f"Error fetching pages: {res}")
+        if not posts:
+            print(f"[{datetime.utcnow()}] No posts ready to be published.")
+            return
 
-    for page in res["data"]:
-        if page["name"] == PAGE_NAME or page["id"] == PAGE_NAME:
-            return page["id"], page["access_token"]
+        for post in posts:
+            print(f"[{datetime.utcnow()}] Processing Post ID: {post.id} | Content preview: {post.content[:50]}...")
 
-    raise Exception(f"Page {PAGE_NAME} not found. Response: {res}")
+            # Publish post
+            res = publish_post(post.content, db, post)  # Ensure publish_post returns JSON
+
+            # Print full Facebook response
+            print(f"[{datetime.utcnow()}] Facebook response for Post ID {post.id}: {res}")
+
+            if "id" in res:
+                print(f"[{datetime.utcnow()}] ✅ Successfully posted Post ID {post.id} | FB Post ID: {res['id']}")
+            else:
+                print(f"[{datetime.utcnow()}] ❌ Failed to post Post ID {post.id} | Response: {res}")
+
+    except Exception as e:
+        print(f"[{datetime.utcnow()}] Exception in publish_scheduled_posts: {e}")
+
 
 def publish_post(message, db, post_obj):
     """
-    Publishes a post immediately to the Facebook Page.
-    Updates the post object with fb_post_id and posted=True if successful.
-    Logs everything for debugging.
+    Publishes a post to Facebook Page and updates the post object in DB.
+    Returns the Facebook API JSON response for debugging.
     """
     try:
+        # Get Page ID and Page Token
         page_id, page_token = get_page_token()
-        url = f"{GRAPH_API_BASE}/{page_id}/feed"
-        payload = {"message": message, "access_token": page_token}
+        print(f"[{datetime.utcnow()}] Attempting to post to Page ID: {page_id}")
 
-        print(f"[{datetime.utcnow()}] Sending payload to Facebook: {payload}")
+        url = f"{GRAPH_API_BASE}/{page_id}/feed"
+        payload = {
+            "message": message,
+            "access_token": page_token
+        }
+
+        # Send POST request
         res = requests.post(url, data=payload).json()
         print(f"[{datetime.utcnow()}] Facebook response: {res}")
 
         if "id" in res:
-            # Ensure the object is still attached to the session
-            if not db.is_modified(post_obj):
-                print(f"[{datetime.utcnow()}] Post object is attached to session.")
-
             post_obj.fb_post_id = res["id"]
             post_obj.posted = True
             db.commit()
-            print(f"[{datetime.utcnow()}] Post successful. FB Post ID: {res['id']}")
-            return True
+            print(f"[{datetime.utcnow()}] ✅ Post successful. FB Post ID: {res['id']}")
         else:
-            print(f"[{datetime.utcnow()}] Failed to post. Response: {res}")
-            return False
+            print(f"[{datetime.utcnow()}] ❌ Post failed. Response: {res}")
+
+        return res
 
     except Exception as e:
         print(f"[{datetime.utcnow()}] Exception in publish_post: {e}")
-        return False
+        return {"error": str(e)}
 
 
 def schedule_post(message, schedule_time):
@@ -6456,6 +6460,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
