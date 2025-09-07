@@ -853,38 +853,40 @@ def publish_scheduled_posts(db):
 
 def publish_post(message, db, post_obj):
     """
-    Publishes a post to Facebook Page and updates the post object in DB.
-    Returns the Facebook API JSON response for debugging.
+    Publishes a post immediately to the Facebook Page.
+    Ensures post is publicly visible.
+    Updates the post object with fb_post_id and posted=True if successful.
     """
     try:
         # Get Page ID and Page Token
         page_id, page_token = get_page_token()
         print(f"[{datetime.utcnow()}] Attempting to post to Page ID: {page_id}")
-
-        url = f"{GRAPH_API_BASE}/{page_id}/feed"
+        
+        # Prepare payload with public visibility
         payload = {
             "message": message,
-            "access_token": page_token
+            "access_token": page_token,
+            "privacy": '{"value":"EVERYONE"}'  # ensures the post is visible to all
         }
 
-        # Send POST request
-        res = requests.post(url, data=payload).json()
+        # Send POST request to Facebook Graph API
+        res = requests.post(f"{GRAPH_API_BASE}/{page_id}/feed", data=payload).json()
         print(f"[{datetime.utcnow()}] Facebook response: {res}")
 
         if "id" in res:
+            # Save Facebook Post ID and mark as posted
             post_obj.fb_post_id = res["id"]
             post_obj.posted = True
             db.commit()
             print(f"[{datetime.utcnow()}] ✅ Post successful. FB Post ID: {res['id']}")
+            return res  # return full JSON response
         else:
-            print(f"[{datetime.utcnow()}] ❌ Post failed. Response: {res}")
-
-        return res
+            print(f"[{datetime.utcnow()}] ❌ Failed to post. Response: {res}")
+            return res  # return JSON response even if failed
 
     except Exception as e:
         print(f"[{datetime.utcnow()}] Exception in publish_post: {e}")
         return {"error": str(e)}
-
 
 def schedule_post(message, schedule_time):
     """
@@ -6475,6 +6477,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
