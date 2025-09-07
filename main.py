@@ -716,17 +716,21 @@ scheduler.add_job(job, 'interval', minutes=1)
 def publish_scheduled_posts(db):
     now = datetime.utcnow()
     posts = db.query(CampaignSuggestion_ST).filter(
-        CampaignSuggestion_ST.approved == True,
+        CampaignSuggestion_ST.status == "approved",   # ✅ check status text
         CampaignSuggestion_ST.scheduled_time <= now,
         CampaignSuggestion_ST.posted == False
     ).all()
 
     for post in posts:
         print(f"Processing Post ID: {post.id}")
-        success = publish_post(post.content)  # 👈 your publish_post function
-        if success:
+        res = publish_post(post.content)  # 👈 publish_post returns JSON response
+
+        if "id" in res:  # ✅ success check
             post.posted = True
             db.commit()
+            print(f"✅ Successfully posted Post ID {post.id}")
+        else:
+            print(f"❌ Failed to post Post ID {post.id}: {res}")
             
 def get_page_token():
     """
@@ -6346,6 +6350,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
