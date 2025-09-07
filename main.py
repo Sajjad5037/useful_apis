@@ -750,6 +750,21 @@ def generate_ai_reply(comment_text: str) -> str:
     ai_reply_text = response.choices[0].message.content.strip()
     return ai_reply_text
 
+def get_page_token():
+    """
+    Exchange the USER token for a PAGE token dynamically.
+    """
+    url = f"{GRAPH_API_BASE}/me/accounts?access_token={USER_ACCESS_TOKEN}"
+    res = requests.get(url).json()
+
+    if "data" not in res:
+        raise Exception(f"Error fetching pages: {res}")
+
+    for page in res["data"]:
+        if page["name"] == PAGE_NAME or page["id"] == PAGE_NAME:
+            return page["id"], page["access_token"]
+
+    raise Exception(f"Page {PAGE_NAME} not found. Response: {res}")
 
 def publish_comment_replies(db):
     """
@@ -6460,6 +6475,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
