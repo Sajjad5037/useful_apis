@@ -833,26 +833,26 @@ def get_page_token():
 
     raise Exception(f"Page {PAGE_NAME} not found. Response: {res}")
 
-
 def publish_post(message, db, post_obj):
     """
     Publishes a post immediately to the Facebook Page.
-    Updates the post object with fb_post_id if successful.
+    Updates the post object with fb_post_id and posted=True if successful.
+    Logs everything for debugging.
     """
     try:
-        # Get Page ID and Page Token
         page_id, page_token = get_page_token()
-
         url = f"{GRAPH_API_BASE}/{page_id}/feed"
         payload = {"message": message, "access_token": page_token}
 
-        # Send request to Facebook
+        print(f"[{datetime.utcnow()}] Sending payload to Facebook: {payload}")
         res = requests.post(url, data=payload).json()
-        print(f"[{datetime.utcnow()}] Attempting to post: {message}")
         print(f"[{datetime.utcnow()}] Facebook response: {res}")
 
         if "id" in res:
-            # Save Facebook Post ID in DB
+            # Ensure the object is still attached to the session
+            if not db.is_modified(post_obj):
+                print(f"[{datetime.utcnow()}] Post object is attached to session.")
+
             post_obj.fb_post_id = res["id"]
             post_obj.posted = True
             db.commit()
@@ -865,6 +865,7 @@ def publish_post(message, db, post_obj):
     except Exception as e:
         print(f"[{datetime.utcnow()}] Exception in publish_post: {e}")
         return False
+
 
 def schedule_post(message, schedule_time):
     """
@@ -6455,6 +6456,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
