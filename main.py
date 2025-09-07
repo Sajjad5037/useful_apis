@@ -319,6 +319,14 @@ class Campaign(Base):
     doctor_name = Column(String, nullable=False)
 
     suggestions = Column(String, nullable=False)  # Store JSON array as string
+class PostComments(Base):
+    __tablename__ = "post_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fb_comment_id = Column(String, unique=True, nullable=False)
+    post_id = Column(Integer, ForeignKey("campaign_suggestions_st.id"))
+    replied = Column(Boolean, default=False, nullable=False)
+
 
 #does not include schedule time
 class CampaignSuggestion2(Base):
@@ -343,6 +351,8 @@ class CampaignSuggestion_ST(Base):
     # 🆕 Scheduled time column
     scheduled_time = Column(DateTime, nullable=True, default=None)  
     posted = Column(Boolean, default=False, nullable=False)
+    commented = Column(Boolean, default=False, nullable=False)
+    fb_post_id = Column(String(100), unique=True, nullable=True)
 
 
 
@@ -711,7 +721,66 @@ def job():
         db.close()
 
 # Run every minute to check for posts ready to be published
-scheduler.add_job(job, 'interval', minutes=1)
+scheduler.add_job(job, 'interval', minutes=1) #to post campaign suggestion
+scheduler.add_job(lambda: publish_comment_replies(SessionLocal()), 'interval', minutes=1) # to reply to posts
+
+def get_post_comments(page_id, page_token, post_id):
+    url = f"{GRAPH_API_BASE}/{post_id}/comments?access_token={page_token}"
+    res = requests.get(url).json()
+    if "data" in res:
+        return res["data"]
+    return []
+def reply_to_comment(comment_id, reply_text, page_token):
+    url = f"{GRAPH_API_BASE}/{comment_id}/comments"
+    payload = {"message": reply_text, "access_token": page_token}
+    res = requests.post(url, data=payload).json()
+    return res
+
+def generate_ai_reply(comment_text: str) -> str:
+    # ✅ Original prompt unchanged
+    prompt = f"Reply politely and helpfully to this Facebook comment:\n\n{comment_text}"
+
+    # --- Get AI text using your client ---
+    response = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=100
+    )
+
+    ai_reply_text = response.choices[0].message.content.strip()
+    return ai_reply_text
+    
+def publish_comment_replies(db):
+    page_id, page_token = get_page_token()
+
+    posts = db.query(CampaignSuggestion_ST).filter(CampaignSuggestion_ST.posted == True).all()
+
+    for post in posts:
+        comments = get_post_comments(page_id, page_token, post.fb_post_id)  # fb_post_id stores Facebook post ID
+
+        for comment in comments:
+            # check if we already replied
+            exists = db.query(PostComments).filter_by(fb_comment_id=comment['id']).first()
+            if exists:
+                continue
+
+            # Generate AI reply
+            reply_text = generate_ai_reply(comment['message'])
+
+            # Post reply
+            res = reply_to_comment(comment['id'], reply_text, page_token)
+            print(f"Replied to comment {comment['id']}: {res}")
+
+            # Save in DB
+            new_comment = PostComments(
+                fb_comment_id=comment['id'],
+                post_id=post.id,
+                replied=True
+            )
+            db.add(new_comment)
+            db.commit()
+
+#till here
 
 def publish_scheduled_posts(db):
     now = datetime.utcnow()
@@ -749,17 +818,17 @@ def get_page_token():
     raise Exception(f"Page {PAGE_NAME} not found. Response: {res}")
 
 
-def publish_post(message):
-    """
-    Publish immediately to the page (always uses fresh Page Token).
-    """
+def publish_post(message, db, post_obj):
     page_id, page_token = get_page_token()
-
     url = f"{GRAPH_API_BASE}/{page_id}/feed"
     payload = {"message": message, "access_token": page_token}
     res = requests.post(url, data=payload).json()
-    return res
 
+    if "id" in res:
+        post_obj.fb_post_id = res["id"]
+        db.commit()
+        return True
+    return False
 
 def schedule_post(message, schedule_time):
     """
@@ -6350,6 +6419,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
