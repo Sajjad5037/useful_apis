@@ -9,6 +9,7 @@ import sys
 import fitz 
 from google.cloud import storage
 import base64
+from apscheduler.schedulers.background import BackgroundScheduler
 import asyncio
 import io
 import tempfile
@@ -119,6 +120,9 @@ MODEL_COST_PER_TOKEN = {
 }
 
 audio_store = {}
+GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
+PAGE_ID = "781314085068832"    
+PAGE_ACCESS_TOKEN = "EAAKNLPu3bV8BPTQnVwL68oqjxKHhTqXeWNswDjjUHS50nn6lJMNZCKZCZBsdZCPDKLcgsAdavWKxGgljQUXSKXDIiN9Od8cXEA2orIZA7QFWUeZAa5cSUraj09E7q7qaZCpQNb6fsyB56MxI3XjKyaLt7fhjIe0JMvfe4t91fCLFZCLubzC3NXrgkv6LhwOHn2AiXJdMGEuEKFqK9PlJi6fDEnfN0YpMqZAoGoW24Y7UZB3OEZD"
 
 USAGE_LIMIT_INCREASE = 5.0  # dollars
 vertexai.init(project="dazzling-tensor-455512-j1", location="us-central1")
@@ -694,7 +698,75 @@ def get_db():
         yield db
     finally:
         db.close()
+
+scheduler = BackgroundScheduler()
+scheduler.start()
+
+def job():
+    db = SessionLocal()
+    try:
+        publish_scheduled_posts(db)
+    finally:
+        db.close()
+
+# Run every minute to check for posts ready to be published
+scheduler.add_job(job, 'interval', minutes=1)
+
+def post_to_facebook(message: str):
+    url = f"{GRAPH_API_BASE}/{PAGE_ID}/feed"
+    data = {"message": message, "access_token": PAGE_ACCESS_TOKEN}
+    
+    print("📤 Posting to Facebook...")
+    print(f"URL: {url}")
+    print(f"Message: {message}")
+    
+    try:
+        res = requests.post(url, data=data).json()
+        print(f"✅ Facebook Response: {res}")
+        return res
+    except Exception as e:
+        print(f"❌ Exception while posting: {e}")
+        return {"error": str(e)}
+
+def publish_scheduled_posts(db: Session):
+    now = datetime.utcnow()
+    print(f"\n⏰ Checking for scheduled posts at {now.isoformat()} UTC")
+    
+    posts = (
+        db.query(CampaignSuggestion_ST)
+        .filter(
+            CampaignSuggestion_ST.status == "approved",
+            CampaignSuggestion_ST.scheduled_time <= now,
+            CampaignSuggestion_ST.posted == False
+        )
+        .all()
+    )
+
+    if not posts:
+        print("ℹ️ No posts ready to publish at this time.")
+        return
+
+    print(f"📌 Found {len(posts)} post(s) to publish:")
+    
+    for post in posts:
+        print(f"\n---\nProcessing Post ID: {post.id}")
+        print(f"Content: {post.content}")
+        print(f"Scheduled Time: {post.scheduled_time}")
         
+        result = post_to_facebook(post.content)
+        
+        if "id" in result:
+            print(f"✅ Successfully posted Post ID {post.id} as Facebook Post ID {result['id']}")
+            post.posted = True
+            db.commit()
+        else:
+            print(f"❌ Failed to post Post ID {post.id}")
+            if "error" in result:
+                print(f"Error Details: {result['error']}")
+            else:
+                print(f"Full Response: {result}")
+                
+
 def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
     """
     Calculate the total cost for a model call, multiplying the final cost by 3
@@ -6268,6 +6340,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
