@@ -866,8 +866,9 @@ def publish_post(message, db, post_obj):
         payload = {
             "message": message,
             "access_token": page_token,
-            "privacy": '{"value":"EVERYONE"}'  # ensures the post is visible to all
+            "published": True
         }
+
 
         # Send POST request to Facebook Graph API
         res = requests.post(f"{GRAPH_API_BASE}/{page_id}/feed", data=payload).json()
@@ -6477,6 +6478,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
