@@ -721,8 +721,8 @@ def job():
         db.close()
 
 # Run every minute to check for posts ready to be published
-scheduler.add_job(job, 'interval', minutes=1) #to post campaign suggestion
-scheduler.add_job(lambda: publish_comment_replies(SessionLocal()), 'interval', minutes=1) # to reply to posts
+scheduler.add_job(job, 'interval', minutes=10000) #to post campaign suggestion
+scheduler.add_job(lambda: publish_comment_replies(SessionLocal()), 'interval', minutes=10000) # to reply to posts
 
 def get_post_comments(page_id, page_token, post_id):
     url = f"{GRAPH_API_BASE}/{post_id}/comments?access_token={page_token}"
@@ -6478,6 +6478,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
