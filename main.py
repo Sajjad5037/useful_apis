@@ -342,6 +342,7 @@ class CampaignSuggestion_ST(Base):
 
     # 🆕 Scheduled time column
     scheduled_time = Column(DateTime, nullable=True, default=None)  
+    posted = Column(Boolean, default=False, nullable=False)
 
 
 
@@ -6340,6 +6341,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
