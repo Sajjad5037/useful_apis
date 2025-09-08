@@ -880,45 +880,51 @@ def publish_scheduled_posts(db):
         
 def publish_post(message, db, post_obj, page_access_token, page_id):
     """
-    Publishes a post immediately to the Facebook Page.
-    Ensures post is publicly visible.
-    Updates the post object with fb_post_id and posted=True if successful.
+    Publishes a post immediately to the Facebook Page with full logging.
+    Ensures post is publicly visible and updates DB with fb_post_id and posted=True if successful.
     """
     try:
         url = f"https://graph.facebook.com/v23.0/{page_id}/feed"
         payload = {
             "message": message,
-            "published": True,  # ensure it’s published
-            "privacy": '{"value":"EVERYONE"}',  # force public visibility
+            "published": True,  # Ensure it is actually published
+            "privacy": '{"value":"EVERYONE"}',  # Force public visibility
             "access_token": page_access_token
         }
 
-        print("🚀 Publishing post to:", url)
+        print("🚀 Publishing post to URL:", url)
         print("📦 Payload being sent:", payload)
 
         response = requests.post(url, data=payload)
         print("📡 Response status:", response.status_code)
-        print("📡 Response text:", response.text)
+        print("📡 Raw response text:", response.text)
 
         result = response.json()
-        print("🔍 Parsed JSON:", result)
+        print("🔍 Parsed JSON response:", result)
 
+        # Sanity check: ensure FB returned an ID
         if "id" in result:
             fb_post_id = result["id"]
+            print(f"✅ Successfully published! FB Post ID: {fb_post_id}")
+
+            # Optional: confirm public visibility by fetching post
+            check_url = f"https://graph.facebook.com/v23.0/{fb_post_id}?fields=privacy&access_token={page_access_token}"
+            check_res = requests.get(check_url).json()
+            print("🔎 Post privacy check:", check_res.get("privacy"))
+
+            # Update DB
             post_obj.fb_post_id = fb_post_id
             post_obj.posted = True
             db.commit()
-            print(f"✅ Successfully published! FB Post ID: {fb_post_id}")
+            print(f"[{datetime.utcnow()}] DB updated with FB Post ID {fb_post_id}")
             return True
         else:
             print("❌ Failed to publish post:", result)
             return False
 
     except Exception as e:
-        db.rollback()
-        print("🔥 Exception in publish_post:", e)
+        print("🔥 Exception in publish_post:", str(e))
         return False
-
 
 def schedule_post(message, schedule_time):
     """
@@ -6515,6 +6521,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
