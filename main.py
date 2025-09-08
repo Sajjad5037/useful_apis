@@ -794,21 +794,25 @@ def publish_comment_replies(db):
 
 
 def publish_post(message, db, post_obj, scheduled=False, scheduled_time=None):
-    """Publish a post to the Page using the correct Page access token."""
+    """
+    Publish a post to the Page. If scheduled_time is in the past, it will be published immediately.
+    """
     try:
-        url = f"{GRAPH_API_BASE}/{PAGE_ID}/feed"
-        payload = {
-            "message": message,
-            "access_token": PAGE_ACCESS_TOKEN,
-        }
+        now = datetime.utcnow()
+        # Treat past scheduled times as immediate
+        if scheduled and scheduled_time and scheduled_time <= now:
+            scheduled = False
 
-        if scheduled:
+        payload = {"message": message, "access_token": PAGE_ACCESS_TOKEN}
+
+        if scheduled and scheduled_time:
             payload["published"] = False
             payload["scheduled_publish_time"] = int(scheduled_time.timestamp())
         else:
             payload["published"] = True
             payload["privacy"] = '{"value":"EVERYONE"}'
 
+        url = f"{GRAPH_API_BASE}/{PAGE_ID}/feed"
         response = requests.post(url, data=payload)
         result = response.json()
 
@@ -827,7 +831,7 @@ def publish_post(message, db, post_obj, scheduled=False, scheduled_time=None):
         print(f"[{datetime.utcnow()}] 🔥 Exception in publish_post: {e}")
         db.rollback()
         return False
-
+        
 def publish_scheduled_posts(db):
     try:
         now = datetime.utcnow()
@@ -857,51 +861,23 @@ def publish_scheduled_posts(db):
 
 def schedule_post(message, schedule_time_utc):
     """
-    Schedule a post for the future with automatic page token refresh and logging.
-
-    Args:
-        message (str): The content of the post.
-        schedule_time_utc (datetime): Scheduled time in UTC (datetime object).
+    Schedule a post for the future. If the time is in the past, publish immediately.
     """
     try:
-        # Step 1: Ensure schedule_time is a UNIX timestamp
-        if isinstance(schedule_time_utc, datetime):
-            schedule_timestamp = int(schedule_time_utc.timestamp())
-        else:
+        if not isinstance(schedule_time_utc, datetime):
             raise ValueError("schedule_time_utc must be a datetime object in UTC.")
 
-        # Step 2: Fetch fresh page access token
-        page_id = PAGE_ID  # replace if needed
-        
-        if not PAGE_ACCESS_TOKEN:
-            print("❌ Cannot schedule post without a valid page token.")
-            return None
+        now = datetime.utcnow()
+        # If time is in the past, treat as immediate
+        scheduled = schedule_time_utc > now
 
-        print(f"🔄 Scheduling post for Page ID {page_id} at {schedule_time_utc} UTC")
-        print(f"📦 Post content preview: {message[:50]}...")
-
-        # Step 3: Prepare payload for scheduling
-        url = f"{GRAPH_API_BASE}/{page_id}/feed"
-        payload = {
-            "message": message,
-            "published": False,  # scheduled post
-            "scheduled_publish_time": schedule_timestamp,
-            "access_token": PAGE_ACCESS_TOKEN,
-        }
-
-        # Step 4: Send request
-        response = requests.post(url, data=payload)
-        print("📡 Response status:", response.status_code)
-        print("📡 Raw response text:", response.text)
-
-        result = response.json()
-        if "id" in result:
-            scheduled_post_id = result["id"]
-            print(f"✅ Post scheduled successfully! FB Post ID: {scheduled_post_id}")
-            return scheduled_post_id
-        else:
-            print("❌ Failed to schedule post:", result)
-            return None
+        return publish_post(
+            message=message,
+            db=SessionLocal(),
+            post_obj=CampaignSuggestion_ST(content=message),  # create a dummy post_obj or fetch actual
+            scheduled=scheduled,
+            scheduled_time=schedule_time_utc
+        )
 
     except Exception as e:
         print("🔥 Exception in schedule_post:", str(e))
@@ -6485,6 +6461,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
