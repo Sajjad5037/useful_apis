@@ -122,7 +122,7 @@ MODEL_COST_PER_TOKEN = {
 audio_store = {}
 GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
 PAGE_ID = "61580579033460"    
-USER_ACCESS_TOKEN = "EAAKNLPu3bV8BPcd9fb0VzYpdKKdVOhaOoJZC0yVAt3Cjxm3iZARRdeUCtes4gUEES9uY2QZAopGeAnVPJ3PqYDAtxDUgTSTGyofIEYepjP2gJrSiU0MLi9Tt4mmjTzqTMML9vaGQZCJXmZAsaSD0djDo6LkZAeRErfwIrktuOkIadQQAYXRAGlIe9nlZCI4u9VydbbHIQ3xWV7PZBMZCKsXee6tmpZCPE82mvtDgk0t3pPyNwZD"
+USER_ACCESS_TOKEN = "EAAKNLPu3bV8BPfso1sfPpwOz4zNI2A5P2DZAUUxfpm2WSOMRdf0QXhZA7GsY7OuQWGP9CGAH1yFGKdYcQtJclmMQwKw2ZBOZCtsFVSJfoYZBsk4PXlZBHBgYrNUU9Q9HDNFjcGuxqqDpen9koy4ZCR5NXSqfPNtWBIwBarZAe9Od0lOM5u0zaivSbGjVMTfE5jUF7WZClleTOI8OcQJfwv0B9OekAZCEYUzBQ3MscKRlmhPLcZD"
 PAGE_NAME = "AI Solutions"
 USAGE_LIMIT_INCREASE = 5.0  # dollars
 vertexai.init(project="dazzling-tensor-455512-j1", location="us-central1")
@@ -750,21 +750,42 @@ def generate_ai_reply(comment_text: str) -> str:
     ai_reply_text = response.choices[0].message.content.strip()
     return ai_reply_text
 
+
 def get_page_token():
     """
-    Exchange the USER token for a PAGE token dynamically.
+    Fetch and return the PAGE ID and PAGE TOKEN.
+    Ensures the token is a valid Page token (with posting permissions).
     """
+    # Step 1: Use the User access token to list all pages
     url = f"{GRAPH_API_BASE}/me/accounts?access_token={USER_ACCESS_TOKEN}"
     res = requests.get(url).json()
 
     if "data" not in res:
         raise Exception(f"Error fetching pages: {res}")
 
+    # Step 2: Look for your page
     for page in res["data"]:
         if page["name"] == PAGE_NAME or page["id"] == PAGE_NAME:
-            return page["id"], page["access_token"]
+            page_id = page["id"]
+            page_token = page["access_token"]
 
+            # Step 3: Verify token type = PAGE
+            debug_url = f"{GRAPH_API_BASE}/debug_token"
+            debug_params = {
+                "input_token": page_token,
+                "access_token": USER_ACCESS_TOKEN  # required for debug
+            }
+            debug_res = requests.get(debug_url, params=debug_params).json()
+
+            token_type = debug_res.get("data", {}).get("type", "unknown")
+            if token_type != "PAGE":
+                raise Exception(f"Invalid token type: {token_type}. Expected PAGE. Debug response: {debug_res}")
+
+            return page_id, page_token
+
+    # If we never found the page
     raise Exception(f"Page {PAGE_NAME} not found. Response: {res}")
+
 
 def publish_comment_replies(db):
     """
@@ -858,36 +879,38 @@ def publish_post(message, db, post_obj):
     Updates the post object with fb_post_id and posted=True if successful.
     """
     try:
-        # Get Page ID and Page Token
+        # ✅ Always fetch Page ID + Page Token
         page_id, page_token = get_page_token()
-        print(f"[{datetime.utcnow()}] Attempting to post to Page ID: {page_id}")
-        
-        # Prepare payload with public visibility
-        payload = {
-            "message": message,
-            "access_token": page_token,
-            "published": True
+
+        # 🛑 Extra Safety: Check token type
+        debug_url = f"{GRAPH_API_BASE}/debug_token"
+        debug_params = {
+            "input_token": page_token,
+            "access_token": USER_ACCESS_TOKEN  # required to debug another token
         }
+        debug_res = requests.get(debug_url, params=debug_params).json()
 
+        token_type = debug_res.get("data", {}).get("type", "unknown")
+        if token_type != "PAGE":
+            raise Exception(f"Invalid token type: {token_type}. Expected PAGE token. Full response: {debug_res}")
 
-        # Send POST request to Facebook Graph API
-        res = requests.post(f"{GRAPH_API_BASE}/{page_id}/feed", data=payload).json()
-        print(f"[{datetime.utcnow()}] Facebook response: {res}")
+        # ✅ Use Page Token for posting
+        post_url = f"{GRAPH_API_BASE}/{page_id}/feed"
+        res = requests.post(post_url, data={"message": message, "access_token": page_token}).json()
 
-        if "id" in res:
-            # Save Facebook Post ID and mark as posted
-            post_obj.fb_post_id = res["id"]
-            post_obj.posted = True
-            db.commit()
-            print(f"[{datetime.utcnow()}] ✅ Post successful. FB Post ID: {res['id']}")
-            return res  # return full JSON response
-        else:
-            print(f"[{datetime.utcnow()}] ❌ Failed to post. Response: {res}")
-            return res  # return JSON response even if failed
+        if "id" not in res:
+            raise Exception(f"Post failed: {res}")
+
+        # ✅ Update DB
+        post_obj.fb_post_id = res["id"]
+        post_obj.posted = True
+        db.commit()
+        return res
 
     except Exception as e:
-        print(f"[{datetime.utcnow()}] Exception in publish_post: {e}")
-        return {"error": str(e)}
+        db.rollback()
+        print(f"Exception in publish_post: {e}")
+        raise
 
 def schedule_post(message, schedule_time):
     """
@@ -6483,6 +6506,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
