@@ -120,11 +120,10 @@ MODEL_COST_PER_TOKEN = {
 }
 
 audio_store = {}
-GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
+GRAPH_API_BASE = "https://graph.facebook.com/v23.0"
 PAGE_ID = "808054589051156"
-USER_ACCESS_TOKEN = "EAAKNLPu3bV8BPQSTX9P3Bc9waZBsXSN9EDfNWZCOoRScxssHXK5TZBteViK8vZBYvaZCCR0AFkfTRSskhsK9wXQHIZBuKIjOgjCi36dUcZBHZBYwa235METR66RoC32E3Y2pw9o7eKBPbQ2z2aWsUiqavO9NvHrWttabphZB9YHkJRZCkGMlZCze8oSqpGkObTbq7t86DaM6ZCrDx1ZBt5ZADyEZCGcbjHf6P2f32GyXgZDZD"
 PAGE_NAME = "Smart AI Solutions"
-PAGE_ACCESS_TOKEN = "EAAKNLPu3bV8BPUwA5LvpCklZCxYnzd15WdJzk4VZBZBxnIZAc0u8MR7cdTaQlMJ5P1CLgHeZCA0ZBM94U90YaKV0mHkXuvDu7MHzEPQ7Kc9ZCHpd4ZApsxeDNOYf1afZB3vGD2aNwn7pgEdMZB4xmf6vcanUNWqamQCyZB0BOjg0rZCdmYcQb9b5ANG0mnfwfNdUbTW8FoZCzcGruZBRY3fJ9ZBjdNevTpm1163ef0ugv1z3df4"
+PAGE_ACCESS_TOKEN = "EAAKNLPu3bV8BPVSZB3hJ3egUXMaBbNn1Hh3u3wkW96qKjZCUear5ZAWj1qdBhLz5Q7cXGdn6p0CHhzBOceecZBZAhKlTPlZBAg3eXcNY0p8Xz3WgCIYGX2MaSJtd39FEIOIZAEA9Xi5e8WbfJPAcCDwqQNpiXotD4OlsLByYhAoctqQhlYTN7sX3m2gOIJQZAPgcAVqoOjd0JemZC7CLqCs603zF7OpcSL0wQ6XWl4t5O"
 
 USAGE_LIMIT_INCREASE = 5.0  # dollars
 vertexai.init(project="dazzling-tensor-455512-j1", location="us-central1")
@@ -713,27 +712,35 @@ def get_db():
         db.close()
 
 scheduler = BackgroundScheduler()
-scheduler.start()
 
-def job():
+def job_publish_posts():
     db = SessionLocal()
     try:
         publish_scheduled_posts(db)
     finally:
         db.close()
 
-# Run every minute to check for posts ready to be published
-scheduler.add_job(job, 'interval', minutes=1) #to post campaign suggestion
-scheduler.add_job(lambda: publish_comment_replies(SessionLocal()), 'interval', minutes=1) # to reply to posts
+def job_reply_comments():
+    db = SessionLocal()
+    try:
+        publish_comment_replies(db)
+    finally:
+        db.close()
 
-def get_post_comments(page_id, page_token, post_id):
-    url = f"{GRAPH_API_BASE}/{post_id}/comments?access_token={page_token}"
+# Run every minute
+scheduler.add_job(job_publish_posts, 'interval', minutes=1)  # to post campaign suggestions
+scheduler.add_job(job_reply_comments, 'interval', minutes=1)  # to reply to comments
+
+scheduler.start()
+
+def get_post_comments(post_id):
+    url = f"{GRAPH_API_BASE}/{post_id}/comments?access_token={PAGE_ACCESS_TOKEN}"
     res = requests.get(url).json()
     return res.get("data", [])
-    
-def reply_to_comment(comment_id, reply_text, page_token):
+
+def reply_to_comment(comment_id, reply_text):
     url = f"{GRAPH_API_BASE}/{comment_id}/comments"
-    payload = {"message": reply_text, "access_token": page_token}
+    payload = {"message": reply_text, "access_token": PAGE_ACCESS_TOKEN}
     return requests.post(url, data=payload).json()
 
 def generate_ai_reply(comment_text: str) -> str:
@@ -744,6 +751,8 @@ def generate_ai_reply(comment_text: str) -> str:
         max_tokens=100
     )
     return response.choices[0].message.content.strip()
+
+
 
 def get_page_token(user_token, page_name):
     """
@@ -770,16 +779,7 @@ def get_page_token(user_token, page_name):
 
 
 def publish_comment_replies(db):
-    """
-    Fetch all published posts and reply to new comments using AI.
-    Uses global USER_ACCESS_TOKEN to fetch page token dynamically.
-    """
     try:
-        page_id, page_token = get_page_token(USER_ACCESS_TOKEN, PAGE_NAME)
-        if not page_token:
-            print("❌ Cannot fetch page token. Skipping comment replies.")
-            return
-
         posts = db.query(CampaignSuggestion_ST).filter(CampaignSuggestion_ST.posted == True).all()
 
         for post in posts:
@@ -787,24 +787,18 @@ def publish_comment_replies(db):
                 print(f"[{datetime.utcnow()}] Skipping post {post.id}: No FB Post ID")
                 continue
 
-            comments = get_post_comments(page_id, page_token, post.fb_post_id)
+            comments = get_post_comments(post.fb_post_id)
             print(f"[{datetime.utcnow()}] Found {len(comments)} comments on post {post.id}")
 
             for comment in comments:
-                # Skip if already replied
                 exists = db.query(PostComments).filter_by(fb_comment_id=comment['id']).first()
                 if exists:
                     continue
 
-                # Generate AI reply
                 reply_text = generate_ai_reply(comment['message'])
-                print(f"[{datetime.utcnow()}] Generated AI reply for comment {comment['id']}: {reply_text}")
-
-                # Post reply
-                res = reply_to_comment(comment['id'], reply_text, page_token)
+                res = reply_to_comment(comment['id'], reply_text)
                 print(f"[{datetime.utcnow()}] Reply response: {res}")
 
-                # Save in DB
                 new_comment = PostComments(
                     fb_comment_id=comment['id'],
                     post_id=post.id,
@@ -908,24 +902,21 @@ def get_page_access_token(user_token, page_id):
         print("🔥 Exception while fetching page token:", str(e))
         return None
 
-def publish_post(message, db, post_obj):
-    """
-    Publishes a post to a Facebook page with automatic page token fetching.
-    """
+def publish_post(message, db, post_obj, scheduled=False, scheduled_time=None):
+    """Publish a post to the Page using the correct Page access token."""
     try:
-        # Get fresh page token using global USER_ACCESS_TOKEN
-        page_access_token = get_page_access_token(USER_ACCESS_TOKEN, PAGE_ID)
-        if not page_access_token:
-            print("❌ Cannot proceed without a valid page token.")
-            return False
-
-        url = f"https://graph.facebook.com/v23.0/{PAGE_ID}/feed"
+        url = f"{GRAPH_API_BASE}/{PAGE_ID}/feed"
         payload = {
             "message": message,
-            "published": True,
-            "privacy": '{"value":"EVERYONE"}',
-            "access_token": page_access_token
+            "access_token": PAGE_ACCESS_TOKEN,
         }
+
+        if scheduled:
+            payload["published"] = False
+            payload["scheduled_publish_time"] = int(scheduled_time.timestamp())
+        else:
+            payload["published"] = True
+            payload["privacy"] = '{"value":"EVERYONE"}'
 
         response = requests.post(url, data=payload)
         result = response.json()
@@ -935,22 +926,18 @@ def publish_post(message, db, post_obj):
             post_obj.fb_post_id = fb_post_id
             post_obj.posted = True
             db.commit()
-            print(f"✅ Post published successfully! FB Post ID: {fb_post_id}")
+            print(f"[{datetime.utcnow()}] ✅ Post published successfully! FB Post ID: {fb_post_id}")
             return True
         else:
-            print("❌ Failed to publish post:", result)
+            print(f"[{datetime.utcnow()}] ❌ Failed to publish post: {result}")
             return False
 
     except Exception as e:
-        print("🔥 Exception in publish_post:", str(e))
+        print(f"[{datetime.utcnow()}] 🔥 Exception in publish_post: {e}")
         db.rollback()
         return False
 
 def publish_scheduled_posts(db):
-    """
-    Publishes all approved and scheduled posts whose scheduled time has passed.
-    Uses global USER_ACCESS_TOKEN to get page token dynamically.
-    """
     try:
         now = datetime.utcnow()
         posts = db.query(CampaignSuggestion_ST).filter(
@@ -966,7 +953,6 @@ def publish_scheduled_posts(db):
         for post in posts:
             print(f"[{datetime.utcnow()}] Processing Post ID: {post.id} | Preview: {post.content[:50]}...")
             success = publish_post(post.content, db, post)
-
             if success:
                 print(f"[{datetime.utcnow()}] ✅ Post {post.id} published successfully!")
             else:
@@ -6608,6 +6594,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
