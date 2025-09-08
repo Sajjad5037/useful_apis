@@ -4093,24 +4093,21 @@ def get_dashboard():
         # 1️⃣ Get all campaign names
         campaigns = session.execute(select(Campaign.campaign_name)).scalars().all()
 
-        # 2️⃣ Get all pending suggestions
-        pending_suggestions = session.execute(
-            select(CampaignSuggestion_ST.id, CampaignSuggestion_ST.suggestion_text)
-            .where(CampaignSuggestion_ST.status == "pending")
-        ).all()
-
-        # Format approvals as list of dicts
-        approvals = [{"id": id_, "suggestion_text": text} for id_, text in pending_suggestions]
+        # 2️⃣ Count total pending suggestions
+        total_pending = session.execute(
+            select(func.count()).where(CampaignSuggestion_ST.status == "pending")
+        ).scalar()
 
         return {
             "campaigns": campaigns,
-            "approvals": approvals
+            "total_pending": total_pending
         }
     except Exception as e:
         print("Error fetching dashboard data:", e)
         raise HTTPException(status_code=500, detail="Internal Server Error")
     finally:
         session.close()
+
 
 # @app.post("/train-on-images")
 #previous working code for CSS_Academy1
@@ -6491,6 +6488,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
