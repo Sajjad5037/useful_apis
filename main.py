@@ -4091,7 +4091,7 @@ def get_dashboard():
     session = SessionLocal()
     try:
         # 1️⃣ Get all campaign names
-        campaigns = session.execute(select(Campaign.name)).scalars().all()
+        campaigns = session.execute(select(Campaign.campaign_name)).scalars().all()
 
         # 2️⃣ Get all pending suggestions
         pending_suggestions = session.execute(
@@ -6491,6 +6491,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
