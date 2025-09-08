@@ -795,7 +795,8 @@ def publish_comment_replies(db):
     Logs every attempt for debugging.
     """
     try:
-        page_id, page_token = get_page_token()
+        page_id,page_token = get_page_token(USER_ACCESS_TOKEN, PAGE_NAME)
+
         posts = db.query(CampaignSuggestion_ST).filter(CampaignSuggestion_ST.posted == True).all()
 
         for post in posts:
@@ -924,7 +925,8 @@ def schedule_post(message, schedule_time):
     """
     Schedule a post for the future.
     """
-    page_id, page_token = get_page_token()
+    page_id,page_token =  get_page_token(USER_ACCESS_TOKEN, PAGE_NAME)
+    
 
     url = f"{GRAPH_API_BASE}/{page_id}/feed"
     payload = {
@@ -6514,6 +6516,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
