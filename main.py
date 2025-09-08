@@ -823,9 +823,8 @@ def publish_comment_replies(db):
 
 def publish_scheduled_posts(db):
     """
-    Publishes all approved and scheduled posts whose scheduled time has passed
-    and updates the DB with fb_post_id and posted=True.
-    Uses print statements for debugging.
+    Publishes all approved and scheduled posts whose scheduled time has passed.
+    Updates DB with fb_post_id and posted=True.
     """
     try:
         now = datetime.utcnow()
@@ -840,62 +839,55 @@ def publish_scheduled_posts(db):
             return
 
         for post in posts:
-            print(f"[{datetime.utcnow()}] Processing Post ID: {post.id} | Content preview: {post.content[:50]}...")
+            print(f"[{datetime.utcnow()}] Processing Post ID: {post.id} | Preview: {post.content[:50]}...")
 
-            # Publish post
-            res = publish_post(post.content, db, post)  # Ensure publish_post returns JSON
+            try:
+                # Publish post
+                res = publish_post(post.content, db, post)  # make sure this returns JSON
+                print(f"[{datetime.utcnow()}] Facebook response: {res}")
 
-            # Print full Facebook response
-            print(f"[{datetime.utcnow()}] Facebook response for Post ID {post.id}: {res}")
+                if "id" in res:
+                    post.posted = True
+                    post.fb_post_id = res["id"]
+                    db.commit()
+                    print(f"[{datetime.utcnow()}] ✅ Posted! DB updated with FB ID {res['id']}")
+                else:
+                    print(f"[{datetime.utcnow()}] ❌ FB did not return an ID for Post {post.id}")
 
-            if "id" in res:
-                print(f"[{datetime.utcnow()}] ✅ Successfully posted Post ID {post.id} | FB Post ID: {res['id']}")
-            else:
-                print(f"[{datetime.utcnow()}] ❌ Failed to post Post ID {post.id} | Response: {res}")
+            except Exception as e:
+                db.rollback()
+                print(f"[{datetime.utcnow()}] ❌ Exception posting Post {post.id}: {e}")
 
     except Exception as e:
         print(f"[{datetime.utcnow()}] Exception in publish_scheduled_posts: {e}")
 
 
+
 def publish_post(message, db, post_obj):
     """
     Publishes a post immediately to the Facebook Page.
-    Always uses the PAGE token (never user token).
-    Verifies token type before posting.
+    Always uses the PAGE token.
+    Ensures the post is public.
     Updates the post object with fb_post_id and posted=True if successful.
     """
-
     try:
-        # ✅ Step 1: Fetch Page ID + Page Token
+        # Step 1: Get Page ID + Page Token
         page_id, page_token = get_page_token()
 
-        # ✅ Step 2: Verify the token is indeed a PAGE token
-        debug_url = f"{GRAPH_API_BASE}/debug_token"
-        debug_params = {
-            "input_token": page_token,
-            "access_token": USER_ACCESS_TOKEN  # must be a user token for debugging
-        }
-        debug_res = requests.get(debug_url, params=debug_params).json()
-        token_type = debug_res.get("data", {}).get("type", "unknown")
-
-        if token_type != "PAGE":
-            raise ValueError(
-                f"❌ Invalid token type: {token_type}. "
-                f"Expected 'PAGE'. Debug response: {debug_res}"
-            )
-
-        # ✅ Step 3: Publish post using PAGE token
+        # Step 2: Post to the Page feed
         post_url = f"{GRAPH_API_BASE}/{page_id}/feed"
         payload = {
             "message": message,
-            "access_token": page_token
+            "access_token": page_token,
+            "privacy": '{"value":"EVERYONE"}'   # Force public visibility
         }
         res = requests.post(post_url, data=payload).json()
+        print(f"🔍 Facebook response: {res}")
 
         if "id" not in res:
             raise RuntimeError(f"❌ Post failed. Response: {res}")
 
-        # ✅ Step 4: Update DB and return response
+        # Step 3: Update DB
         post_obj.fb_post_id = res["id"]
         post_obj.posted = True
         db.commit()
@@ -904,11 +896,11 @@ def publish_post(message, db, post_obj):
         return res
 
     except Exception as e:
-        # Roll back DB if update fails
         if db:
             db.rollback()
         print(f"🚨 Exception in publish_post: {e}")
         return {"error": str(e)}
+
 
 
 def schedule_post(message, schedule_time):
@@ -6505,6 +6497,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
