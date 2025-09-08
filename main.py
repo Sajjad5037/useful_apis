@@ -4095,8 +4095,8 @@ def get_dashboard():
 
         # 2️⃣ Get all pending suggestions
         pending_suggestions = session.execute(
-            select(CampaignSuggestion.id, CampaignSuggestion.suggestion_text)
-            .where(CampaignSuggestion.status == "pending")
+            select(CampaignSuggestion_ST.id, CampaignSuggestion_ST.suggestion_text)
+            .where(CampaignSuggestion_ST.status == "pending")
         ).all()
 
         # Format approvals as list of dicts
@@ -6491,6 +6491,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
