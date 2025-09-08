@@ -729,59 +729,39 @@ scheduler.add_job(lambda: publish_comment_replies(SessionLocal()), 'interval', m
 def get_post_comments(page_id, page_token, post_id):
     url = f"{GRAPH_API_BASE}/{post_id}/comments?access_token={page_token}"
     res = requests.get(url).json()
-    if "data" in res:
-        return res["data"]
-    return []
+    return res.get("data", [])
+    
 def reply_to_comment(comment_id, reply_text, page_token):
     url = f"{GRAPH_API_BASE}/{comment_id}/comments"
     payload = {"message": reply_text, "access_token": page_token}
-    res = requests.post(url, data=payload).json()
-    return res
+    return requests.post(url, data=payload).json()
 
 def generate_ai_reply(comment_text: str) -> str:
-    # ✅ Original prompt unchanged
     prompt = f"Reply politely and helpfully to this Facebook comment:\n\n{comment_text}"
-
-    # --- Get AI text using your client ---
     response = client.chat.completions.create(
         model="gpt-4.1-mini",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=100
     )
+    return response.choices[0].message.content.strip()
 
-    ai_reply_text = response.choices[0].message.content.strip()
-    return ai_reply_text
-
-def get_page_token(user_access_token, page_name):
+def get_page_token(user_token, page_name):
     """
-    Get Page Access Token for the given Page Name.
-    Adds debugging logs to trace issues.
+    Get Page Access Token dynamically using the user token.
     """
     try:
         url = f"https://graph.facebook.com/v23.0/me/accounts"
-        params = {"access_token": user_access_token}
-
-        print("🚀 Fetching page tokens from:", url)
-        print("📦 With params:", params)
-
+        params = {"access_token": user_token}
         response = requests.get(url, params=params)
-        print("📡 Raw response status:", response.status_code)
-        print("📡 Raw response text:", response.text)
+        data = response.json()
 
-        result = response.json()
-        print("🔍 Parsed response JSON:", result)
-
-        if "data" in result:
-            for page in result["data"]:
-                print("➡️ Checking page:", page)
+        if "data" in data:
+            for page in data["data"]:
                 if page.get("name") == page_name:
-                    page_id = page.get("id")
-                    page_access_token = page.get("access_token")
-                    print(f"✅ Found Page: {page_name} ({page_id})")
-                    print(f"🔑 Page Access Token starts with: {page_access_token[:20]}...")
-                    return page_id, page_access_token
+                    print(f"✅ Found Page: {page_name} ({page['id']})")
+                    return page["id"], page["access_token"]
 
-        print("❌ Page not found in response. Available pages:", [p.get("name") for p in result.get("data", [])])
+        print("❌ Page not found in response.")
         return None, None
 
     except Exception as e:
@@ -789,14 +769,16 @@ def get_page_token(user_access_token, page_name):
         return None, None
 
 
-
 def publish_comment_replies(db):
     """
-    Fetches all published posts and replies to new comments using AI.
-    Logs every attempt for debugging.
+    Fetch all published posts and reply to new comments using AI.
+    Uses global USER_ACCESS_TOKEN to fetch page token dynamically.
     """
     try:
-        page_id,page_token = get_page_token(USER_ACCESS_TOKEN, PAGE_NAME)
+        page_id, page_token = get_page_token(USER_ACCESS_TOKEN, PAGE_NAME)
+        if not page_token:
+            print("❌ Cannot fetch page token. Skipping comment replies.")
+            return
 
         posts = db.query(CampaignSuggestion_ST).filter(CampaignSuggestion_ST.posted == True).all()
 
@@ -833,24 +815,30 @@ def publish_comment_replies(db):
                 print(f"[{datetime.utcnow()}] Saved reply in DB for comment {comment['id']}")
 
     except Exception as e:
-        print(f"[{datetime.utcnow()}] Exception in publish_comment_replies: {e}")
-
+        print(f"[{datetime.utcnow()}] 🔥 Exception in publish_comment_replies: {e}")
+        db.rollback()
 
 #till here
 def get_page_access_token(user_token, page_id):
-    url = f"https://graph.facebook.com/v23.0/me/accounts?access_token={user_token}"
-    res = requests.get(url).json()
-    for page in res.get("data", []):
-        if str(page["id"]) == str(page_id):
-            return page["access_token"]
-    raise Exception(f"Page ID {page_id} not found for this user.") 
+    """Fetch the current valid page access token using the user token."""
+    try:
+        url = "https://graph.facebook.com/v23.0/me/accounts"
+        params = {"access_token": user_token}
+        res = requests.get(url, params=params).json()
+
+        for page in res.get("data", []):
+            if str(page["id"]) == str(page_id):
+                return page["access_token"]
+        raise Exception(f"Page ID {page_id} not found for this user.")
+    except Exception as e:
+        print("🔥 Exception while fetching page token:", str(e))
+        return None
 
 
 def publish_scheduled_posts(db):
     """
     Publishes all approved and scheduled posts whose scheduled time has passed.
-    Updates DB with fb_post_id and posted=True.
-    Integrates automatic page token refresh and detailed logging.
+    Uses global USER_ACCESS_TOKEN to get page token dynamically.
     """
     try:
         now = datetime.utcnow()
@@ -866,31 +854,16 @@ def publish_scheduled_posts(db):
 
         for post in posts:
             print(f"[{datetime.utcnow()}] Processing Post ID: {post.id} | Preview: {post.content[:50]}...")
+            success = publish_post(post.content, db, post)
 
-            try:
-                # Publish the post using the improved function
-                success = publish_post(
-                    message=post.content,
-                    db=db,
-                    post_obj=post,
-                    user_long_lived_token=USER_LONG_LIVED_TOKEN,  # will be exchanged for fresh page token
-                    page_id=PAGE_ID
-                )
-
-                if success:
-                    print(f"[{datetime.utcnow()}] ✅ Post {post.id} published successfully!")
-                else:
-                    print(f"[{datetime.utcnow()}] ❌ Post {post.id} failed to publish.")
-                    db.rollback()  # rollback if publish_post returned False
-
-            except Exception as e:
-                db.rollback()
-                print(f"[{datetime.utcnow()}] ❌ Exception publishing Post {post.id}: {e}")
+            if success:
+                print(f"[{datetime.utcnow()}] ✅ Post {post.id} published successfully!")
+            else:
+                print(f"[{datetime.utcnow()}] ❌ Post {post.id} failed to publish.")
 
     except Exception as e:
         print(f"[{datetime.utcnow()}] 🔥 Exception in publish_scheduled_posts: {e}")
-        db.rollback()
-        
+        db.rollback()        
 def get_page_access_token(user_long_lived_token, page_id):
     """
     Fetch the current valid page access token using a long-lived user token.
@@ -918,19 +891,35 @@ def get_page_access_token(user_long_lived_token, page_id):
         print("🔥 Exception while fetching page token:", str(e))
         return None
 
-def publish_post(message, db, post_obj, user_long_lived_token, page_id):
+
+
+def get_page_access_token(user_token, page_id):
+    """Fetch the current valid page access token using the user token."""
+    try:
+        url = "https://graph.facebook.com/v23.0/me/accounts"
+        params = {"access_token": user_token}
+        res = requests.get(url, params=params).json()
+
+        for page in res.get("data", []):
+            if str(page["id"]) == str(page_id):
+                return page["access_token"]
+        raise Exception(f"Page ID {page_id} not found for this user.")
+    except Exception as e:
+        print("🔥 Exception while fetching page token:", str(e))
+        return None
+
+def publish_post(message, db, post_obj):
     """
-    Publishes a post to a Facebook page with automatic token refresh and full logging.
+    Publishes a post to a Facebook page with automatic page token fetching.
     """
     try:
-        # Step 1: Get a fresh page access token
-        page_access_token = get_page_access_token(user_long_lived_token, page_id)
+        # Get fresh page token using global USER_ACCESS_TOKEN
+        page_access_token = get_page_access_token(USER_ACCESS_TOKEN, PAGE_ID)
         if not page_access_token:
             print("❌ Cannot proceed without a valid page token.")
             return False
 
-        # Step 2: Prepare payload
-        url = f"https://graph.facebook.com/v23.0/{page_id}/feed"
+        url = f"https://graph.facebook.com/v23.0/{PAGE_ID}/feed"
         payload = {
             "message": message,
             "published": True,
@@ -938,31 +927,15 @@ def publish_post(message, db, post_obj, user_long_lived_token, page_id):
             "access_token": page_access_token
         }
 
-        print("🚀 Publishing post to URL:", url)
-        print("📦 Payload:", payload)
-
-        # Step 3: Publish
         response = requests.post(url, data=payload)
-        print("📡 Response status:", response.status_code)
-        print("📡 Raw response text:", response.text)
-
         result = response.json()
 
         if "id" in result:
             fb_post_id = result["id"]
-            print(f"✅ Successfully published! FB Post ID: {fb_post_id}")
-
-            # Optional: verify public visibility
-            check_url = f"https://graph.facebook.com/v23.0/{fb_post_id}?fields=privacy&access_token={page_access_token}"
-            check_res = requests.get(check_url).json()
-            print("🔎 Post privacy check:", check_res.get("privacy"))
-
-            # Step 4: Update DB
             post_obj.fb_post_id = fb_post_id
             post_obj.posted = True
             db.commit()
-            print(f"[{datetime.utcnow()}] DB updated with FB Post ID {fb_post_id}")
-
+            print(f"✅ Post published successfully! FB Post ID: {fb_post_id}")
             return True
         else:
             print("❌ Failed to publish post:", result)
@@ -970,7 +943,40 @@ def publish_post(message, db, post_obj, user_long_lived_token, page_id):
 
     except Exception as e:
         print("🔥 Exception in publish_post:", str(e))
-        return False        
+        db.rollback()
+        return False
+
+def publish_scheduled_posts(db):
+    """
+    Publishes all approved and scheduled posts whose scheduled time has passed.
+    Uses global USER_ACCESS_TOKEN to get page token dynamically.
+    """
+    try:
+        now = datetime.utcnow()
+        posts = db.query(CampaignSuggestion_ST).filter(
+            CampaignSuggestion_ST.status == "approved",
+            CampaignSuggestion_ST.scheduled_time <= now,
+            CampaignSuggestion_ST.posted == False
+        ).all()
+
+        if not posts:
+            print(f"[{datetime.utcnow()}] No posts ready to be published.")
+            return
+
+        for post in posts:
+            print(f"[{datetime.utcnow()}] Processing Post ID: {post.id} | Preview: {post.content[:50]}...")
+            success = publish_post(post.content, db, post)
+
+            if success:
+                print(f"[{datetime.utcnow()}] ✅ Post {post.id} published successfully!")
+            else:
+                print(f"[{datetime.utcnow()}] ❌ Post {post.id} failed to publish.")
+
+    except Exception as e:
+        print(f"[{datetime.utcnow()}] 🔥 Exception in publish_scheduled_posts: {e}")
+        db.rollback()
+
+
 
 def schedule_post(message, schedule_time_utc):
     """
@@ -6602,6 +6608,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
