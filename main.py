@@ -751,25 +751,42 @@ def generate_ai_reply(comment_text: str) -> str:
     ai_reply_text = response.choices[0].message.content.strip()
     return ai_reply_text
 
-
-def get_page_token():
+def get_page_token(user_access_token, page_name):
     """
-    Fetch the PAGE ID and PAGE TOKEN for the Smart AI Solutions page.
-    Ensures we always return the correct token with posting permissions.
+    Get Page Access Token for the given Page Name.
+    Adds debugging logs to trace issues.
     """
-    url = f"{GRAPH_API_BASE}/me/accounts?access_token={USER_ACCESS_TOKEN}"
-    res = requests.get(url).json()
+    try:
+        url = f"https://graph.facebook.com/v23.0/me/accounts"
+        params = {"access_token": user_access_token}
 
-    if "data" not in res:
-        raise Exception(f"Error fetching pages: {res}")
+        print("🚀 Fetching page tokens from:", url)
+        print("📦 With params:", params)
 
-    for page in res["data"]:
-        if page["name"] == "Smart AI Solutions" or page["id"] == "61580463121902":
-            print(f"✅ Found page: {page['name']} ({page['id']})")
-            print(f"🔑 Page token starts with: {page['access_token'][:25]}...")
-            return page["id"], page["access_token"]
+        response = requests.get(url, params=params)
+        print("📡 Raw response status:", response.status_code)
+        print("📡 Raw response text:", response.text)
 
-    raise Exception(f"❌ Smart AI Solutions page not found. Response: {res}")
+        result = response.json()
+        print("🔍 Parsed response JSON:", result)
+
+        if "data" in result:
+            for page in result["data"]:
+                print("➡️ Checking page:", page)
+                if page.get("name") == page_name:
+                    page_id = page.get("id")
+                    page_access_token = page.get("access_token")
+                    print(f"✅ Found Page: {page_name} ({page_id})")
+                    print(f"🔑 Page Access Token starts with: {page_access_token[:20]}...")
+                    return page_id, page_access_token
+
+        print("❌ Page not found in response. Available pages:", [p.get("name") for p in result.get("data", [])])
+        return None, None
+
+    except Exception as e:
+        print("🔥 Exception in get_page_token:", str(e))
+        return None, None
+
 
 
 def publish_comment_replies(db):
@@ -861,44 +878,45 @@ def publish_scheduled_posts(db):
     except Exception as e:
         print(f"[{datetime.utcnow()}] Exception in publish_scheduled_posts: {e}")
 
-
-def publish_post(message, db, post_obj):
+def publish_post(message, db, post_obj, page_access_token, page_id):
     """
     Publishes a post immediately to the Facebook Page.
-    Always uses the PAGE token.
-    Ensures the post is public.
+    Ensures post is publicly visible.
     Updates the post object with fb_post_id and posted=True if successful.
     """
     try:
-        # Step 1: Get Page ID + Page Token
-        page_id, page_token = get_page_token()
-
-        # Step 2: Post to the Page feed
-        post_url = f"{GRAPH_API_BASE}/{page_id}/feed"
+        url = f"https://graph.facebook.com/v23.0/{page_id}/feed"
         payload = {
             "message": message,
-            "access_token": page_token,
-            "privacy": '{"value":"EVERYONE"}'   # Force public visibility
+            "published": True,  # ✅ ensure it’s published
+            "privacy": '{"value":"EVERYONE"}',  # ✅ force public visibility
+            "access_token": page_access_token
         }
-        res = requests.post(post_url, data=payload).json()
-        print(f"🔍 Facebook response: {res}")
 
-        if "id" not in res:
-            raise RuntimeError(f"❌ Post failed. Response: {res}")
+        print("🚀 Publishing post to:", url)
+        print("📦 Payload being sent:", payload)
 
-        # Step 3: Update DB
-        post_obj.fb_post_id = res["id"]
-        post_obj.posted = True
-        db.commit()
+        response = requests.post(url, data=payload)
+        print("📡 Raw response status:", response.status_code)
+        print("📡 Raw response text:", response.text)
 
-        print(f"✅ Successfully posted to Page {page_id}. FB Post ID: {res['id']}")
-        return res
+        result = response.json()
+        print("🔍 Parsed response JSON:", result)
+
+        if "id" in result:
+            fb_post_id = result["id"]
+            print(f"✅ Successfully published! FB Post ID: {fb_post_id}")
+            post_obj.fb_post_id = fb_post_id
+            post_obj.posted = True
+            db.session.commit()
+            return True
+        else:
+            print("❌ Failed to publish post:", result)
+            return False
 
     except Exception as e:
-        if db:
-            db.rollback()
-        print(f"🚨 Exception in publish_post: {e}")
-        return {"error": str(e)}
+        print("🔥 Exception in publish_post:", str(e))
+        return False
 
 
 
@@ -6496,6 +6514,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
