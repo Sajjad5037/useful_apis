@@ -877,54 +877,81 @@ def publish_scheduled_posts(db):
 
     except Exception as e:
         print(f"[{datetime.utcnow()}] Exception in publish_scheduled_posts: {e}")
-        
 def publish_post(message, db, post_obj, page_access_token, page_id):
     """
-    Publishes a post immediately to the Facebook Page with full logging.
-    Ensures post is publicly visible and updates DB with fb_post_id and posted=True if successful.
+    Publishes a post to the Facebook Page with detailed logging to diagnose visibility issues.
+    Updates DB with fb_post_id and posted=True if successfully published.
     """
     try:
         url = f"https://graph.facebook.com/v23.0/{page_id}/feed"
         payload = {
             "message": message,
-            "published": True,  # Ensure it is actually published
-            "privacy": '{"value":"EVERYONE"}',  # Force public visibility
+            "published": True,
+            "privacy": '{"value":"EVERYONE"}',  # force public
             "access_token": page_access_token
         }
 
         print("🚀 Publishing post to URL:", url)
-        print("📦 Payload being sent:", payload)
+        print("📦 Payload:", payload)
 
         response = requests.post(url, data=payload)
         print("📡 Response status:", response.status_code)
         print("📡 Raw response text:", response.text)
 
+        if response.status_code != 200:
+            print(f"❌ API returned non-200 status: {response.status_code}")
+            return False
+
         result = response.json()
         print("🔍 Parsed JSON response:", result)
 
-        # Sanity check: ensure FB returned an ID
-        if "id" in result:
-            fb_post_id = result["id"]
-            print(f"✅ Successfully published! FB Post ID: {fb_post_id}")
-
-            # Optional: confirm public visibility by fetching post
-            check_url = f"https://graph.facebook.com/v23.0/{fb_post_id}?fields=privacy&access_token={page_access_token}"
-            check_res = requests.get(check_url).json()
-            print("🔎 Post privacy check:", check_res.get("privacy"))
-
-            # Update DB
-            post_obj.fb_post_id = fb_post_id
-            post_obj.posted = True
-            db.commit()
-            print(f"[{datetime.utcnow()}] DB updated with FB Post ID {fb_post_id}")
-            return True
-        else:
-            print("❌ Failed to publish post:", result)
+        if "id" not in result:
+            print("❌ No post ID returned — publish failed or restricted.")
             return False
+
+        fb_post_id = result["id"]
+        print(f"✅ Post created with FB ID: {fb_post_id}")
+
+        # Fetch post details immediately to check visibility
+        check_url = f"https://graph.facebook.com/v23.0/{fb_post_id}"
+        params = {
+            "fields": "id,message,privacy,is_published,status_type,permalink_url,age_restriction,country_restriction",
+            "access_token": page_access_token
+        }
+        check_res = requests.get(check_url, params=params).json()
+        print("🔎 Post details:", check_res)
+
+        # Analyze visibility
+        privacy = check_res.get("privacy", {}).get("value")
+        is_published = check_res.get("is_published")
+        status_type = check_res.get("status_type")
+        permalink = check_res.get("permalink_url")
+        age_restriction = check_res.get("age_restriction")
+        country_restriction = check_res.get("country_restriction")
+
+        print(f"📌 Privacy: {privacy}")
+        print(f"📌 is_published: {is_published}")
+        print(f"📌 status_type: {status_type}")
+        print(f"📌 permalink_url: {permalink}")
+        print(f"📌 age_restriction: {age_restriction}")
+        print(f"📌 country_restriction: {country_restriction}")
+
+        if privacy != "EVERYONE" or not is_published:
+            print("⚠️ Warning: Post may not be publicly visible.")
+        else:
+            print("✅ Post should be visible publicly.")
+
+        # Update DB
+        post_obj.fb_post_id = fb_post_id
+        post_obj.posted = True
+        db.commit()
+        print(f"[{datetime.utcnow()}] DB updated with FB Post ID {fb_post_id}")
+
+        return True
 
     except Exception as e:
         print("🔥 Exception in publish_post:", str(e))
-        return False
+        return False        
 
 def schedule_post(message, schedule_time):
     """
@@ -6521,6 +6548,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
