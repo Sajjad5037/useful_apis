@@ -50,6 +50,7 @@ from pydantic import BaseModel
 from sqlalchemy import (
     create_engine,
     Column,
+    select,
     Integer,
     String,
     Float,
@@ -728,8 +729,8 @@ def job_reply_comments():
         db.close()
 
 # Run every minute
-scheduler.add_job(job_publish_posts, 'interval', minutes=1)  # to post campaign suggestions
-scheduler.add_job(job_reply_comments, 'interval', minutes=1)  # to reply to comments
+scheduler.add_job(job_publish_posts, 'interval', minutes=100000)  # to post campaign suggestions
+scheduler.add_job(job_reply_comments, 'interval', minutes=100000)  # to reply to comments
 
 scheduler.start()
 
@@ -6490,6 +6491,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
