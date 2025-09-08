@@ -860,42 +860,56 @@ def publish_scheduled_posts(db):
 def publish_post(message, db, post_obj):
     """
     Publishes a post immediately to the Facebook Page.
-    Ensures post is publicly visible.
+    Always uses the PAGE token (never user token).
+    Verifies token type before posting.
     Updates the post object with fb_post_id and posted=True if successful.
     """
+
     try:
-        # ✅ Always fetch Page ID + Page Token
+        # ✅ Step 1: Fetch Page ID + Page Token
         page_id, page_token = get_page_token()
 
-        # 🛑 Extra Safety: Check token type
+        # ✅ Step 2: Verify the token is indeed a PAGE token
         debug_url = f"{GRAPH_API_BASE}/debug_token"
         debug_params = {
             "input_token": page_token,
-            "access_token": USER_ACCESS_TOKEN  # required to debug another token
+            "access_token": USER_ACCESS_TOKEN  # must be a user token for debugging
         }
         debug_res = requests.get(debug_url, params=debug_params).json()
-
         token_type = debug_res.get("data", {}).get("type", "unknown")
-        if token_type != "PAGE":
-            raise Exception(f"Invalid token type: {token_type}. Expected PAGE token. Full response: {debug_res}")
 
-        # ✅ Use Page Token for posting
+        if token_type != "PAGE":
+            raise ValueError(
+                f"❌ Invalid token type: {token_type}. "
+                f"Expected 'PAGE'. Debug response: {debug_res}"
+            )
+
+        # ✅ Step 3: Publish post using PAGE token
         post_url = f"{GRAPH_API_BASE}/{page_id}/feed"
-        res = requests.post(post_url, data={"message": message, "access_token": page_token}).json()
+        payload = {
+            "message": message,
+            "access_token": page_token
+        }
+        res = requests.post(post_url, data=payload).json()
 
         if "id" not in res:
-            raise Exception(f"Post failed: {res}")
+            raise RuntimeError(f"❌ Post failed. Response: {res}")
 
-        # ✅ Update DB
+        # ✅ Step 4: Update DB and return response
         post_obj.fb_post_id = res["id"]
         post_obj.posted = True
         db.commit()
+
+        print(f"✅ Successfully posted to Page {page_id}. FB Post ID: {res['id']}")
         return res
 
     except Exception as e:
-        db.rollback()
-        print(f"Exception in publish_post: {e}")
-        raise
+        # Roll back DB if update fails
+        if db:
+            db.rollback()
+        print(f"🚨 Exception in publish_post: {e}")
+        return {"error": str(e)}
+
 
 def schedule_post(message, schedule_time):
     """
@@ -6491,6 +6505,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
