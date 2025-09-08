@@ -753,7 +753,8 @@ def generate_ai_reply(comment_text: str) -> str:
 
 def get_page_token():
     """
-    Exchange the USER token for a PAGE token dynamically.
+    Fetch the PAGE ID and PAGE TOKEN for the AI Solutions page.
+    Ensures we always return the correct token with posting permissions.
     """
     url = f"{GRAPH_API_BASE}/me/accounts?access_token={USER_ACCESS_TOKEN}"
     res = requests.get(url).json()
@@ -762,12 +763,12 @@ def get_page_token():
         raise Exception(f"Error fetching pages: {res}")
 
     for page in res["data"]:
-        if page["name"] == PAGE_NAME or page["id"] == PAGE_NAME:
+        if page["name"] == "AI Solutions" or page["id"] == "781314085068832":
             print(f"✅ Found page: {page['name']} ({page['id']})")
-            print(f"🔑 Page token: {page['access_token'][:25]}...")  # Debug
+            print(f"🔑 Page token starts with: {page['access_token'][:25]}...")
             return page["id"], page["access_token"]
 
-    raise Exception(f"Page {PAGE_NAME} not found. Response: {res}")
+    raise Exception(f"❌ AI Solutions page not found. Response: {res}")
 
 
 
@@ -6490,6 +6491,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
