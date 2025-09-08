@@ -121,9 +121,10 @@ MODEL_COST_PER_TOKEN = {
 
 audio_store = {}
 GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
-PAGE_ID = "61580579033460"    
+PAGE_ID = "808054589051156"
 USER_ACCESS_TOKEN = "EAAKNLPu3bV8BPWGo3wwYK6p0BPB6oi5QZBZBmJQU0zXYbe3YYGVBzv5ZChZAXHpeS6qIAoadTIddC9kT6YyHR1xEYeFfWh5fAZASboIZBBunkcQTuoxotXeIFaiQh7NRnW1kDpEZCZAUOYhCTWlWdMOabdBBobhWLKDVgI5lS7tq80VIvXNffV8bnEhjRK4jb18zJH5xfZACZCV8HafYNCZCFIeyZBQ39G2Uj2ROuBMZD"
 PAGE_NAME = "Smart AI Solutions"
+PAGE_ACCESS_TOKEN = "EAAKNLPu3bV8BPUwA5LvpCklZCxYnzd15WdJzk4VZBZBxnIZAc0u8MR7cdTaQlMJ5P1CLgHeZCA0ZBM94U90YaKV0mHkXuvDu7MHzEPQ7Kc9ZCHpd4ZApsxeDNOYf1afZB3vGD2aNwn7pgEdMZB4xmf6vcanUNWqamQCyZB0BOjg0rZCdmYcQb9b5ANG0mnfwfNdUbTW8FoZCzcGruZBRY3fJ9ZBjdNevTpm1163ef0ugv1z3df4"
 
 USAGE_LIMIT_INCREASE = 5.0  # dollars
 vertexai.init(project="dazzling-tensor-455512-j1", location="us-central1")
@@ -857,37 +858,26 @@ def publish_scheduled_posts(db):
             CampaignSuggestion_ST.scheduled_time <= now,
             CampaignSuggestion_ST.posted == False
         ).all()
-        page_access_token = get_page_access_token(USER_ACCESS_TOKEN, PAGE_id)
+
         if not posts:
             print(f"[{datetime.utcnow()}] No posts ready to be published.")
             return
 
         for post in posts:
             print(f"[{datetime.utcnow()}] Processing Post ID: {post.id} | Preview: {post.content[:50]}...")
-
             try:
-                # Publish post
-                # Publish post (pass all required args)
-                res = publish_post(post.content, db, post, page_access_token, PAGE_id)
-                print(f"[{datetime.utcnow()}] Facebook response: {res}")
-
-                print(f"[{datetime.utcnow()}] Facebook response: {res}")
-
-                if "id" in res:
-                    post.posted = True
-                    post.fb_post_id = res["id"]
-                    db.commit()
-                    print(f"[{datetime.utcnow()}] ✅ Posted! DB updated with FB ID {res['id']}")
+                success = publish_post(post.content, db, post, PAGE_ACCESS_TOKEN, PAGE_ID)
+                if success:
+                    print(f"[{datetime.utcnow()}] ✅ Post {post.id} published successfully!")
                 else:
-                    print(f"[{datetime.utcnow()}] ❌ FB did not return an ID for Post {post.id}")
-
+                    print(f"[{datetime.utcnow()}] ❌ Post {post.id} failed to publish.")
             except Exception as e:
                 db.rollback()
-                print(f"[{datetime.utcnow()}] ❌ Exception posting Post {post.id}: {e}")
+                print(f"[{datetime.utcnow()}] ❌ Exception publishing Post {post.id}: {e}")
 
     except Exception as e:
         print(f"[{datetime.utcnow()}] Exception in publish_scheduled_posts: {e}")
-
+        
 def publish_post(message, db, post_obj, page_access_token, page_id):
     """
     Publishes a post immediately to the Facebook Page.
@@ -898,8 +888,8 @@ def publish_post(message, db, post_obj, page_access_token, page_id):
         url = f"https://graph.facebook.com/v23.0/{page_id}/feed"
         payload = {
             "message": message,
-            "published": True,  # ✅ ensure it’s published
-            "privacy": '{"value":"EVERYONE"}',  # ✅ force public visibility
+            "published": True,  # ensure it’s published
+            "privacy": '{"value":"EVERYONE"}',  # force public visibility
             "access_token": page_access_token
         }
 
@@ -907,27 +897,27 @@ def publish_post(message, db, post_obj, page_access_token, page_id):
         print("📦 Payload being sent:", payload)
 
         response = requests.post(url, data=payload)
-        print("📡 Raw response status:", response.status_code)
-        print("📡 Raw response text:", response.text)
+        print("📡 Response status:", response.status_code)
+        print("📡 Response text:", response.text)
 
         result = response.json()
-        print("🔍 Parsed response JSON:", result)
+        print("🔍 Parsed JSON:", result)
 
         if "id" in result:
             fb_post_id = result["id"]
-            print(f"✅ Successfully published! FB Post ID: {fb_post_id}")
             post_obj.fb_post_id = fb_post_id
             post_obj.posted = True
-            db.session.commit()
+            db.commit()
+            print(f"✅ Successfully published! FB Post ID: {fb_post_id}")
             return True
         else:
             print("❌ Failed to publish post:", result)
             return False
 
     except Exception as e:
-        print("🔥 Exception in publish_post:", str(e))
+        db.rollback()
+        print("🔥 Exception in publish_post:", e)
         return False
-
 
 
 def schedule_post(message, schedule_time):
@@ -6525,6 +6515,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
