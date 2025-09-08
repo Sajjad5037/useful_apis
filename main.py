@@ -753,38 +753,22 @@ def generate_ai_reply(comment_text: str) -> str:
 
 def get_page_token():
     """
-    Fetch and return the PAGE ID and PAGE TOKEN.
-    Ensures the token is a valid Page token (with posting permissions).
+    Exchange the USER token for a PAGE token dynamically.
     """
-    # Step 1: Use the User access token to list all pages
     url = f"{GRAPH_API_BASE}/me/accounts?access_token={USER_ACCESS_TOKEN}"
     res = requests.get(url).json()
 
     if "data" not in res:
         raise Exception(f"Error fetching pages: {res}")
 
-    # Step 2: Look for your page
     for page in res["data"]:
         if page["name"] == PAGE_NAME or page["id"] == PAGE_NAME:
-            page_id = page["id"]
-            page_token = page["access_token"]
+            print(f"✅ Found page: {page['name']} ({page['id']})")
+            print(f"🔑 Page token: {page['access_token'][:25]}...")  # Debug
+            return page["id"], page["access_token"]
 
-            # Step 3: Verify token type = PAGE
-            debug_url = f"{GRAPH_API_BASE}/debug_token"
-            debug_params = {
-                "input_token": page_token,
-                "access_token": USER_ACCESS_TOKEN  # required for debug
-            }
-            debug_res = requests.get(debug_url, params=debug_params).json()
-
-            token_type = debug_res.get("data", {}).get("type", "unknown")
-            if token_type != "PAGE":
-                raise Exception(f"Invalid token type: {token_type}. Expected PAGE. Debug response: {debug_res}")
-
-            return page_id, page_token
-
-    # If we never found the page
     raise Exception(f"Page {PAGE_NAME} not found. Response: {res}")
+
 
 
 def publish_comment_replies(db):
@@ -6506,6 +6490,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
