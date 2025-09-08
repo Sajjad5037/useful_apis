@@ -122,8 +122,9 @@ MODEL_COST_PER_TOKEN = {
 audio_store = {}
 GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
 PAGE_ID = "61580579033460"    
-USER_ACCESS_TOKEN = "EAAKNLPu3bV8BPa5TQZAq7Ul1GZCtK5znXc6uJ34qxtWUqizmnk2JfnvNi5eHL0lOUfIopMDKReehtKEfCWpAYTGAPUtWU1yyVPawmSS2gMnCpmkj39LZALAOI8eddcQNTC6OvbKCuRCydaoEK9TeotDKFw3zwTDNv8Yl59viLWLtCj49lm2TnGFwwduWIdhQRglkZA670T72tamaJA80NkxlDCVOfMrab3MZD"
-PAGE_NAME = "AI Solutions"
+USER_ACCESS_TOKEN = "EAAKNLPu3bV8BPWGo3wwYK6p0BPB6oi5QZBZBmJQU0zXYbe3YYGVBzv5ZChZAXHpeS6qIAoadTIddC9kT6YyHR1xEYeFfWh5fAZASboIZBBunkcQTuoxotXeIFaiQh7NRnW1kDpEZCZAUOYhCTWlWdMOabdBBobhWLKDVgI5lS7tq80VIvXNffV8bnEhjRK4jb18zJH5xfZACZCV8HafYNCZCFIeyZBQ39G2Uj2ROuBMZD"
+PAGE_NAME = "Smart AI Solutions"
+PAGE_ID = "61580463121902"
 USAGE_LIMIT_INCREASE = 5.0  # dollars
 vertexai.init(project="dazzling-tensor-455512-j1", location="us-central1")
 vision_model = GenerativeModel("gemini-1.5-flash")
@@ -753,7 +754,7 @@ def generate_ai_reply(comment_text: str) -> str:
 
 def get_page_token():
     """
-    Fetch the PAGE ID and PAGE TOKEN for the AI Solutions page.
+    Fetch the PAGE ID and PAGE TOKEN for the Smart AI Solutions page.
     Ensures we always return the correct token with posting permissions.
     """
     url = f"{GRAPH_API_BASE}/me/accounts?access_token={USER_ACCESS_TOKEN}"
@@ -763,13 +764,12 @@ def get_page_token():
         raise Exception(f"Error fetching pages: {res}")
 
     for page in res["data"]:
-        if page["name"] == "AI Solutions" or page["id"] == "781314085068832":
+        if page["name"] == "Smart AI Solutions" or page["id"] == "61580463121902":
             print(f"✅ Found page: {page['name']} ({page['id']})")
             print(f"🔑 Page token starts with: {page['access_token'][:25]}...")
             return page["id"], page["access_token"]
 
-    raise Exception(f"❌ AI Solutions page not found. Response: {res}")
-
+    raise Exception(f"❌ Smart AI Solutions page not found. Response: {res}")
 
 
 def publish_comment_replies(db):
@@ -860,7 +860,6 @@ def publish_scheduled_posts(db):
 
     except Exception as e:
         print(f"[{datetime.utcnow()}] Exception in publish_scheduled_posts: {e}")
-
 
 
 def publish_post(message, db, post_obj):
@@ -6497,6 +6496,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
