@@ -122,7 +122,7 @@ MODEL_COST_PER_TOKEN = {
 audio_store = {}
 GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
 PAGE_ID = "61580579033460"    
-USER_ACCESS_TOKEN = "EAAKNLPu3bV8BPfso1sfPpwOz4zNI2A5P2DZAUUxfpm2WSOMRdf0QXhZA7GsY7OuQWGP9CGAH1yFGKdYcQtJclmMQwKw2ZBOZCtsFVSJfoYZBsk4PXlZBHBgYrNUU9Q9HDNFjcGuxqqDpen9koy4ZCR5NXSqfPNtWBIwBarZAe9Od0lOM5u0zaivSbGjVMTfE5jUF7WZClleTOI8OcQJfwv0B9OekAZCEYUzBQ3MscKRlmhPLcZD"
+USER_ACCESS_TOKEN = "EAAKNLPu3bV8BPa5TQZAq7Ul1GZCtK5znXc6uJ34qxtWUqizmnk2JfnvNi5eHL0lOUfIopMDKReehtKEfCWpAYTGAPUtWU1yyVPawmSS2gMnCpmkj39LZALAOI8eddcQNTC6OvbKCuRCydaoEK9TeotDKFw3zwTDNv8Yl59viLWLtCj49lm2TnGFwwduWIdhQRglkZA670T72tamaJA80NkxlDCVOfMrab3MZD"
 PAGE_NAME = "AI Solutions"
 USAGE_LIMIT_INCREASE = 5.0  # dollars
 vertexai.init(project="dazzling-tensor-455512-j1", location="us-central1")
@@ -6497,6 +6497,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
