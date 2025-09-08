@@ -124,7 +124,7 @@ GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
 PAGE_ID = "61580579033460"    
 USER_ACCESS_TOKEN = "EAAKNLPu3bV8BPWGo3wwYK6p0BPB6oi5QZBZBmJQU0zXYbe3YYGVBzv5ZChZAXHpeS6qIAoadTIddC9kT6YyHR1xEYeFfWh5fAZASboIZBBunkcQTuoxotXeIFaiQh7NRnW1kDpEZCZAUOYhCTWlWdMOabdBBobhWLKDVgI5lS7tq80VIvXNffV8bnEhjRK4jb18zJH5xfZACZCV8HafYNCZCFIeyZBQ39G2Uj2ROuBMZD"
 PAGE_NAME = "Smart AI Solutions"
-PAGE_ID = "61580463121902"
+
 USAGE_LIMIT_INCREASE = 5.0  # dollars
 vertexai.init(project="dazzling-tensor-455512-j1", location="us-central1")
 vision_model = GenerativeModel("gemini-1.5-flash")
@@ -836,7 +836,13 @@ def publish_comment_replies(db):
 
 
 #till here
-
+def get_page_access_token(user_token, page_id):
+    url = f"https://graph.facebook.com/v23.0/me/accounts?access_token={user_token}"
+    res = requests.get(url).json()
+    for page in res.get("data", []):
+        if str(page["id"]) == str(page_id):
+            return page["access_token"]
+    raise Exception(f"Page ID {page_id} not found for this user.") 
 
 
 def publish_scheduled_posts(db):
@@ -851,7 +857,7 @@ def publish_scheduled_posts(db):
             CampaignSuggestion_ST.scheduled_time <= now,
             CampaignSuggestion_ST.posted == False
         ).all()
-
+        page_access_token = get_page_access_token(USER_ACCESS_TOKEN, PAGE_id)
         if not posts:
             print(f"[{datetime.utcnow()}] No posts ready to be published.")
             return
@@ -862,13 +868,7 @@ def publish_scheduled_posts(db):
             try:
                 # Publish post
                 # Publish post (pass all required args)
-                res = publish_post(
-                    post.content,      # message
-                    db,                # db session
-                    post,              # post_obj
-                    page_access_token, # ✅ must be provided
-                    page_id            # ✅ must be provided
-                )
+                res = publish_post(post.content, db, post, page_access_token, PAGE_id)
                 print(f"[{datetime.utcnow()}] Facebook response: {res}")
 
                 print(f"[{datetime.utcnow()}] Facebook response: {res}")
@@ -6525,6 +6525,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
