@@ -850,6 +850,7 @@ def publish_scheduled_posts(db):
     """
     Publishes all approved and scheduled posts whose scheduled time has passed.
     Updates DB with fb_post_id and posted=True.
+    Integrates automatic page token refresh and detailed logging.
     """
     try:
         now = datetime.utcnow()
@@ -865,111 +866,164 @@ def publish_scheduled_posts(db):
 
         for post in posts:
             print(f"[{datetime.utcnow()}] Processing Post ID: {post.id} | Preview: {post.content[:50]}...")
+
             try:
-                success = publish_post(post.content, db, post, PAGE_ACCESS_TOKEN, PAGE_ID)
+                # Publish the post using the improved function
+                success = publish_post(
+                    message=post.content,
+                    db=db,
+                    post_obj=post,
+                    user_long_lived_token=USER_LONG_LIVED_TOKEN,  # will be exchanged for fresh page token
+                    page_id=PAGE_ID
+                )
+
                 if success:
                     print(f"[{datetime.utcnow()}] ✅ Post {post.id} published successfully!")
                 else:
                     print(f"[{datetime.utcnow()}] ❌ Post {post.id} failed to publish.")
+                    db.rollback()  # rollback if publish_post returned False
+
             except Exception as e:
                 db.rollback()
                 print(f"[{datetime.utcnow()}] ❌ Exception publishing Post {post.id}: {e}")
 
     except Exception as e:
-        print(f"[{datetime.utcnow()}] Exception in publish_scheduled_posts: {e}")
-def publish_post(message, db, post_obj, page_access_token, page_id):
+        print(f"[{datetime.utcnow()}] 🔥 Exception in publish_scheduled_posts: {e}")
+        db.rollback()
+        
+def get_page_access_token(user_long_lived_token, page_id):
     """
-    Publishes a post to the Facebook Page with detailed logging to diagnose visibility issues.
-    Updates DB with fb_post_id and posted=True if successfully published.
+    Fetch the current valid page access token using a long-lived user token.
     """
     try:
+        url = "https://graph.facebook.com/v23.0/me/accounts"
+        params = {"access_token": user_long_lived_token}
+        print(f"🔄 Fetching page tokens using long-lived user token: {user_long_lived_token[:10]}...")
+
+        res = requests.get(url, params=params)
+        data = res.json()
+        if "data" not in data:
+            print("❌ Failed to fetch page tokens:", data)
+            return None
+
+        for page in data["data"]:
+            if page["id"] == page_id:
+                print(f"✅ Found page token for page {page['name']}")
+                return page["access_token"]
+
+        print("❌ Page ID not found in response.")
+        return None
+
+    except Exception as e:
+        print("🔥 Exception while fetching page token:", str(e))
+        return None
+
+def publish_post(message, db, post_obj, user_long_lived_token, page_id):
+    """
+    Publishes a post to a Facebook page with automatic token refresh and full logging.
+    """
+    try:
+        # Step 1: Get a fresh page access token
+        page_access_token = get_page_access_token(user_long_lived_token, page_id)
+        if not page_access_token:
+            print("❌ Cannot proceed without a valid page token.")
+            return False
+
+        # Step 2: Prepare payload
         url = f"https://graph.facebook.com/v23.0/{page_id}/feed"
         payload = {
             "message": message,
             "published": True,
-            "privacy": '{"value":"EVERYONE"}',  # force public
+            "privacy": '{"value":"EVERYONE"}',
             "access_token": page_access_token
         }
 
         print("🚀 Publishing post to URL:", url)
         print("📦 Payload:", payload)
 
+        # Step 3: Publish
         response = requests.post(url, data=payload)
         print("📡 Response status:", response.status_code)
         print("📡 Raw response text:", response.text)
 
-        if response.status_code != 200:
-            print(f"❌ API returned non-200 status: {response.status_code}")
-            return False
-
         result = response.json()
-        print("🔍 Parsed JSON response:", result)
 
-        if "id" not in result:
-            print("❌ No post ID returned — publish failed or restricted.")
-            return False
+        if "id" in result:
+            fb_post_id = result["id"]
+            print(f"✅ Successfully published! FB Post ID: {fb_post_id}")
 
-        fb_post_id = result["id"]
-        print(f"✅ Post created with FB ID: {fb_post_id}")
+            # Optional: verify public visibility
+            check_url = f"https://graph.facebook.com/v23.0/{fb_post_id}?fields=privacy&access_token={page_access_token}"
+            check_res = requests.get(check_url).json()
+            print("🔎 Post privacy check:", check_res.get("privacy"))
 
-        # Fetch post details immediately to check visibility
-        check_url = f"https://graph.facebook.com/v23.0/{fb_post_id}"
-        params = {
-            "fields": "id,message,privacy,is_published,status_type,permalink_url,age_restriction,country_restriction",
-            "access_token": page_access_token
-        }
-        check_res = requests.get(check_url, params=params).json()
-        print("🔎 Post details:", check_res)
+            # Step 4: Update DB
+            post_obj.fb_post_id = fb_post_id
+            post_obj.posted = True
+            db.commit()
+            print(f"[{datetime.utcnow()}] DB updated with FB Post ID {fb_post_id}")
 
-        # Analyze visibility
-        privacy = check_res.get("privacy", {}).get("value")
-        is_published = check_res.get("is_published")
-        status_type = check_res.get("status_type")
-        permalink = check_res.get("permalink_url")
-        age_restriction = check_res.get("age_restriction")
-        country_restriction = check_res.get("country_restriction")
-
-        print(f"📌 Privacy: {privacy}")
-        print(f"📌 is_published: {is_published}")
-        print(f"📌 status_type: {status_type}")
-        print(f"📌 permalink_url: {permalink}")
-        print(f"📌 age_restriction: {age_restriction}")
-        print(f"📌 country_restriction: {country_restriction}")
-
-        if privacy != "EVERYONE" or not is_published:
-            print("⚠️ Warning: Post may not be publicly visible.")
+            return True
         else:
-            print("✅ Post should be visible publicly.")
-
-        # Update DB
-        post_obj.fb_post_id = fb_post_id
-        post_obj.posted = True
-        db.commit()
-        print(f"[{datetime.utcnow()}] DB updated with FB Post ID {fb_post_id}")
-
-        return True
+            print("❌ Failed to publish post:", result)
+            return False
 
     except Exception as e:
         print("🔥 Exception in publish_post:", str(e))
         return False        
 
-def schedule_post(message, schedule_time):
+def schedule_post(message, schedule_time_utc):
     """
-    Schedule a post for the future.
+    Schedule a post for the future with automatic page token refresh and logging.
+
+    Args:
+        message (str): The content of the post.
+        schedule_time_utc (datetime): Scheduled time in UTC (datetime object).
     """
-    page_id,page_token =  get_page_token(USER_ACCESS_TOKEN, PAGE_NAME)
-    
+    try:
+        # Step 1: Ensure schedule_time is a UNIX timestamp
+        if isinstance(schedule_time_utc, datetime):
+            schedule_timestamp = int(schedule_time_utc.timestamp())
+        else:
+            raise ValueError("schedule_time_utc must be a datetime object in UTC.")
 
-    url = f"{GRAPH_API_BASE}/{page_id}/feed"
-    payload = {
-        "message": message,
-        "published": "false",
-        "scheduled_publish_time": schedule_time,
-        "access_token": page_token,
-    }
-    res = requests.post(url, data=payload).json()
-    return res                
+        # Step 2: Fetch fresh page access token
+        page_id = PAGE_ID  # replace if needed
+        page_access_token = get_page_access_token(USER_LONG_LIVED_TOKEN, page_id)
+        if not page_access_token:
+            print("❌ Cannot schedule post without a valid page token.")
+            return None
 
+        print(f"🔄 Scheduling post for Page ID {page_id} at {schedule_time_utc} UTC")
+        print(f"📦 Post content preview: {message[:50]}...")
+
+        # Step 3: Prepare payload for scheduling
+        url = f"{GRAPH_API_BASE}/{page_id}/feed"
+        payload = {
+            "message": message,
+            "published": False,  # scheduled post
+            "scheduled_publish_time": schedule_timestamp,
+            "access_token": page_access_token,
+        }
+
+        # Step 4: Send request
+        response = requests.post(url, data=payload)
+        print("📡 Response status:", response.status_code)
+        print("📡 Raw response text:", response.text)
+
+        result = response.json()
+        if "id" in result:
+            scheduled_post_id = result["id"]
+            print(f"✅ Post scheduled successfully! FB Post ID: {scheduled_post_id}")
+            return scheduled_post_id
+        else:
+            print("❌ Failed to schedule post:", result)
+            return None
+
+    except Exception as e:
+        print("🔥 Exception in schedule_post:", str(e))
+        return None
+#till here
 def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
     """
     Calculate the total cost for a model call, multiplying the final cost by 3
@@ -6548,6 +6602,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
