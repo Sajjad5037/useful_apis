@@ -795,24 +795,29 @@ def publish_comment_replies(db):
 
 def publish_post(message, db, post_obj, scheduled=False, scheduled_time=None):
     """
-    Publish a post to the Page. If scheduled_time is in the past, it will be published immediately.
+    Publish a post to the Facebook Page.
+
+    Args:
+        message (str): Content of the post.
+        db: Database session.
+        post_obj: DB object representing the post.
+        scheduled (bool): Whether this is a scheduled post.
+        scheduled_time (datetime): Scheduled time in UTC if scheduled=True.
     """
     try:
-        now = datetime.utcnow()
-        # Treat past scheduled times as immediate
-        if scheduled and scheduled_time and scheduled_time <= now:
-            scheduled = False
+        url = f"{GRAPH_API_BASE}/{PAGE_ID}/feed"
+        payload = {
+            "message": message,
+            "access_token": PAGE_ACCESS_TOKEN,
+        }
 
-        payload = {"message": message, "access_token": PAGE_ACCESS_TOKEN}
-
-        if scheduled and scheduled_time:
+        if scheduled:
             payload["published"] = False
             payload["scheduled_publish_time"] = int(scheduled_time.timestamp())
         else:
             payload["published"] = True
-            payload["privacy"] = '{"value":"EVERYONE"}'
+            # Removed explicit privacy to let Facebook default to public for page posts
 
-        url = f"{GRAPH_API_BASE}/{PAGE_ID}/feed"
         response = requests.post(url, data=payload)
         result = response.json()
 
@@ -4080,7 +4085,31 @@ Improved Essay:
     )
 
 
+@app.get("/api/dashboard")
+def get_dashboard():
+    session = SessionLocal()
+    try:
+        # 1️⃣ Get all campaign names
+        campaigns = session.execute(select(Campaign.name)).scalars().all()
 
+        # 2️⃣ Get all pending suggestions
+        pending_suggestions = session.execute(
+            select(CampaignSuggestion.id, CampaignSuggestion.suggestion_text)
+            .where(CampaignSuggestion.status == "pending")
+        ).all()
+
+        # Format approvals as list of dicts
+        approvals = [{"id": id_, "suggestion_text": text} for id_, text in pending_suggestions]
+
+        return {
+            "campaigns": campaigns,
+            "approvals": approvals
+        }
+    except Exception as e:
+        print("Error fetching dashboard data:", e)
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    finally:
+        session.close()
 
 # @app.post("/train-on-images")
 #previous working code for CSS_Academy1
@@ -6461,6 +6490,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
