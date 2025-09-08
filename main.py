@@ -861,7 +861,16 @@ def publish_scheduled_posts(db):
 
             try:
                 # Publish post
-                res = publish_post(post.content, db, post)  # make sure this returns JSON
+                # Publish post (pass all required args)
+                res = publish_post(
+                    post.content,      # message
+                    db,                # db session
+                    post,              # post_obj
+                    page_access_token, # ✅ must be provided
+                    page_id            # ✅ must be provided
+                )
+                print(f"[{datetime.utcnow()}] Facebook response: {res}")
+
                 print(f"[{datetime.utcnow()}] Facebook response: {res}")
 
                 if "id" in res:
@@ -6516,6 +6525,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
