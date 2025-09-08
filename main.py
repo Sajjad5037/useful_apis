@@ -5304,11 +5304,16 @@ Important:
     try:
         for s in suggestions:
             suggestion_entry = CampaignSuggestion_ST(
-                campaign_id=campaign.id,
-                content=s,
-                status="pending",
-                user_id=request.doctorData.id 
-            )
+            campaign_id=campaign.id,
+            content=s,
+            status="pending",
+            user_id=request.doctorData.id,
+            scheduled_time=None,   # optional, defaults to None
+            posted=False,          # optional, defaults to False
+            commented=False,       # optional, defaults to False
+            fb_post_id=None        # optional, defaults to None
+        )
+
             db.add(suggestion_entry)
         db.commit()
         print(f"[DEBUG] Suggestions saved for campaign {campaign.id}")
@@ -6478,6 +6483,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
