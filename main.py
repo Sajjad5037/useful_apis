@@ -252,6 +252,16 @@ class PreparednessLevel(Enum):
     partially_prepared = "partially_prepared"
     needs_improvement = "needs_improvement"
 
+
+class ALevelQuestionSchema(BaseModel):
+    id: int
+    question_text: str
+    subject: str
+    created_at: str
+
+    class Config:
+        orm_mode = True
+
 class StudentReflection(Base):
     __tablename__ = "student_reflections"
 
@@ -1985,6 +1995,18 @@ def initialize_qa_chain_anz_way(bucket_name: str, folder_in_bucket: str):
     except Exception as e:
         print(f"[ERROR] Failed to initialize QA Chain (anz way): {e}")
         traceback.print_exc()
+
+
+@app.get("/questions_a_level", response_model=List[ALevelQuestionSchema])
+def get_questions_a_level(db: Session = Depends(get_db)):
+    try:
+        questions = db.query(ALevelQuestion).order_by(ALevelQuestion.created_at.desc()).all()
+        return questions
+    except Exception as e:
+        print("Error fetching A-Level questions:", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 
 #to send the student exam prepartion data to anz way@app.post("/student_report")
 
@@ -6503,6 +6525,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
