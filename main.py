@@ -266,14 +266,14 @@ class PreparednessLevel(Enum):
 
 
 class ALevelQuestionSchema(BaseModel):
-    id: int
+    question_id: int
     question_text: str
     subject: str
-    created_at: str
+    created_at: datetime   # 👈 let Pydantic handle datetime directly
+    marks: int
 
     class Config:
-        orm_mode = True
-
+        orm_mode = True  
 class StudentReflection(Base):
     __tablename__ = "student_reflections"
 
@@ -6537,6 +6537,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
