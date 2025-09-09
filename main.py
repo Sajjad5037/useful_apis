@@ -227,6 +227,18 @@ class StudentEvaluation(Base):
     comment = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class ALevelQuestion(Base):
+    __tablename__ = "questions_a_level"   # 👈 exact table name in Postgres
+
+    question_id = Column(Integer, primary_key=True, index=True)  # matches your DB
+    question_text = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    marks = Column(Integer, nullable=False)
+
+
+
+
 class StudentUsageRequest(BaseModel):
     student_name: str
 
@@ -6525,6 +6537,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
