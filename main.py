@@ -187,8 +187,10 @@ allowed_origins = [
     "https://shah-rukk-website.vercel.app",
     "https://class-management-system-new.web.app",
     "https://ai-social-campaign.vercel.app",
-    "https://anz-way.vercel.app",  # ← only the domain
+    "https://anz-way.vercel.app",  # only the domain
+    "https://royal-dry-fruit-ashy.vercel.app",
 ]
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -6593,6 +6595,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
