@@ -318,10 +318,13 @@ class StartConversationRequest(BaseModel):
     username: str  # new field for tracking the user
 
 class SendMessageRequest(BaseModel):
-    id: int          # Unique identifier, e.g., student or message ID
+    id: int                # Unique identifier (student/message ID)
     session_id: str
     message: str
-    username: str  # <-- added username
+    username: str
+    subject: str           # 👈 add subject
+    marks: int             # 👈 add marks
+    question_text: str     # 👈 add question_text    
     
 class CostPerInteraction(Base):
     __tablename__ = "cost_per_interaction"
@@ -2917,7 +2920,8 @@ Output JSON format (strictly):
                 new_reflection = StudentReflection(
                     student_id=req.id,
                     question_text=extracted_question,
-                    preparedness_level=preparedness_enum
+                    preparedness_level=preparedness_enum,
+                    subject=req.subject   # 👈 now subject comes from frontend
                 )
                 db.add(new_reflection)
                 db.commit()
@@ -6537,6 +6541,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
