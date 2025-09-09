@@ -322,9 +322,7 @@ class SendMessageRequest(BaseModel):
     session_id: str
     message: str
     username: str
-    subject: str           # 👈 add subject
-    marks: int             # 👈 add marks
-    question_text: str     # 👈 add question_text    
+    subject: str   
     
 class CostPerInteraction(Base):
     __tablename__ = "cost_per_interaction"
@@ -6541,6 +6539,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
