@@ -50,6 +50,7 @@ from pydantic import BaseModel
 from sqlalchemy import (
     create_engine,
     Column,
+    distinct,
     select,
     Integer,
     String,
@@ -1986,6 +1987,7 @@ def initialize_qa_chain_anz_way(bucket_name: str, folder_in_bucket: str):
         traceback.print_exc()
 
 #to send the student exam prepartion data to anz way@app.post("/student_report")
+
 @app.post("/student_report", response_model=List[StudentReflectionSchema])
 def get_student_report(req: StudentReportRequest, db: Session = Depends(get_db)):
     print("=== get_student_report called ===")
@@ -1997,7 +1999,7 @@ def get_student_report(req: StudentReportRequest, db: Session = Depends(get_db))
         to_dt = datetime.strptime(req.to_date, "%Y-%m-%d")
         to_dt = datetime.combine(to_dt, time.max)  # include the entire "to" day
 
-        # Build query with subject filter
+        # Base query
         query = (
             db.query(StudentReflection)
             .filter(
@@ -2007,11 +2009,16 @@ def get_student_report(req: StudentReportRequest, db: Session = Depends(get_db))
             )
         )
 
-        # ✅ Apply subject filter only if provided
+        # ✅ Apply subject filter if provided
         if req.subject:
             query = query.filter(StudentReflection.subject == req.subject)
 
-        reflections = query.order_by(StudentReflection.created_at.desc()).all()
+        # ✅ Ensure only the most recent entry per question_text
+        reflections = (
+            query.order_by(StudentReflection.question_text, StudentReflection.created_at.desc())
+            .distinct(StudentReflection.question_text)
+            .all()
+        )
 
         print(f"Fetched {len(reflections)} reflections for student {req.student_id} with subject {req.subject}")
         return reflections
@@ -6496,6 +6503,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
