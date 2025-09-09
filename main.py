@@ -234,15 +234,17 @@ class StudentReflectionSchema(BaseModel):
     student_id: int
     question_text: str
     preparedness_level: str
+    subject: str | None = None   # new field, optional in case old rows don’t have subject
     created_at: datetime
 
     class Config:
         orm_mode = True
+
 class StudentReportRequest(BaseModel):
     student_id: int
     from_date: str
     to_date: str
-
+    subject: str  
 
 class PreparednessLevel(Enum):
     well_prepared = "well_prepared"
@@ -1986,7 +1988,7 @@ def initialize_qa_chain_anz_way(bucket_name: str, folder_in_bucket: str):
 @app.post("/student_report", response_model=List[StudentReflectionSchema])
 def get_student_report(req: StudentReportRequest, db: Session = Depends(get_db)):
     print("=== get_student_report called ===")
-    print(f"Student ID: {req.student_id}, From: {req.from_date}, To: {req.to_date}")
+    print(f"Student ID: {req.student_id}, From: {req.from_date}, To: {req.to_date}, Subject: {req.subject}")
 
     try:
         # Convert dates from string to datetime objects
@@ -1994,24 +1996,29 @@ def get_student_report(req: StudentReportRequest, db: Session = Depends(get_db))
         to_dt = datetime.strptime(req.to_date, "%Y-%m-%d")
         to_dt = datetime.combine(to_dt, time.max)  # include the entire "to" day
 
-        # Query reflections for this student in date range
-        reflections = (
+        # Build query with subject filter
+        query = (
             db.query(StudentReflection)
             .filter(
                 StudentReflection.student_id == req.student_id,
                 StudentReflection.created_at >= from_dt,
-                StudentReflection.created_at <= to_dt
+                StudentReflection.created_at <= to_dt,
             )
-            .order_by(StudentReflection.created_at.desc())
-            .all()
         )
 
-        print(f"Fetched {len(reflections)} reflections for student {req.student_id}")
+        # ✅ Apply subject filter only if provided
+        if req.subject:
+            query = query.filter(StudentReflection.subject == req.subject)
+
+        reflections = query.order_by(StudentReflection.created_at.desc()).all()
+
+        print(f"Fetched {len(reflections)} reflections for student {req.student_id} with subject {req.subject}")
         return reflections
 
     except Exception as e:
         print("Error fetching student report:", e)
         raise HTTPException(status_code=500, detail="Internal server error")
+
         
 
 def calculate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -> float:
@@ -6488,6 +6495,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
