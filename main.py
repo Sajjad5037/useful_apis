@@ -5829,7 +5829,7 @@ async def send_dry_fruit_order(order: DryFruitOrder):
         message = client_twilio.messages.create(
             body=message_body,
             from_=twilio_number,
-            to=recipient_number
+            to=pizzapoint_number
         )
 
         print(f"Message SID: {message.sid}")
@@ -6595,6 +6595,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
