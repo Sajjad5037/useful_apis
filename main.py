@@ -227,6 +227,19 @@ class StudentEvaluation(Base):
     comment = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class DryFruitItem(BaseModel):
+    name: str
+    price: float
+    quantity: int
+
+class DryFruitOrder(BaseModel):
+    items: List[DryFruitItem]
+    total: float
+    phone: str
+    timestamp: str    
+
+
+
 class ALevelQuestion(Base):
     __tablename__ = "questions_a_level"   # 👈 exact table name in Postgres
 
@@ -5784,6 +5797,47 @@ async def create_menu_items(
         "message": "Menu items created successfully",
         "ids": created_ids
     }
+
+
+@app.post("/api/send-dry-fruit-order")
+async def send_dry_fruit_order(order: DryFruitOrder):
+    try:
+        print("Building dry fruits order message...")
+
+        lines = [
+            "*🥜 New Dry Fruits Order*",
+            f"📞 Customer Phone: {order.phone}",
+            f"🕒 Timestamp: {order.timestamp}",
+            "",
+            "*🛒 Order Items:*"
+        ]
+
+        for item in order.items:
+            print(f"Processing item: {item.name}, quantity: {item.quantity}, price: {item.price}")
+            line = f"- {item.name} — {item.quantity} × Rs.{item.price:.0f} = Rs.{item.quantity * item.price:.0f}"
+            lines.append(line)
+
+        lines.append("")
+        lines.append(f"*💰 Total: Rs.{order.total:.0f}*")
+
+        message_body = "\n".join(lines)
+        print(f"Message body:\n{message_body}")
+
+        # Send WhatsApp or SMS via Twilio
+        message = client_twilio.messages.create(
+            body=message_body,
+            from_=twilio_number,
+            to=recipient_number
+        )
+
+        print(f"Message SID: {message.sid}")
+        return {"success": True, "sid": message.sid}
+
+    except Exception as e:
+        print(f"Error sending message: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error sending WhatsApp message: {str(e)}")
+
+
 #meant to be used for all pizza restaurants
 @app.post("/api/sendorder_pizzapoint")
 async def send_order_pizzapoint(
@@ -6539,6 +6593,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
