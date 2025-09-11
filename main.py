@@ -4154,19 +4154,6 @@ Improved Essay:
     )
 
 
-from fastapi import FastAPI, UploadFile, File, Form, Request, Depends
-from fastapi.responses import JSONResponse
-from typing import List, Optional
-from uuid import uuid4
-import os, io, json
-from datetime import datetime
-from PIL import Image
-import fitz  # PyMuPDF
-from google.cloud import vision
-
-app = FastAPI()
-session_texts = {}
-username_for_interactive_session = None
 
 @app.post("/train-on-images-pdf-ibne-sina")
 async def train_on_pdf(
@@ -6904,6 +6891,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
