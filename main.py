@@ -67,6 +67,7 @@ from sqlalchemy import (
     Text,
     Enum as SQLEnum  # <-- added this line
 )
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session,relationship,joinedload
 import openai  # classic client
@@ -4713,7 +4714,7 @@ async def chat_interactive_tutor(
             print(f"[DEBUG] Appended user_current_message. Total messages now: {len(messages)}")
 
         # --- Call OpenAI ---
-        model_name = "gpt-3.5-turbo"
+        model_name = "gpt-4o-mini"
         print(f"[DEBUG] Sending request to OpenAI model {model_name} with {len(messages)} messages")
         response = client.chat.completions.create(
             model=model_name,
@@ -6895,6 +6896,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
