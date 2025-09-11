@@ -4169,18 +4169,27 @@ async def train_on_pdf(
         "Access-Control-Allow-Credentials": "true",
     }
 
-    print(f"[DEBUG] Incoming request from origin: {origin}")
-    print(f"[DEBUG] Number of files received: {len(pdfs)}")
-    for i, pdf in enumerate(pdfs, start=1):
-        print(f"[DEBUG] File #{i}: {pdf.filename}, size: {pdf.spool_max_size} bytes, content_type: {pdf.content_type}")
+    # -------------------------------
+    # Check PDFs
+    # -------------------------------
+    if not pdfs:
+        print("[DEBUG] No PDFs uploaded")
+        return JSONResponse(
+            content={"detail": "No PDFs uploaded"},
+            status_code=400,
+            headers=cors_headers,
+        )
 
+    print(f"[DEBUG] Number of PDFs uploaded: {len(pdfs)}")
+
+    # -------------------------------
     # Parse doctorData
+    # -------------------------------
     doctor = {}
     if doctorData:
-        print(f"[DEBUG] Raw doctorData received: {doctorData}")
         try:
             doctor = json.loads(doctorData)
-            print(f"[DEBUG] Parsed doctorData: {doctor}")
+            print(f"[DEBUG] doctorData parsed successfully: {doctor}")
         except json.JSONDecodeError as e:
             print(f"[ERROR] Failed to parse doctorData JSON: {e}")
             return JSONResponse(
@@ -4189,13 +4198,14 @@ async def train_on_pdf(
                 headers=cors_headers,
             )
     else:
-        print("[WARNING] No doctorData received")
+        print("[WARNING] No doctorData provided")
 
-    global username_for_interactive_session
     username_for_interactive_session = doctor.get("name") if doctor else None
-    print(f"[DEBUG] username_for_interactive_session set to: {username_for_interactive_session}")
+    print(f"[DEBUG] username_for_interactive_session = {username_for_interactive_session}")
 
+    # -------------------------------
     # Prepare OCR
+    # -------------------------------
     combined_text = ""
     output_dir = "/tmp/extracted_images"
     os.makedirs(output_dir, exist_ok=True)
@@ -4204,13 +4214,17 @@ async def train_on_pdf(
     client_vision_api = vision.ImageAnnotatorClient()
     images_processed = 0
 
+    # -------------------------------
     # Process PDFs
-    for pdf_index, pdf in enumerate(pdfs, start=1):
+    # -------------------------------
+    for i, pdf in enumerate(pdfs, start=1):
+        print(f"[DEBUG] Processing File #{i}: {pdf.filename}, content_type: {pdf.content_type}")
         pdf_bytes = await pdf.read()
-        print(f"[DEBUG] Read PDF #{pdf_index}: {pdf.filename}, size={len(pdf_bytes)} bytes")
+        print(f"[DEBUG] Read PDF #{i}: {pdf.filename}, size={len(pdf_bytes)} bytes")
+
         try:
             pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
-            print(f"[DEBUG] Opened PDF {pdf.filename}, pages: {len(pdf_document)}")
+            print(f"[DEBUG] Opened PDF #{i}: {pdf.filename}, pages={len(pdf_document)}")
         except Exception as e:
             print(f"[ERROR] Failed to open PDF {pdf.filename}: {e}")
             continue
@@ -4218,18 +4232,27 @@ async def train_on_pdf(
         for page_number in range(len(pdf_document)):
             page = pdf_document[page_number]
             image_list = page.get_images(full=True)
-            print(f"[DEBUG] Page {page_number + 1}: found {len(image_list)} images")
+            print(f"[DEBUG] PDF #{i} page {page_number+1}: Found {len(image_list)} images")
 
             for img_index, img in enumerate(image_list, start=1):
                 try:
                     xref = img[0]
                     base_image = pdf_document.extract_image(xref)
                     image_bytes = base_image["image"]
+                    image_ext = base_image["ext"]
                     image = Image.open(io.BytesIO(image_bytes))
-                    print(f"[DEBUG] Extracted image {img_index} from page {page_number + 1}")
+                    print(f"[DEBUG] Extracted image {img_index} on page {page_number+1}")
                 except Exception as e:
-                    print(f"[ERROR] Failed to extract image {img_index} on page {page_number + 1}: {e}")
+                    print(f"[ERROR] Failed to extract image {img_index} on page {page_number+1}: {e}")
                     continue
+
+                # Save image
+                image_filename = os.path.join(output_dir, f"{pdf.filename}_page{page_number+1}_img{img_index}.{image_ext}")
+                try:
+                    image.save(image_filename)
+                    print(f"[DEBUG] Saved image: {image_filename}")
+                except Exception as e:
+                    print(f"[ERROR] Failed to save image {image_filename}: {e}")
 
                 # OCR
                 try:
@@ -4237,29 +4260,26 @@ async def train_on_pdf(
                     response = client_vision_api.text_detection(image=vision_image)
                     texts = response.text_annotations
                     if texts:
-                        extracted_text = texts[0].description.strip()
-                        combined_text += extracted_text + "\n\n"
+                        combined_text += texts[0].description.strip() + "\n\n"
                         images_processed += 1
-                        print(f"[DEBUG] OCR extracted {len(extracted_text)} chars from page {page_number + 1}, image {img_index}")
+                        print(f"[DEBUG] OCR extracted {len(texts[0].description.strip())} chars from page {page_number+1}, image {img_index}")
                     else:
-                        print(f"[WARNING] No text found in page {page_number + 1}, image {img_index}")
+                        print(f"[WARNING] No text found on page {page_number+1}, image {img_index}")
                 except Exception as e:
-                    print(f"[ERROR] OCR failed for page {page_number + 1}, image {img_index}: {e}")
-
-    print(f"[DEBUG] Total images processed: {images_processed}")
-    print(f"[DEBUG] Total combined_text length: {len(combined_text.strip())}")
+                    print(f"[ERROR] OCR failed for page {page_number+1}, image {img_index}: {e}")
 
     if not combined_text.strip():
-        print("[ERROR] No text extracted from any PDF images")
+        print("[WARNING] No text extracted from any PDF images")
         return JSONResponse(
             content={"detail": "No text extracted from PDF images"},
             status_code=400,
             headers=cors_headers,
         )
 
-    # ------------------------------------------------
-    # Help student prepare for test (single GPT call)
-    # ------------------------------------------------
+    # -------------------------------
+    # Prepare GPT prompt
+    # -------------------------------
+    print(f"[DEBUG] Total OCR text length: {len(combined_text.strip())}")
     preparation_prompt = f"""
 You are a class 7 test preparation tutor.
 
@@ -4275,8 +4295,11 @@ A student has shared the following study material and requested your help to pre
 4. Keep the content structured, clear, and focused on helping the student succeed in the test.
 5. Do NOT introduce unrelated information.
 """
-    print(f"[DEBUG] Sending preparation prompt to GPT, length={len(preparation_prompt)} chars")
+    print(f"[DEBUG] GPT prompt length: {len(preparation_prompt)}")
 
+    # -------------------------------
+    # Call GPT
+    # -------------------------------
     preparation_response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -4287,27 +4310,29 @@ A student has shared the following study material and requested your help to pre
     )
 
     prep_text = preparation_response.choices[0].message.content.strip()
-    print(f"[DEBUG] Received GPT preparation response, length={len(prep_text)} chars")
+    print(f"[DEBUG] GPT response length: {len(prep_text)}")
 
-    # Log usage
+    # -------------------------------
+    # Log GPT usage
+    # -------------------------------
     if hasattr(preparation_response, "usage"):
         usage = preparation_response.usage
-        print(f"[DEBUG] GPT usage: prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}")
+        print(f"[DEBUG] GPT usage - prompt: {usage.prompt_tokens}, completion: {usage.completion_tokens}, total: {usage.total_tokens}")
         log_to_db(db, username_for_interactive_session, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-mini")
     else:
         total_tokens = len(prep_text) // 4
-        print(f"[DEBUG] GPT usage not returned, approx total_tokens={total_tokens}")
         log_to_db(db, username_for_interactive_session, total_tokens, 0, total_tokens, "gpt-4o-mini")
 
+    # -------------------------------
     # Save session
+    # -------------------------------
     session_id = str(uuid4())
     session_texts[session_id] = {
         "text": combined_text.strip(),
         "prep_response": prep_text,
         "images_processed": images_processed,
     }
-
-    print(f"[DEBUG] Session saved with ID: {session_id}")
+    print(f"[DEBUG] Saved session: {session_id}")
 
     return JSONResponse(
         content={
@@ -6916,6 +6941,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
