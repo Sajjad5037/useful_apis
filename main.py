@@ -4154,6 +4154,163 @@ Improved Essay:
     )
 
 
+from fastapi import FastAPI, UploadFile, File, Form, Request, Depends
+from fastapi.responses import JSONResponse
+from typing import List, Optional
+from uuid import uuid4
+import os, io, json
+from datetime import datetime
+from PIL import Image
+import fitz  # PyMuPDF
+from google.cloud import vision
+
+app = FastAPI()
+session_texts = {}
+username_for_interactive_session = None
+
+@app.post("/train-on-images-pdf-ibne-sina")
+async def train_on_pdf(
+    pdfs: List[UploadFile] = File(...),
+    doctorData: Optional[str] = Form(None),
+    request: Request = None,
+    db: Session = Depends(get_db),
+):
+    """Upload PDFs → extract images → OCR → Help student prepare for test → Save to DB"""
+
+    origin = request.headers.get("origin") if request else None
+    cors_headers = {
+        "Access-Control-Allow-Origin": origin if origin else "*",
+        "Access-Control-Allow-Credentials": "true",
+    }
+
+    if not pdfs:
+        return JSONResponse(
+            content={"detail": "No PDFs uploaded"},
+            status_code=400,
+            headers=cors_headers,
+        )
+
+    # Parse doctorData
+    doctor = {}
+    if doctorData:
+        try:
+            doctor = json.loads(doctorData)
+        except json.JSONDecodeError:
+            return JSONResponse(
+                content={"detail": "Invalid doctorData JSON"},
+                status_code=400,
+                headers=cors_headers,
+            )
+
+    global username_for_interactive_session
+    username_for_interactive_session = doctor.get("name") if doctor else None
+
+    # Prepare OCR
+    combined_text = ""
+    output_dir = "/tmp/extracted_images"
+    os.makedirs(output_dir, exist_ok=True)
+    client_vision_api = vision.ImageAnnotatorClient()
+    images_processed = 0
+
+    # Process PDFs
+    for pdf in pdfs:
+        pdf_bytes = await pdf.read()
+        try:
+            pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
+        except Exception as e:
+            print(f"[ERROR] Failed to open PDF {pdf.filename}: {e}")
+            continue
+
+        for page_number in range(len(pdf_document)):
+            page = pdf_document[page_number]
+            image_list = page.get_images(full=True)
+            for img_index, img in enumerate(image_list, start=1):
+                try:
+                    xref = img[0]
+                    base_image = pdf_document.extract_image(xref)
+                    image_bytes = base_image["image"]
+                    image = Image.open(io.BytesIO(image_bytes))
+                except Exception as e:
+                    print(f"[ERROR] Failed to extract image: {e}")
+                    continue
+
+                # OCR
+                try:
+                    vision_image = vision.Image(content=image_bytes)
+                    response = client_vision_api.text_detection(image=vision_image)
+                    texts = response.text_annotations
+                    if texts:
+                        combined_text += texts[0].description.strip() + "\n\n"
+                        images_processed += 1
+                except Exception as e:
+                    print(f"[ERROR] OCR failed: {e}")
+
+    if not combined_text.strip():
+        return JSONResponse(
+            content={"detail": "No text extracted from PDF images"},
+            status_code=400,
+            headers=cors_headers,
+        )
+
+    # ------------------------------------------------
+    # Help student prepare for test (single GPT call)
+    # ------------------------------------------------
+    preparation_prompt = f"""
+You are a class 7 test preparation tutor.
+
+A student has shared the following study material and requested your help to prepare for an upcoming test:
+
+<<<BEGIN STUDY MATERIAL>>>
+{combined_text.strip()}
+<<<END STUDY MATERIAL>>>
+
+1. Acknowledge that you understand the student's request and that you are ready to help them prepare for the test.
+2. Provide concise explanations, key points, and summaries from the text.
+3. Suggest example questions or exercises the student can try.
+4. Keep the content structured, clear, and focused on helping the student succeed in the test.
+5. Do NOT introduce unrelated information.
+"""
+
+    preparation_response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a class 7 test preparation tutor helping a student study effectively."},
+            {"role": "user", "content": preparation_prompt},
+        ],
+        temperature=0.3,
+    )
+
+    prep_text = preparation_response.choices[0].message.content.strip()
+
+    # Log usage
+    if hasattr(preparation_response, "usage"):
+        usage = preparation_response.usage
+        log_to_db(db, username_for_interactive_session, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-mini")
+    else:
+        total_tokens = len(prep_text) // 4
+        log_to_db(db, username_for_interactive_session, total_tokens, 0, total_tokens, "gpt-4o-mini")
+
+    # Save session
+    session_id = str(uuid4())
+    session_texts[session_id] = {
+        "text": combined_text.strip(),
+        "prep_response": prep_text,
+        "images_processed": images_processed,
+    }
+
+    return JSONResponse(
+        content={
+            "status": "success",
+            "session_id": session_id,
+            "images_processed": images_processed,
+            "total_text_length": len(combined_text.strip()),
+            "prep_response": prep_text,
+        },
+        headers=cors_headers,
+    )
+
+
+
 @app.get("/api/dashboard")
 def get_dashboard():
     session = SessionLocal()
@@ -6747,6 +6904,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
