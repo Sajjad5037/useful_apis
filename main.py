@@ -4595,6 +4595,16 @@ async def chat_interactive_tutor(
 
             messages = session_histories[session_id]
             print(f"[DEBUG] Current session message count: {len(messages)}")
+            user_current_message = {
+                "role": "user",
+                "content": (
+                    f"{user_message}\n\n"
+                    "Please provide clear, concise explanations, summaries, or tips based on the study material. "
+                    "Use two newline characters (\\n\\n) after each point for readability. "
+                    "Keep the response under 150 words unless a detailed explanation is explicitly requested. "
+                    "Do not respond to questions unrelated to the provided study material."
+                )
+            }
             messages.append({"role": "user", "content": user_message})
             print(f"[DEBUG] Appended user message to session history")
 
@@ -6782,6 +6792,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
