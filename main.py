@@ -4605,7 +4605,8 @@ async def chat_interactive_tutor(
                     "Do not respond to questions unrelated to the provided study material."
                 )
             }
-            messages.append({"role": "user", "content": user_message})
+            messages.append(user_current_message)
+
             print(f"[DEBUG] Appended user message to session history")
 
         # --- Call OpenAI ---
@@ -6792,6 +6793,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
