@@ -4227,20 +4227,26 @@ async def train_on_pdf_text_only(
 
     # GPT Test Preparation
     preparation_prompt = f"""
-You are a class 7 test preparation tutor.
+You are an interactive class 7 test preparation tutor.
 
-A student has shared the following study material and requested your help to prepare for an upcoming test:
+A student has uploaded the following study material and asked you to help them prepare for a test:
 
 <<<BEGIN STUDY MATERIAL>>>
 {combined_text.strip()}
 <<<END STUDY MATERIAL>>>
 
-1. Acknowledge that you understand the student's request and that you are ready to help them prepare for the test.
-2. Provide concise explanations, key points, and summaries from the text.
-3. Suggest example questions or exercises the student can try.
-4. Keep the content structured, clear, and focused on helping the student succeed in the test.
-5. Do NOT introduce unrelated information.
+Your instructions:
+
+1. First, acknowledge that you understand the student's request and that you are ready to help them prepare for the test.
+2. Interactively guide the student through the material:
+   - Explain concepts briefly and clearly.
+   - Ask the student questions to check their understanding.
+   - Respond to their answers with encouragement or clarification.
+3. Keep the interaction focused on helping the student understand the material and prepare for the test.
+4. At the end, provide a few sample questions (open-ended, true/false, or fill-in-the-blank) that the student can attempt on their own.
+5. Do NOT provide long-winded summaries upfront. Let the student engage with the content interactively.
 """
+
 
     preparation_response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -4636,64 +4642,75 @@ async def chat_interactive_tutor(
 ):
     try:
         print("[DEBUG] Received request:", request)
+
         session_id = request.session_id.strip()
         user_message = request.message.strip()
         print(f"[DEBUG] session_id: {session_id}")
-        print(f"[DEBUG] user_message: {user_message}")
+        print(f"[DEBUG] user_message length: {len(user_message)}")
 
+        # Ensure session exists
         if session_id not in session_texts:
             raise HTTPException(status_code=404, detail="Session ID not found")
 
-        full_text = session_texts[session_id]
-        print(f"[DEBUG] Retrieved full_text of length {len(full_text)}")
+        full_text = session_texts[session_id]["text"]
+        opener_prep_response = session_texts[session_id].get("prep_response", "")
+        print(f"[DEBUG] Retrieved full_text length: {len(full_text)}")
+        print(f"[DEBUG] Opener prep_response length: {len(opener_prep_response)}")
 
-        # --- System message for all sessions ---
+        # --- System message ---
         system_message = {
             "role": "system",
             "content": (
-                "You are a concise and insightful class 7 test preparation tutor.\n"
-                "A student has shared a PDF from their teacher containing study material for an upcoming test.\n"
-                "Your role is to help the student understand, summarize, and review the content for effective test preparation.\n"
-                "Provide clear explanations, key points, and tips based only on the content shared. Do not answer unrelated questions.\n"
-                "After each explanation or tip, insert two newline characters (\\n\\n) for readability.\n"
-                "Keep your responses concise, under 150 words, unless a full detailed explanation is explicitly requested."
+                "You are a concise and interactive class 7 test preparation tutor. "
+                "Your role is to help the student understand the study material, "
+                "summarize key points, and teach interactively. "
+                "After each explanation, ask a short question to check understanding. "
+                "Wait for the student's answer before explaining the next point. "
+                "Focus only on the content provided. "
+                "Use two line breaks after each point for readability. "
+                "Keep responses under 150 words unless a detailed explanation is requested."
             ),
         }
 
-        # --- User intro message (first message context) ---
+        # --- User intro message ---
         user_intro_message = {
             "role": "user",
             "content": (
-                f"Here is the study material shared by the student for their upcoming class 7 test:\n\n{full_text}\n\n"
-                "Please provide clear explanations, summaries, and tips to help the student prepare for the test. "
-                "Keep your responses concise (within 150 words) unless a detailed explanation is requested. "
-                "Use two line breaks after each point for readability. "
-                "Focus only on the content shared and do not answer unrelated questions. "
-                "Now, here is my question:"
+                f"Here is the study material shared by the student for their upcoming test:\n\n{full_text}\n\n"
+                "The student wants you to interactively help them prepare for the test."
             )
         }
 
-        # --- User current message (instructions for AI) ---
+        # --- Current user message ---
         user_current_message = {
             "role": "user",
             "content": (
                 f"{user_message}\n\n"
-                "Please provide clear, concise explanations, summaries, or tips based on the study material. "
-                "Use two newline characters (\\n\\n) after each point for readability. "
-                "Keep the response under 150 words unless a detailed explanation is explicitly requested. "
-                "Do not respond to questions unrelated to the provided study material."
+                "Please respond interactively, provide explanations, key points, and ask questions to check understanding. "
+                "Do not answer unrelated questions."
             )
         }
 
         # --- Initialize or update session history ---
         if request.first_message or session_id not in session_histories:
-            session_histories[session_id] = [system_message, user_intro_message, user_current_message]
+            # Include opener AI response as first assistant message for continuity
+            session_histories[session_id] = [
+                system_message,
+                user_intro_message,
+            ]
+            if opener_prep_response:
+                session_histories[session_id].append(
+                    {"role": "assistant", "content": opener_prep_response}
+                )
+                print("[DEBUG] Added opener prep_response to session history")
+
+            session_histories[session_id].append(user_current_message)
             messages = session_histories[session_id]
-            print(f"[DEBUG] Initialized session_histories[{session_id}] with messages")
+            print(f"[DEBUG] Initialized session history with {len(messages)} messages")
         else:
             messages = session_histories[session_id]
             messages.append(user_current_message)
-            print(f"[DEBUG] Appended user_current_message to session history")
+            print(f"[DEBUG] Appended user_current_message. Total messages now: {len(messages)}")
 
         # --- Call OpenAI ---
         model_name = "gpt-3.5-turbo"
@@ -4709,7 +4726,7 @@ async def chat_interactive_tutor(
         print(f"[DEBUG] OpenAI response received, reply length: {len(reply)}")
         print(f"[DEBUG] Token usage: {usage}")
 
-        # --- Store Cost Info ---
+        # --- Store cost info ---
         cost = calculate_cost(model_name, usage.prompt_tokens, usage.completion_tokens)
         cost_record = CostPerInteraction(
             username=username_for_interactive_session,
@@ -4723,6 +4740,7 @@ async def chat_interactive_tutor(
         try:
             db.add(cost_record)
             db.commit()
+            print("[DEBUG] Cost record saved to DB")
         except SQLAlchemyError as e:
             db.rollback()
             print(f"[ERROR] Failed to save cost_record: {e}")
@@ -4739,6 +4757,7 @@ async def chat_interactive_tutor(
     except Exception as e:
         print(f"[ERROR] Internal server error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
+
 
 
 
@@ -6876,6 +6895,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
