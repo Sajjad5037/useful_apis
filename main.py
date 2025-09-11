@@ -4500,7 +4500,6 @@ async def chat_interactive_tutor(
         print(f"[ERROR] Internal server error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
 
-
 @app.post("/chat_interactive_tutor_Ibe_Sina", response_model=ChatResponse)
 async def chat_interactive_tutor(
     request: ChatRequest_CSS,
@@ -4514,100 +4513,58 @@ async def chat_interactive_tutor(
         print(f"[DEBUG] user_message: {user_message}")
 
         if session_id not in session_texts:
-            print(f"[ERROR] Session ID {session_id} not found in session_texts")
             raise HTTPException(status_code=404, detail="Session ID not found")
 
         full_text = session_texts[session_id]
         print(f"[DEBUG] Retrieved full_text of length {len(full_text)}")
 
-        if request.first_message:
-            print("[DEBUG] Processing first message of the session")
+        # --- System message for all sessions ---
+        system_message = {
+            "role": "system",
+            "content": (
+                "You are a concise and insightful class 7 test preparation tutor.\n"
+                "A student has shared a PDF from their teacher containing study material for an upcoming test.\n"
+                "Your role is to help the student understand, summarize, and review the content for effective test preparation.\n"
+                "Provide clear explanations, key points, and tips based only on the content shared. Do not answer unrelated questions.\n"
+                "After each explanation or tip, insert two newline characters (\\n\\n) for readability.\n"
+                "Keep your responses concise, under 150 words, unless a full detailed explanation is explicitly requested."
+            ),
+        }
 
-            system_message = {
-                "role": "system",
-                "content": (
-                    "You are a concise and insightful class 7 test preparation tutor.\n"
-                    "A student has shared a PDF from their teacher containing the study material for an upcoming test.\n"
-                    "Your role is to help the student understand, summarize, and review the content for effective test preparation.\n"
-                    "Provide clear explanations, key points, and tips based only on the content shared. Do not answer unrelated questions.\n"
-                    "After each explanation or tip, insert two newline characters (\\n\\n) for readability.\n"
-                    "Keep your responses concise, under 150 words, unless the student explicitly asks for a full detailed explanation."
-                ),
-            }
+        # --- User intro message (first message context) ---
+        user_intro_message = {
+            "role": "user",
+            "content": (
+                f"Here is the study material shared by the student for their upcoming class 7 test:\n\n{full_text}\n\n"
+                "Please provide clear explanations, summaries, and tips to help the student prepare for the test. "
+                "Keep your responses concise (within 150 words) unless a detailed explanation is requested. "
+                "Use two line breaks after each point for readability. "
+                "Focus only on the content shared and do not answer unrelated questions. "
+                "Now, here is my question:"
+            )
+        }
 
-            user_intro_message = {
-                "role": "user",
-                "content": (
-                    f"Here is the study material shared by the student for their upcoming class 7 test:\n\n{full_text}\n\n"
-                    "Please provide clear explanations, summaries, and tips to help the student prepare for the test. "
-                    "Keep your responses concise (within 150 words) unless a detailed explanation is requested. "
-                    "Use two line breaks after each point for readability. "
-                    "Focus only on the content shared and do not answer unrelated questions. "
-                    "Now, here is my question:"
-                )
-            }
+        # --- User current message (instructions for AI) ---
+        user_current_message = {
+            "role": "user",
+            "content": (
+                f"{user_message}\n\n"
+                "Please provide clear, concise explanations, summaries, or tips based on the study material. "
+                "Use two newline characters (\\n\\n) after each point for readability. "
+                "Keep the response under 150 words unless a detailed explanation is explicitly requested. "
+                "Do not respond to questions unrelated to the provided study material."
+            )
+        }
 
-            user_current_message = {
-                "role": "user",
-                "content": (
-                    f"{user_message}\n\n"
-                    "Please provide clear, concise explanations, summaries, or tips based on the study material. "
-                    "Use two newline characters (\\n\\n) after each point for readability. "
-                    "Keep the response under 150 words unless a detailed explanation is explicitly requested. "
-                    "Do not respond to questions unrelated to the provided study material."
-                )
-            }
-
-            messages = [system_message, user_intro_message, user_current_message]
-            session_histories[session_id] = messages.copy()
-            print(f"[DEBUG] Initialized session_histories[{session_id}] with messages")
-
-        else:
-            if session_id not in session_histories:
-                print(f"[WARN] Session history missing for session ID {session_id}. Initializing with intro + full_text.")
-            
-                system_message = {
-                    "role": "system",
-                    "content": (
-                        "You are a concise and insightful class 7 test preparation tutor.\n"
-                        "A student has shared a PDF from their teacher containing the study material for an upcoming test.\n"
-                        "Your role is to help the student understand, summarize, and review the content for effective test preparation.\n"
-                        "Provide clear explanations, key points, and tips based only on the content shared. Do not answer unrelated questions.\n"
-                        "After each explanation or tip, insert two newline characters (\\n\\n) for readability.\n"
-                        "Keep your responses concise, under 150 words, unless the student explicitly asks for a full detailed explanation."
-                    ),
-                }
-
-            
-                user_intro_message = {
-                    "role": "user",
-                    "content": (
-                        f"Here is the study material shared by the student for their upcoming class 7 test:\n\n{full_text}\n\n"
-                        "Please provide clear explanations, summaries, and tips to help the student prepare for the test. "
-                        "Keep your responses concise (within 150 words) unless a detailed explanation is requested. "
-                        "Use two line breaks after each point for readability. "
-                        "Focus only on the content shared and do not answer unrelated questions. "
-                        "Now, here is my question:"
-                    )
-                }
-            
-                session_histories[session_id] = [system_message, user_intro_message]
-
+        # --- Initialize or update session history ---
+        if request.first_message or session_id not in session_histories:
+            session_histories[session_id] = [system_message, user_intro_message, user_current_message]
             messages = session_histories[session_id]
-            print(f"[DEBUG] Current session message count: {len(messages)}")
-            user_current_message = {
-                "role": "user",
-                "content": (
-                    f"{user_message}\n\n"
-                    "Please provide clear, concise explanations, summaries, or tips based on the study material. "
-                    "Use two newline characters (\\n\\n) after each point for readability. "
-                    "Keep the response under 150 words unless a detailed explanation is explicitly requested. "
-                    "Do not respond to questions unrelated to the provided study material."
-                )
-            }
+            print(f"[DEBUG] Initialized session_histories[{session_id}] with messages")
+        else:
+            messages = session_histories[session_id]
             messages.append(user_current_message)
-
-            print(f"[DEBUG] Appended user message to session history")
+            print(f"[DEBUG] Appended user_current_message to session history")
 
         # --- Call OpenAI ---
         model_name = "gpt-3.5-turbo"
@@ -4625,8 +4582,6 @@ async def chat_interactive_tutor(
 
         # --- Store Cost Info ---
         cost = calculate_cost(model_name, usage.prompt_tokens, usage.completion_tokens)
-        print(f"[DEBUG] Calculated cost: ${cost:.6f}")
-
         cost_record = CostPerInteraction(
             username=username_for_interactive_session,
             model=model_name,
@@ -4636,27 +4591,26 @@ async def chat_interactive_tutor(
             cost_usd=cost,
             created_at=datetime.utcnow()
         )
-
         try:
             db.add(cost_record)
             db.commit()
-            print("[DEBUG] Cost record saved to database")
         except SQLAlchemyError as e:
             db.rollback()
-            print(f"[ERROR] Failed to save cost_record to database: {e}")
+            print(f"[ERROR] Failed to save cost_record: {e}")
 
-        # --- Update session history and return ---
+        # --- Update session history with assistant reply ---
         session_histories[session_id].append({"role": "assistant", "content": reply})
         print("[DEBUG] Appended assistant reply to session history")
+
         return ChatResponse(reply=reply)
 
     except HTTPException:
-        # Re-raise HTTPExceptions so FastAPI can handle them normally
         raise
 
     except Exception as e:
         print(f"[ERROR] Internal server error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
+
 
 
 @app.post("/api/pdf_chatbot")
@@ -6793,6 +6747,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
