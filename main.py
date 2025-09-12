@@ -223,6 +223,15 @@ s3 = boto3.client(
 )
 
 
+class SessionSummary(Base):
+    __tablename__ = "session_summary"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    session_id = Column(String(100), nullable=False, index=True)  # session identifier
+    summary = Column(Text, nullable=False)  # GPT-generated session summary
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class StudentEvaluation(Base):
     __tablename__ = "student_evaluation"
 
@@ -4637,21 +4646,24 @@ async def chat_interactive_tutor(
         print(f"[ERROR] Internal server error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
 
+
 @app.post("/chat_interactive_tutor_Ibe_Sina", response_model=ChatResponse)
 async def chat_interactive_tutor(
     request: ChatRequest_CSS,
     db: Session = Depends(get_db)
 ):
     try:
-        print("[DEBUG] Received request:", request)
+        print("[DEBUG] ----- Received new request -----")
+        print(f"[DEBUG] Request data: {request}")
 
         session_id = request.session_id.strip()
         user_message = request.message.strip()
-        print(f"[DEBUG] session_id: {session_id}")
+        print(f"[DEBUG] session_id: '{session_id}'")
         print(f"[DEBUG] user_message length: {len(user_message)}")
 
         # Ensure session exists
         if session_id not in session_texts:
+            print(f"[ERROR] Session ID '{session_id}' not found in session_texts")
             raise HTTPException(status_code=404, detail="Session ID not found")
 
         full_text = session_texts[session_id]["text"]
@@ -4695,7 +4707,6 @@ async def chat_interactive_tutor(
 
         # --- Initialize or update session history ---
         if request.first_message or session_id not in session_histories:
-            # Include opener AI response as first assistant message for continuity
             session_histories[session_id] = [
                 system_message,
                 user_intro_message,
@@ -4714,7 +4725,91 @@ async def chat_interactive_tutor(
             messages.append(user_current_message)
             print(f"[DEBUG] Appended user_current_message. Total messages now: {len(messages)}")
 
-        # --- Call OpenAI ---
+        # --- Check for interaction limit ---
+        assistant_messages = [msg for msg in messages if msg["role"] == "assistant"]
+        print(f"[DEBUG] Current assistant messages count: {len(assistant_messages)}")
+
+        MAX_ASSISTANT_MESSAGES = 10
+        if len(assistant_messages) >= MAX_ASSISTANT_MESSAGES:
+            final_reply = "Your session has ended."
+            print("[DEBUG] Interaction limit reached. Preparing session summary...")
+
+            # --- Prepare conversation text ---
+            conversation_text = "\n".join(
+                f"{msg['role']}: {msg['content']}" for msg in messages if msg["role"] != "system"
+            )
+            print(f"[DEBUG] Conversation text length: {len(conversation_text)}")
+
+            # --- Prepare summary prompt ---
+            summary_prompt = (
+                f"Please generate a concise summary of the following conversation between a student and a tutor. "
+                f"The summary should follow this pattern: "
+                f"'The student and I talked about ___ and the student took interest and is likely to do well in the exam' "
+                f"or the opposite if the student struggled.\n\nConversation:\n{conversation_text}"
+            )
+            print("[DEBUG] Summary prompt prepared")
+
+            try:
+                # --- Call OpenAI for summary ---
+                summary_response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are an educational AI tutor."},
+                        {"role": "user", "content": summary_prompt}
+                    ],
+                    temperature=0.3,
+                    max_tokens=200
+                )
+
+                summary_text = summary_response.choices[0].message.content.strip()
+                usage = summary_response.usage
+                print(f"[DEBUG] Generated session summary: {summary_text}")
+                print(f"[DEBUG] Summary token usage: {usage}")
+
+                # --- Store cost info for summary generation ---
+                cost = calculate_cost("gpt-4o-mini", usage.prompt_tokens, usage.completion_tokens)
+                print(f"[DEBUG] Calculated cost for summary: ${cost:.6f}")
+
+                cost_record = CostPerInteraction(
+                    username=username_for_interactive_session,
+                    model="gpt-4o-mini",
+                    prompt_tokens=usage.prompt_tokens,
+                    completion_tokens=usage.completion_tokens,
+                    total_tokens=usage.total_tokens,
+                    cost_usd=cost,
+                    created_at=datetime.utcnow()
+                )
+
+                try:
+                    db.add(cost_record)
+                    db.commit()
+                    print("[DEBUG] Cost record for summary saved to database")
+                except SQLAlchemyError as e:
+                    db.rollback()
+                    print(f"[ERROR] Failed to save cost_record for summary: {e}")
+
+                # --- Save summary in DB ---
+                summary_record = SessionSummary(
+                    session_id=session_id,
+                    username=username_for_interactive_session,
+                    summary=summary_text,
+                    created_at=datetime.utcnow()
+                )
+                try:
+                    db.add(summary_record)
+                    db.commit()
+                    print("[DEBUG] Session summary saved to DB")
+                except SQLAlchemyError as e:
+                    db.rollback()
+                    print(f"[ERROR] Failed to save session summary: {e}")
+
+            except Exception as e:
+                print(f"[ERROR] Failed to generate session summary via OpenAI: {e}")
+
+            print("[DEBUG] Returning final reply to user (session ended)")
+            return ChatResponse(reply=final_reply)
+
+        # --- Call OpenAI for normal interaction ---
         model_name = "gpt-4o-mini"
         print(f"[DEBUG] Sending request to OpenAI model {model_name} with {len(messages)} messages")
         response = client.chat.completions.create(
@@ -4730,6 +4825,8 @@ async def chat_interactive_tutor(
 
         # --- Store cost info ---
         cost = calculate_cost(model_name, usage.prompt_tokens, usage.completion_tokens)
+        print(f"[DEBUG] Calculated cost: ${cost:.6f}")
+
         cost_record = CostPerInteraction(
             username=username_for_interactive_session,
             model=model_name,
@@ -4749,17 +4846,18 @@ async def chat_interactive_tutor(
 
         # --- Update session history with assistant reply ---
         session_histories[session_id].append({"role": "assistant", "content": reply})
-        print("[DEBUG] Appended assistant reply to session history")
+        print(f"[DEBUG] Appended assistant reply to session history. Total messages now: {len(session_histories[session_id])}")
 
+        print("[DEBUG] Returning normal reply to user")
         return ChatResponse(reply=reply)
 
-    except HTTPException:
+    except HTTPException as he:
+        print(f"[ERROR] HTTPException: {he.detail}")
         raise
 
     except Exception as e:
         print(f"[ERROR] Internal server error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
-
 
 
 
@@ -6897,6 +6995,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
