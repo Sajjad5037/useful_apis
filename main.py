@@ -337,6 +337,12 @@ class ChatRequest_CSS(BaseModel):
     message: str
     first_message: bool = False
 
+class ChatRequest_Ibne_Sina(BaseModel):
+    session_id: str
+    username: str  # Added username field
+    message: str
+    first_message: bool = False
+
 class CommonMistake(Base):
     __tablename__ = "mistake_pattern_essay"
 
@@ -4658,7 +4664,7 @@ async def chat_interactive_tutor(
 
 @app.post("/chat_interactive_tutor_Ibe_Sina", response_model=ChatResponse)
 async def chat_interactive_tutor(
-    request: ChatRequest_CSS,
+    request: ChatRequest_Ibne_Sina,
     db: Session = Depends(get_db)
 ):
     try:
@@ -4780,7 +4786,7 @@ async def chat_interactive_tutor(
                 print(f"[DEBUG] Calculated cost for summary: ${cost:.6f}")
 
                 cost_record = CostPerInteraction(
-                    username=username_for_interactive_session,
+                    username=request.username,  # <-- comma added here
                     model="gpt-4o-mini",
                     prompt_tokens=usage.prompt_tokens,
                     completion_tokens=usage.completion_tokens,
@@ -4800,7 +4806,7 @@ async def chat_interactive_tutor(
                 # --- Save summary in DB ---
                 summary_record = SessionSummary2(
                     session_id=session_id,
-                    username=username_for_interactive_session,
+                    username=request.username,  # use request.username to get the username from the request
                     summary=summary_text,
                     created_at=datetime.utcnow()
                 )
@@ -7004,6 +7010,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
