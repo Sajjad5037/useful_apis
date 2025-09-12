@@ -4663,8 +4663,10 @@ async def chat_interactive_tutor(
 
 
 @app.post("/chat_interactive_tutor_Ibe_Sina", response_model=ChatResponse)
-async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = Depends(get_db)):
-    final_reply = "Sorry, something went wrong. Please try again."
+async def chat_interactive_tutor(
+    request: ChatRequest_Ibne_Sina,
+    db: Session = Depends(get_db)
+):
     try:
         print("[DEBUG] ----- Received new request -----")
         print(f"[DEBUG] Request data: {request}")
@@ -4675,47 +4677,46 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
         print(f"[DEBUG] user_message length: {len(user_message)}")
 
         if session_id not in session_texts:
-            print(f"[ERROR] Session ID '{session_id}' not found in session_texts")
+            print(f"[ERROR] Session ID '{session_id}' not found")
             raise HTTPException(status_code=404, detail="Session ID not found")
 
         full_text = session_texts[session_id]["text"]
         opener_prep_response = session_texts[session_id].get("prep_response", "")
-        print(f"[DEBUG] Retrieved full_text length: {len(full_text)}")
-        print(f"[DEBUG] Opener prep_response length: {len(opener_prep_response)}")
 
-        # --- Messages setup ---
+        # --- System and user messages ---
         system_message = {
             "role": "system",
             "content": (
-                "You are a concise and interactive class 7 test preparation tutor. "
-                "Your role is to help the student understand the study material, "
-                "summarize key points, and teach interactively. "
-                "After each explanation, ask a short question to check understanding. "
-                "Wait for the student's answer before explaining the next point."
-            )
+                "You are a concise, interactive tutor. Help the student understand the study material, "
+                "ask questions to check understanding, but do NOT provide summaries yet."
+            ),
         }
 
         user_intro_message = {
             "role": "user",
-            "content": f"Here is the study material shared by the student:\n\n{full_text}\n\nHelp them interactively prepare."
+            "content": f"Study material:\n{full_text}\nThe student wants interactive help."
         }
 
         user_current_message = {
             "role": "user",
-            "content": f"{user_message}\n\nRespond interactively with explanations, key points, and check understanding."
+            "content": f"{user_message}\nRespond interactively with explanations and questions only."
         }
 
         # --- Initialize or update session history ---
         if request.first_message or session_id not in session_histories:
-            session_histories[session_id] = [system_message, user_intro_message]
+            session_histories[session_id] = [
+                system_message,
+                user_intro_message,
+            ]
             if opener_prep_response:
-                session_histories[session_id].append({"role": "assistant", "content": opener_prep_response})
+                session_histories[session_id].append(
+                    {"role": "assistant", "content": opener_prep_response}
+                )
             session_histories[session_id].append(user_current_message)
+            messages = session_histories[session_id]
         else:
-            session_histories[session_id].append(user_current_message)
-
-        messages = session_histories[session_id]
-        print(f"[DEBUG] Total messages in session: {len(messages)}")
+            messages = session_histories[session_id]
+            messages.append(user_current_message)
 
         # --- Interaction limit check ---
         assistant_messages = [msg for msg in messages if msg["role"] == "assistant"]
@@ -4723,30 +4724,32 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
 
         if len(assistant_messages) >= MAX_ASSISTANT_MESSAGES:
             final_reply = "Your session has ended."
+            print("[DEBUG] Interaction limit reached. Preparing summary...")
 
             # --- Prepare conversation text ---
             conversation_text = "\n".join(
                 f"{msg['role']}: {msg['content']}" for msg in messages if msg["role"] != "system"
             )
-            print(f"[DEBUG] Conversation text length: {len(conversation_text)}")
 
-            # --- Summary prompt ---
+            # --- Strict one-line summary prompt ---
             summary_prompt = (
-                f"Generate a single sentence summary of the following conversation between a student and a tutor. "
-                f"Focus only on the student's understanding, engagement, and likely exam performance. "
+                f"Read the following conversation between a student and a tutor. "
                 f"Do NOT include any lesson content. "
-                f"Follow exactly one of these formats:\n"
-                f"1. 'The student and I talked about ___ and the student took interest and is likely to do well in the exam.'\n"
-                f"2. 'The student and I talked about ___ and the student struggled to understand and may need further practice.'\n\n"
+                f"Focus ONLY on evaluating the student's understanding, engagement, and likely exam performance. "
+                f"Respond in ONE SINGLE SENTENCE in this exact style:\n"
+                f"'The student and I talked about ___ and the student took interest and is likely to do well in the exam.' "
+                f"or\n"
+                f"'The student and I talked about ___ and the student struggled to understand and may need further practice.'\n\n"
                 f"Conversation:\n{conversation_text}"
             )
+
             print("[DEBUG] Summary prompt prepared")
 
             try:
                 summary_response = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[
-                        {"role": "system", "content": "You are an educational tutor. Respond only with a single sentence summary about the student's understanding and engagement. Do not repeat any lesson content."},
+                        {"role": "system", "content": "You are an educational tutor. Only produce ONE sentence summary evaluating the student. Do not include lesson content."},
                         {"role": "user", "content": summary_prompt}
                     ],
                     temperature=0,
@@ -4757,7 +4760,7 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
                 usage = summary_response.usage
                 print(f"[DEBUG] Generated session summary: {summary_text}")
 
-                # --- Save cost ---
+                # --- Store summary cost ---
                 cost = calculate_cost("gpt-4o-mini", usage.prompt_tokens, usage.completion_tokens)
                 cost_record = CostPerInteraction(
                     username=request.username,
@@ -4770,8 +4773,9 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
                 )
                 db.add(cost_record)
                 db.commit()
+                print("[DEBUG] Cost record saved to DB")
 
-                # --- Save summary ---
+                # --- Save summary in DB ---
                 summary_record = SessionSummary2(
                     session_id=session_id,
                     username=request.username,
@@ -4783,45 +4787,36 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
                 print("[DEBUG] Session summary saved to DB")
 
             except Exception as e:
-                db.rollback()
-                print(f"[ERROR] Failed to generate/save session summary: {e}")
+                print(f"[ERROR] Failed to generate session summary via OpenAI: {e}")
 
             return ChatResponse(reply=final_reply)
 
-        # --- Normal AI interaction ---
-        model_name = "gpt-4o-mini"
-        response = client.chat.completions.create(model=model_name, messages=messages, temperature=0.5)
+        # --- Normal interaction with student ---
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            temperature=0.5,
+        )
+
         reply = response.choices[0].message.content.strip()
         usage = response.usage
-        print(f"[DEBUG] OpenAI reply length: {len(reply)}")
 
-        # --- Store cost ---
-        cost = calculate_cost(model_name, usage.prompt_tokens, usage.completion_tokens)
+        cost = calculate_cost("gpt-4o-mini", usage.prompt_tokens, usage.completion_tokens)
         cost_record = CostPerInteraction(
             username=request.username,
-            model=model_name,
+            model="gpt-4o-mini",
             prompt_tokens=usage.prompt_tokens,
             completion_tokens=usage.completion_tokens,
             total_tokens=usage.total_tokens,
             cost_usd=cost,
             created_at=datetime.utcnow()
         )
-        try:
-            db.add(cost_record)
-            db.commit()
-        except SQLAlchemyError as e:
-            db.rollback()
-            print(f"[ERROR] Failed to save cost_record: {e}")
+        db.add(cost_record)
+        db.commit()
+        print("[DEBUG] Cost record saved to DB")
 
-        # --- Update session history ---
         session_histories[session_id].append({"role": "assistant", "content": reply})
-        print(f"[DEBUG] Appended assistant reply. Total messages now: {len(session_histories[session_id])}")
-
         return ChatResponse(reply=reply)
-
-    except HTTPException as he:
-        print(f"[ERROR] HTTPException: {he.detail}")
-        raise
 
     except Exception as e:
         print(f"[ERROR] Internal server error: {e}")
@@ -6963,6 +6958,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
