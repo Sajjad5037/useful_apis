@@ -232,6 +232,14 @@ class SessionSummary(Base):
     summary = Column(Text, nullable=False)                        # GPT-generated session summary
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class SessionSummary2(Base):
+    __tablename__ = "session_summary2"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    session_id = Column(String(100), nullable=False, index=True)  # session identifier
+    username = Column(String(100), nullable=False, index=True)    # user associated with the session
+    summary = Column(Text, nullable=False)                        # GPT-generated session summary
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class StudentEvaluation(Base):
     __tablename__ = "student_evaluation"
@@ -4790,7 +4798,7 @@ async def chat_interactive_tutor(
                     print(f"[ERROR] Failed to save cost_record for summary: {e}")
 
                 # --- Save summary in DB ---
-                summary_record = SessionSummary(
+                summary_record = SessionSummary2(
                     session_id=session_id,
                     username=username_for_interactive_session,
                     summary=summary_text,
@@ -6996,6 +7004,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
