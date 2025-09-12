@@ -4698,6 +4698,43 @@ def generate_one_line_summary(conversation_text: str) -> tuple[str, dict]:
 
     return summary_text, usage
 
+def generate_detailed_summary(conversation_text: str, study_material: str) -> tuple[str, dict]:
+    """
+    Evaluates the student's understanding of key concepts from the provided study material
+    based on the conversation, and returns a one-sentence summary of their performance.
+    """
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are an evaluator. Your ONLY task is to analyze which specific topics from the study material "
+                    "the student clearly understood and which ones they struggled with, based on the conversation.\n\n"
+                    "If the student did NOT show clear understanding of any topic, say exactly:\n"
+                    "\"The student is still in the learning phase and has not yet demonstrated understanding of any major topics.\"\n\n"
+                    "Otherwise, use this format:\n"
+                    "\"The student demonstrated a strong grasp of [topics they understood] but struggled with [topics they did not understand].\"\n\n"
+                    "Do NOT add extra comments or teaching content."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Study material:\n{study_material}\n\n"
+                    f"Conversation:\n{conversation_text}\n\n"
+                    "Respond with only ONE of the allowed sentence formats."
+                ),
+            },
+        ],
+        temperature=0,
+        max_tokens=120
+    )
+
+    summary_text = response.choices[0].message.content.strip()
+    usage = response.usage
+    return summary_text, usage
+
 
 
 @app.post("/chat_interactive_tutor_Ibe_Sina", response_model=ChatResponse)
@@ -4772,7 +4809,9 @@ async def chat_interactive_tutor(
             print(f"[DEBUG] Conversation text preview: {conversation_text[:200]}...")
             try:
                 # Generate single-sentence summary
-                summary_text, usage = generate_one_line_summary(conversation_text)
+                full_text = session_texts[session_id]["text"]  # already exists above
+
+                summary_text, usage = generate_detailed_summary(conversation_text, full_text)
 
                 print(f"[DEBUG] Generated session summary: {summary_text}")
 
@@ -6979,6 +7018,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
