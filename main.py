@@ -4666,24 +4666,37 @@ def generate_one_line_summary(conversation_text: str) -> tuple[str, dict]:
     Generates a strict one-line summary of the student's understanding, engagement, 
     and likely exam performance from the conversation text.
 
+    The summary evaluates both actual understanding (correctness, reasoning) and engagement,
+    and chooses the correct template accordingly.
+
     Returns:
         summary_text (str): The single sentence summary.
         usage (dict): Token usage returned by OpenAI for cost calculation.
     """
     prompt = (
-        f"Generate a single sentence summary of the following conversation between a student and a tutor. "
-        f"Focus only on the student's understanding, engagement, and likely exam performance. "
+        f"Read the following conversation between a student and a tutor. "
+        f"Focus ONLY on evaluating the student's actual understanding of the material "
+        f"(not just enthusiasm), engagement, and likely exam performance. "
         f"Do NOT include any lesson content. "
         f"Use exactly one of these formats:\n"
         f"1. 'The student and I talked about ___ and the student took interest and is likely to do well in the exam.'\n"
         f"2. 'The student and I talked about ___ and the student struggled to understand and may need further practice.'\n\n"
+        f"Important: If the student is enthusiastic but shows minimal correct understanding or reasoning, "
+        f"use format 2 ('struggled to understand').\n\n"
         f"Conversation:\n{conversation_text}"
     )
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are an educational tutor. Only produce ONE SENTENCE summary evaluating the student. Do not include lesson content."},
+            {
+                "role": "system",
+                "content": (
+                    "You are an educational tutor. Generate a ONE SENTENCE summary evaluating the student. "
+                    "Consider both actual understanding and engagement. "
+                    "Do not include lesson content."
+                )
+            },
             {"role": "user", "content": prompt}
         ],
         temperature=0,
@@ -6974,6 +6987,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
