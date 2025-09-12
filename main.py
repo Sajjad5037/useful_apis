@@ -228,7 +228,8 @@ class SessionSummary(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     session_id = Column(String(100), nullable=False, index=True)  # session identifier
-    summary = Column(Text, nullable=False)  # GPT-generated session summary
+    username = Column(String(100), nullable=False, index=True)    # user associated with the session
+    summary = Column(Text, nullable=False)                        # GPT-generated session summary
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -4729,7 +4730,7 @@ async def chat_interactive_tutor(
         assistant_messages = [msg for msg in messages if msg["role"] == "assistant"]
         print(f"[DEBUG] Current assistant messages count: {len(assistant_messages)}")
 
-        MAX_ASSISTANT_MESSAGES = 10
+        MAX_ASSISTANT_MESSAGES = 5
         if len(assistant_messages) >= MAX_ASSISTANT_MESSAGES:
             final_reply = "Your session has ended."
             print("[DEBUG] Interaction limit reached. Preparing session summary...")
@@ -6995,6 +6996,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
