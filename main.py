@@ -4757,78 +4757,77 @@ async def chat_interactive_tutor(
 
             # --- Prepare summary prompt ---
             summary_prompt = (
-                f"Please generate a concise evaluation of the following conversation between a student and a tutor. "
-                f"The summary should be one sentence in this format: "
-                f"'The student and I talked about ___ and the student took interest and is likely to do well in the exam' "
-                f"or the opposite if the student struggled or was not attentive.\n\n"
-                f"Conversation:\n{conversation_text}"
+            f"Generate a single sentence summary of the following conversation between a student and a tutor. "
+            f"Focus only on the student's understanding, engagement, and likely exam performance. "
+            f"Do NOT include any lesson content. "
+            f"Follow exactly one of these formats:\n"
+            f"1. 'The student and I talked about ___ and the student took interest and is likely to do well in the exam.'\n"
+            f"2. 'The student and I talked about ___ and the student struggled to understand and may need further practice.'\n\n"
+            f"Conversation:\n{conversation_text}"
+        )
+        
+        print("[DEBUG] Summary prompt prepared")
+        
+        try:
+            # --- Call OpenAI for summary ---
+            summary_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are an educational tutor. Respond only with a two sentence summary about the student's understanding and engagement. Do not repeat any lesson content."},
+                    {"role": "user", "content": summary_prompt}
+                ],
+                temperature=0,   # strict, low creativity
+                max_tokens=100   # keep it short for one sentence
             )
-
-
-
-
-
-            print("[DEBUG] Summary prompt prepared")
-
+        
+            summary_text = summary_response.choices[0].message.content.strip()
+            usage = summary_response.usage
+            print(f"[DEBUG] Generated session summary: {summary_text}")
+            print(f"[DEBUG] Summary token usage: {usage}")
+        
+            # --- Store cost info ---
+            cost = calculate_cost("gpt-4o-mini", usage.prompt_tokens, usage.completion_tokens)
+            print(f"[DEBUG] Calculated cost for summary: ${cost:.6f}")
+        
+            cost_record = CostPerInteraction(
+                username=request.username,
+                model="gpt-4o-mini",
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                total_tokens=usage.total_tokens,
+                cost_usd=cost,
+                created_at=datetime.utcnow()
+            )
+        
             try:
-                # --- Call OpenAI for summary ---
-                summary_response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "You are an educational AI tutor."},
-                        {"role": "user", "content": summary_prompt}
-                    ],
-                    temperature=0.3,
-                    max_tokens=200
-                )
-
-                summary_text = summary_response.choices[0].message.content.strip()
-                usage = summary_response.usage
-                print(f"[DEBUG] Generated session summary: {summary_text}")
-                print(f"[DEBUG] Summary token usage: {usage}")
-
-                # --- Store cost info for summary generation ---
-                cost = calculate_cost("gpt-4o-mini", usage.prompt_tokens, usage.completion_tokens)
-                print(f"[DEBUG] Calculated cost for summary: ${cost:.6f}")
-
-                cost_record = CostPerInteraction(
-                    username=request.username,  # <-- comma added here
-                    model="gpt-4o-mini",
-                    prompt_tokens=usage.prompt_tokens,
-                    completion_tokens=usage.completion_tokens,
-                    total_tokens=usage.total_tokens,
-                    cost_usd=cost,
-                    created_at=datetime.utcnow()
-                )
-
-                try:
-                    db.add(cost_record)
-                    db.commit()
-                    print("[DEBUG] Cost record for summary saved to database")
-                except SQLAlchemyError as e:
-                    db.rollback()
-                    print(f"[ERROR] Failed to save cost_record for summary: {e}")
-
-                # --- Save summary in DB ---
-                summary_record = SessionSummary2(
-                    session_id=session_id,
-                    username=request.username,  # use request.username to get the username from the request
-                    summary=summary_text,
-                    created_at=datetime.utcnow()
-                )
-                try:
-                    db.add(summary_record)
-                    db.commit()
-                    print("[DEBUG] Session summary saved to DB")
-                except SQLAlchemyError as e:
-                    db.rollback()
-                    print(f"[ERROR] Failed to save session summary: {e}")
-
-            except Exception as e:
-                print(f"[ERROR] Failed to generate session summary via OpenAI: {e}")
-
-            print("[DEBUG] Returning final reply to user (session ended)")
-            return ChatResponse(reply=final_reply)
+                db.add(cost_record)
+                db.commit()
+                print("[DEBUG] Cost record for summary saved to database")
+            except SQLAlchemyError as e:
+                db.rollback()
+                print(f"[ERROR] Failed to save cost_record for summary: {e}")
+        
+            # --- Save summary in DB ---
+            summary_record = SessionSummary2(
+                session_id=session_id,
+                username=request.username,
+                summary=summary_text,
+                created_at=datetime.utcnow()
+            )
+        
+            try:
+                db.add(summary_record)
+                db.commit()
+                print("[DEBUG] Session summary saved to DB")
+            except SQLAlchemyError as e:
+                db.rollback()
+                print(f"[ERROR] Failed to save session summary: {e}")
+        
+        except Exception as e:
+            print(f"[ERROR] Failed to generate session summary via OpenAI: {e}")
+        
+        print("[DEBUG] Returning final reply to user (session ended)")
+        return ChatResponse(reply=final_reply)
 
         # --- Call OpenAI for normal interaction ---
         model_name = "gpt-4o-mini"
@@ -7016,6 +7015,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
