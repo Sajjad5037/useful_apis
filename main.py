@@ -4663,10 +4663,8 @@ async def chat_interactive_tutor(
 
 
 @app.post("/chat_interactive_tutor_Ibe_Sina", response_model=ChatResponse)
-async def chat_interactive_tutor(
-    request: ChatRequest_Ibne_Sina,
-    db: Session = Depends(get_db)
-):
+async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = Depends(get_db)):
+    final_reply = "Sorry, something went wrong. Please try again."
     try:
         print("[DEBUG] ----- Received new request -----")
         print(f"[DEBUG] Request data: {request}")
@@ -4676,7 +4674,6 @@ async def chat_interactive_tutor(
         print(f"[DEBUG] session_id: '{session_id}'")
         print(f"[DEBUG] user_message length: {len(user_message)}")
 
-        # Ensure session exists
         if session_id not in session_texts:
             print(f"[ERROR] Session ID '{session_id}' not found in session_texts")
             raise HTTPException(status_code=404, detail="Session ID not found")
@@ -4686,7 +4683,7 @@ async def chat_interactive_tutor(
         print(f"[DEBUG] Retrieved full_text length: {len(full_text)}")
         print(f"[DEBUG] Opener prep_response length: {len(opener_prep_response)}")
 
-        # --- System message ---
+        # --- Messages setup ---
         system_message = {
             "role": "system",
             "content": (
@@ -4694,60 +4691,38 @@ async def chat_interactive_tutor(
                 "Your role is to help the student understand the study material, "
                 "summarize key points, and teach interactively. "
                 "After each explanation, ask a short question to check understanding. "
-                "Wait for the student's answer before explaining the next point. "
-                "Focus only on the content provided. "
-                "Use two line breaks after each point for readability. "
-                "Keep responses under 150 words unless a detailed explanation is requested."
-            ),
+                "Wait for the student's answer before explaining the next point."
+            )
         }
 
-        # --- User intro message ---
         user_intro_message = {
             "role": "user",
-            "content": (
-                f"Here is the study material shared by the student for their upcoming test:\n\n{full_text}\n\n"
-                "The student wants you to interactively help them prepare for the test."
-            )
+            "content": f"Here is the study material shared by the student:\n\n{full_text}\n\nHelp them interactively prepare."
         }
 
-        # --- Current user message ---
         user_current_message = {
             "role": "user",
-            "content": (
-                f"{user_message}\n\n"
-                "Please respond interactively, provide explanations, key points, and ask questions to check understanding. "
-                "Do not answer unrelated questions."
-            )
+            "content": f"{user_message}\n\nRespond interactively with explanations, key points, and check understanding."
         }
 
         # --- Initialize or update session history ---
         if request.first_message or session_id not in session_histories:
-            session_histories[session_id] = [
-                system_message,
-                user_intro_message,
-            ]
+            session_histories[session_id] = [system_message, user_intro_message]
             if opener_prep_response:
-                session_histories[session_id].append(
-                    {"role": "assistant", "content": opener_prep_response}
-                )
-                print("[DEBUG] Added opener prep_response to session history")
-
+                session_histories[session_id].append({"role": "assistant", "content": opener_prep_response})
             session_histories[session_id].append(user_current_message)
-            messages = session_histories[session_id]
-            print(f"[DEBUG] Initialized session history with {len(messages)} messages")
         else:
-            messages = session_histories[session_id]
-            messages.append(user_current_message)
-            print(f"[DEBUG] Appended user_current_message. Total messages now: {len(messages)}")
+            session_histories[session_id].append(user_current_message)
 
-        # --- Check for interaction limit ---
+        messages = session_histories[session_id]
+        print(f"[DEBUG] Total messages in session: {len(messages)}")
+
+        # --- Interaction limit check ---
         assistant_messages = [msg for msg in messages if msg["role"] == "assistant"]
-        print(f"[DEBUG] Current assistant messages count: {len(assistant_messages)}")
-
         MAX_ASSISTANT_MESSAGES = 5
+
         if len(assistant_messages) >= MAX_ASSISTANT_MESSAGES:
             final_reply = "Your session has ended."
-            print("[DEBUG] Interaction limit reached. Preparing session summary...")
 
             # --- Prepare conversation text ---
             conversation_text = "\n".join(
@@ -4755,100 +4730,75 @@ async def chat_interactive_tutor(
             )
             print(f"[DEBUG] Conversation text length: {len(conversation_text)}")
 
-            # --- Prepare summary prompt ---
+            # --- Summary prompt ---
             summary_prompt = (
-            f"Generate a single sentence summary of the following conversation between a student and a tutor. "
-            f"Focus only on the student's understanding, engagement, and likely exam performance. "
-            f"Do NOT include any lesson content. "
-            f"Follow exactly one of these formats:\n"
-            f"1. 'The student and I talked about ___ and the student took interest and is likely to do well in the exam.'\n"
-            f"2. 'The student and I talked about ___ and the student struggled to understand and may need further practice.'\n\n"
-            f"Conversation:\n{conversation_text}"
-        )
-        
-        print("[DEBUG] Summary prompt prepared")
-        
-        try:
-            # --- Call OpenAI for summary ---
-            summary_response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are an educational tutor. Respond only with a two sentence summary about the student's understanding and engagement. Do not repeat any lesson content."},
-                    {"role": "user", "content": summary_prompt}
-                ],
-                temperature=0,   # strict, low creativity
-                max_tokens=100   # keep it short for one sentence
+                f"Generate a single sentence summary of the following conversation between a student and a tutor. "
+                f"Focus only on the student's understanding, engagement, and likely exam performance. "
+                f"Do NOT include any lesson content. "
+                f"Follow exactly one of these formats:\n"
+                f"1. 'The student and I talked about ___ and the student took interest and is likely to do well in the exam.'\n"
+                f"2. 'The student and I talked about ___ and the student struggled to understand and may need further practice.'\n\n"
+                f"Conversation:\n{conversation_text}"
             )
-        
-            summary_text = summary_response.choices[0].message.content.strip()
-            usage = summary_response.usage
-            print(f"[DEBUG] Generated session summary: {summary_text}")
-            print(f"[DEBUG] Summary token usage: {usage}")
-        
-            # --- Store cost info ---
-            cost = calculate_cost("gpt-4o-mini", usage.prompt_tokens, usage.completion_tokens)
-            print(f"[DEBUG] Calculated cost for summary: ${cost:.6f}")
-        
-            cost_record = CostPerInteraction(
-                username=request.username,
-                model="gpt-4o-mini",
-                prompt_tokens=usage.prompt_tokens,
-                completion_tokens=usage.completion_tokens,
-                total_tokens=usage.total_tokens,
-                cost_usd=cost,
-                created_at=datetime.utcnow()
-            )
-        
+            print("[DEBUG] Summary prompt prepared")
+
             try:
+                summary_response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are an educational tutor. Respond only with a single sentence summary about the student's understanding and engagement. Do not repeat any lesson content."},
+                        {"role": "user", "content": summary_prompt}
+                    ],
+                    temperature=0,
+                    max_tokens=100
+                )
+
+                summary_text = summary_response.choices[0].message.content.strip()
+                usage = summary_response.usage
+                print(f"[DEBUG] Generated session summary: {summary_text}")
+
+                # --- Save cost ---
+                cost = calculate_cost("gpt-4o-mini", usage.prompt_tokens, usage.completion_tokens)
+                cost_record = CostPerInteraction(
+                    username=request.username,
+                    model="gpt-4o-mini",
+                    prompt_tokens=usage.prompt_tokens,
+                    completion_tokens=usage.completion_tokens,
+                    total_tokens=usage.total_tokens,
+                    cost_usd=cost,
+                    created_at=datetime.utcnow()
+                )
                 db.add(cost_record)
                 db.commit()
-                print("[DEBUG] Cost record for summary saved to database")
-            except SQLAlchemyError as e:
-                db.rollback()
-                print(f"[ERROR] Failed to save cost_record for summary: {e}")
-        
-            # --- Save summary in DB ---
-            summary_record = SessionSummary2(
-                session_id=session_id,
-                username=request.username,
-                summary=summary_text,
-                created_at=datetime.utcnow()
-            )
-        
-            try:
+
+                # --- Save summary ---
+                summary_record = SessionSummary2(
+                    session_id=session_id,
+                    username=request.username,
+                    summary=summary_text,
+                    created_at=datetime.utcnow()
+                )
                 db.add(summary_record)
                 db.commit()
                 print("[DEBUG] Session summary saved to DB")
-            except SQLAlchemyError as e:
+
+            except Exception as e:
                 db.rollback()
-                print(f"[ERROR] Failed to save session summary: {e}")
-        
-        except Exception as e:
-            print(f"[ERROR] Failed to generate session summary via OpenAI: {e}")
-        
-        print("[DEBUG] Returning final reply to user (session ended)")
-        return ChatResponse(reply=final_reply)
+                print(f"[ERROR] Failed to generate/save session summary: {e}")
 
-        # --- Call OpenAI for normal interaction ---
+            return ChatResponse(reply=final_reply)
+
+        # --- Normal AI interaction ---
         model_name = "gpt-4o-mini"
-        print(f"[DEBUG] Sending request to OpenAI model {model_name} with {len(messages)} messages")
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            temperature=0.5,
-        )
-
+        response = client.chat.completions.create(model=model_name, messages=messages, temperature=0.5)
         reply = response.choices[0].message.content.strip()
         usage = response.usage
-        print(f"[DEBUG] OpenAI response received, reply length: {len(reply)}")
-        print(f"[DEBUG] Token usage: {usage}")
+        print(f"[DEBUG] OpenAI reply length: {len(reply)}")
 
-        # --- Store cost info ---
+        # --- Store cost ---
         cost = calculate_cost(model_name, usage.prompt_tokens, usage.completion_tokens)
-        print(f"[DEBUG] Calculated cost: ${cost:.6f}")
-
         cost_record = CostPerInteraction(
-            username=username_for_interactive_session,
+            username=request.username,
             model=model_name,
             prompt_tokens=usage.prompt_tokens,
             completion_tokens=usage.completion_tokens,
@@ -4859,16 +4809,14 @@ async def chat_interactive_tutor(
         try:
             db.add(cost_record)
             db.commit()
-            print("[DEBUG] Cost record saved to DB")
         except SQLAlchemyError as e:
             db.rollback()
             print(f"[ERROR] Failed to save cost_record: {e}")
 
-        # --- Update session history with assistant reply ---
+        # --- Update session history ---
         session_histories[session_id].append({"role": "assistant", "content": reply})
-        print(f"[DEBUG] Appended assistant reply to session history. Total messages now: {len(session_histories[session_id])}")
+        print(f"[DEBUG] Appended assistant reply. Total messages now: {len(session_histories[session_id])}")
 
-        print("[DEBUG] Returning normal reply to user")
         return ChatResponse(reply=reply)
 
     except HTTPException as he:
@@ -7015,6 +6963,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
