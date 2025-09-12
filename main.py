@@ -4759,6 +4759,7 @@ async def chat_interactive_tutor(
             summary_prompt = (
                 f"Please write a concise evaluation of the following conversation between a student and a tutor. "
                 f"Focus only on the student's understanding, engagement, and likely exam performance. "
+                f"Ignore any tutor questions that the student has not yet answered. "
                 f"Do NOT repeat lesson content. "
                 f"Specifically, mention: \n"
                 f"1. What the student understood well.\n"
@@ -4769,6 +4770,7 @@ async def chat_interactive_tutor(
                 f"or 'The student may need further practice.'\n\n"
                 f"Conversation:\n{conversation_text}"
             )
+
 
 
 
@@ -7021,6 +7023,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
