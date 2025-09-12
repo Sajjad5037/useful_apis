@@ -4757,15 +4757,22 @@ async def chat_interactive_tutor(
 
             # --- Prepare summary prompt ---
             summary_prompt = (
-                f"Please generate a concise summary of the following conversation between a student and a tutor. "
-                f"The summary should focus on the student's understanding, engagement, and likely performance on the exam. "
-                f"Specifically, indicate: \n"
+                f"Please generate a concise evaluation of the following conversation between a student and a tutor. "
+                f"The goal is to assess the student's understanding, engagement, and likely exam performance. "
+                f"Use the following structure in your summary:\n\n"
                 f"1. What the student understood well.\n"
-                f"2. Any areas where the student struggled.\n"
-                f"3. Whether the student was attentive and interactive.\n"
-                f"4. A final assessment sentence like: 'The student is likely to perform well in the exam' or 'The student may need further practice.'\n\n"
+                f"2. Any areas where the student showed confusion or struggled.\n"
+                f"3. How attentive and interactive the student was.\n"
+                f"4. A final assessment sentence about likely performance on the exam.\n\n"
+                f"Important instructions:\n"
+                f"- Do NOT just repeat the tutor's content.\n"
+                f"- Even if the student gave short or mostly correct answers, infer engagement, understanding, and confidence.\n"
+                f"- Provide a clear, concise summary that could be saved in a database as a performance report.\n\n"
+                f"Use this format:\n"
+                f"'The student showed strong understanding of ___ and engaged actively. Areas to watch: ___. Overall, the student is likely to perform well in the exam.'\n\n"
                 f"Conversation:\n{conversation_text}"
             )
+
 
 
             print("[DEBUG] Summary prompt prepared")
@@ -7016,6 +7023,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
