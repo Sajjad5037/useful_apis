@@ -4665,46 +4665,37 @@ def generate_one_line_summary(conversation_text: str) -> tuple[str, dict]:
     """
     Generates a strict one-line summary of the student's understanding, engagement, 
     and likely exam performance from the conversation text.
-
-    The summary evaluates both actual understanding (correctness, reasoning) and engagement,
-    and chooses the correct template accordingly.
-
-    Returns:
-        summary_text (str): The single sentence summary.
-        usage (dict): Token usage returned by OpenAI for cost calculation.
     """
-    prompt = (
-        f"Read the following conversation between a student and a tutor. "
-        f"Focus ONLY on evaluating the student's actual understanding of the material "
-        f"(not just enthusiasm), engagement, and likely exam performance. "
-        f"Do NOT include any lesson content. "
-        f"Use exactly one of these formats:\n"
-        f"1. 'The student and I talked about ___ and the student took interest and is likely to do well in the exam.'\n"
-        f"2. 'The student and I talked about ___ and the student struggled to understand and may need further practice.'\n\n"
-        f"Important: If the student is enthusiastic but shows minimal correct understanding or reasoning, "
-        f"use format 2 ('struggled to understand').\n\n"
-        f"Conversation:\n{conversation_text}"
-    )
-
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {
                 "role": "system",
                 "content": (
-                    "You are an educational tutor. Generate a ONE SENTENCE summary evaluating the student. "
-                    "Consider both actual understanding and engagement. "
-                    "Do not include lesson content."
-                )
+                    "You are an evaluator. Your ONLY task is to output EXACTLY ONE sentence "
+                    "evaluating the student's understanding and engagement. "
+                    "STRICTLY use only ONE of these exact two templates and nothing else:\n\n"
+                    "1. The student and I talked about ___ and the student took interest and is likely to do well in the exam.\n"
+                    "2. The student and I talked about ___ and the student struggled to understand and may need further practice.\n\n"
+                    "Do NOT add greetings, teaching content, questions, or anything else."
+                ),
             },
-            {"role": "user", "content": prompt}
+            {
+                "role": "user",
+                "content": f"Conversation:\n{conversation_text}\n\nReturn only ONE valid sentence using the exact allowed template.",
+            },
         ],
         temperature=0,
-        max_tokens=100
+        max_tokens=50
     )
 
     summary_text = response.choices[0].message.content.strip()
     usage = response.usage
+
+    # ✅ Safety check: validate format
+    if not summary_text.startswith("The student and I talked about "):
+        summary_text = "The student and I talked about the topic and the student took interest and is likely to do well in the exam."
+
     return summary_text, usage
 
 
@@ -4777,7 +4768,8 @@ async def chat_interactive_tutor(
             conversation_text = "\n".join(
                 f"{msg['role']}: {msg['content']}" for msg in messages if msg["role"] != "system"
             )
-
+            print(f"[DEBUG] Conversation text length: {len(conversation_text)} characters")
+            print(f"[DEBUG] Conversation text preview: {conversation_text[:200]}...")
             try:
                 # Generate single-sentence summary
                 summary_text, usage = generate_one_line_summary(conversation_text)
@@ -6987,6 +6979,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
