@@ -4209,12 +4209,17 @@ async def train_on_pdf_text_only(
         "Access-Control-Allow-Credentials": "true",
     }
 
+    print("[DEBUG] /train-on-pdf-text-only called")
+
     # --- Parse doctorData ---
     doctor = {}
     if doctorData:
+        print(f"[DEBUG] doctorData received: {doctorData}")
         try:
             doctor = json.loads(doctorData)
-        except json.JSONDecodeError:
+            print(f"[DEBUG] Parsed doctorData: {doctor}")
+        except json.JSONDecodeError as e:
+            print(f"[ERROR] Failed to parse doctorData: {e}")
             return JSONResponse(
                 content={"detail": "Invalid doctorData JSON"},
                 status_code=400,
@@ -4222,13 +4227,17 @@ async def train_on_pdf_text_only(
             )
 
     username_for_interactive_session = doctor.get("name") if doctor else None
+    print(f"[DEBUG] username_for_interactive_session = {username_for_interactive_session}")
 
     # --- Extract text from PDFs ---
     combined_text = ""
     for i, pdf in enumerate(pdfs, start=1):
+        print(f"[DEBUG] Reading PDF #{i}: {pdf.filename}")
         pdf_bytes = await pdf.read()
+        print(f"[DEBUG] PDF #{i} size: {len(pdf_bytes)} bytes")
         try:
             pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
+            print(f"[DEBUG] Opened PDF #{i} with {len(pdf_document)} pages")
         except Exception as e:
             print(f"[ERROR] Failed to open PDF {pdf.filename}: {e}")
             continue
@@ -4236,17 +4245,22 @@ async def train_on_pdf_text_only(
         for page_number in range(len(pdf_document)):
             page = pdf_document[page_number]
             page_text = page.get_text().strip()
+            print(f"[DEBUG] Page {page_number+1}: extracted {len(page_text)} chars")
             if page_text:
                 combined_text += page_text + "\n\n"
 
     if not combined_text.strip():
+        print("[WARNING] No text extracted from any PDFs")
         return JSONResponse(
             content={"detail": "No text extracted from PDFs"},
             status_code=400,
             headers=cors_headers,
         )
 
+    print(f"[DEBUG] Total extracted text length: {len(combined_text.strip())}")
+
     # --- Generate question-answer pairs ---
+    print("[DEBUG] Sending text to GPT to generate QA pairs")
     qa_generation_prompt = f"""
     You are a helpful class 7 tutor.
     
@@ -4279,9 +4293,15 @@ async def train_on_pdf_text_only(
         temperature=0.4,
     )
 
+    gpt_raw = qa_response.choices[0].message.content.strip()
+    print(f"[DEBUG] GPT returned {len(gpt_raw)} chars")
+
     try:
-        qa_pairs = json.loads(qa_response.choices[0].message.content.strip())
-    except json.JSONDecodeError:
+        qa_pairs = json.loads(gpt_raw)
+        print(f"[DEBUG] Parsed {len(qa_pairs)} QA pairs")
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] Failed to parse GPT output as JSON: {e}")
+        print(f"[ERROR] Raw GPT output: {gpt_raw[:500]}...")
         return JSONResponse(
             content={"detail": "AI returned invalid question JSON"},
             status_code=500,
@@ -4297,29 +4317,46 @@ async def train_on_pdf_text_only(
         "current_index": 0,
         "completed": False
     }
+    print(f"[DEBUG] Checklist created with {len(checklist['questions'])} questions")
 
     # --- Save in-memory ---
     session_id = str(uuid4())
     session_checklists[session_id] = checklist
+    print(f"[DEBUG] Saved checklist to memory with session_id: {session_id}")
 
     # --- Save to DB ---
-    for qa in checklist["questions"]:
-        db.add(QAChecklist(
-            session_id=session_id,
-            username=username_for_interactive_session,
-            question=qa["q"],
-            answer=qa["a"],
-            status=qa["status"]
-        ))
-    db.commit()
+    try:
+        for qa in checklist["questions"]:
+            db.add(QAChecklist(
+                session_id=session_id,
+                username=username_for_interactive_session,
+                question=qa["q"],
+                answer=qa["a"],
+                status=qa["status"]
+            ))
+        db.commit()
+        print("[DEBUG] Checklist saved to DB")
+    except Exception as e:
+        print(f"[ERROR] Failed to save checklist to DB: {e}")
+        db.rollback()
+        return JSONResponse(
+            content={"detail": "Failed to save checklist to DB"},
+            status_code=500,
+            headers=cors_headers,
+        )
+
+    # --- Simulate prep_response for frontend compatibility ---
+    prep_text = f"Checklist created with {len(checklist['questions'])} questions. Let's start learning!"
+    print("[DEBUG] Created simulated prep_response for frontend")
 
     # --- Return ---
+    print("[DEBUG] Returning success JSONResponse")
     return JSONResponse(
         content={
             "status": "success",
             "session_id": session_id,
-            "total_questions": len(checklist["questions"]),
-            "message": "Checklist created. Tutor will now guide student through these questions."
+            "total_text_length": len(combined_text.strip()),
+            "prep_response": prep_text,
         },
         headers=cors_headers,
     )
@@ -7031,6 +7068,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
