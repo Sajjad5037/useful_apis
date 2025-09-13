@@ -237,6 +237,18 @@ class PDFQuestion(Base):
     status = Column(String(20), nullable=False, default="unseen")  # unseen / in_progress / done
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class PDFQuestion_new(Base):
+    __tablename__ = "pdf_question_new"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    session_id = Column(String(100), nullable=False, index=True)   # link to the checklist session
+    username = Column(String(100), nullable=False)                 # owner of the question
+    pdf_name = Column(String(255), nullable=False)                 # ✅ name of the source PDF
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=False)
+    status = Column(String(20), nullable=False, default="unseen")  # unseen / in_progress / done
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 
 class SessionSummary(Base):
     __tablename__ = "session_summary"
@@ -4357,12 +4369,15 @@ async def train_on_pdf_text_only(
             current_index=0,
             completed=False
         ))
+         # ✅ Get the single PDF name
+        pdf_name = pdfs[0].filename if pdfs and pdfs[0].filename else "unknown"
     
         # --- Save individual questions ---
         for qa in checklist["questions"]:
-            db.add(PDFQuestion(
+            db.add(PDFQuestion_new(
                 session_id=session_id,
                 username=username_for_interactive_session,
+                pdf_name=pdf_name,               # ✅ added here
                 question=qa["q"],
                 answer=qa["a"],
                 status=qa["status"]
@@ -7102,6 +7117,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
