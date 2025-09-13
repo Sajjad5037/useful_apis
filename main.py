@@ -4934,7 +4934,8 @@ async def chat_interactive_tutor(
         teach_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=teaching_messages,
-            temperature=0.5
+            temperature=0.3,   # Lower temperature for concise, deterministic output
+            max_tokens=250      # Limit reply length to avoid overwhelming the student
         )
         gpt_teach_reply = teach_response.choices[0].message.content.strip()
 
@@ -7106,6 +7107,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
