@@ -393,6 +393,17 @@ class QAChecklist(Base):
     completed = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class QAChecklist_new(Base):
+    __tablename__ = "qa_checklist_new"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    session_id = Column(String, index=True, nullable=False)        # ✅ Unique session ID
+    username = Column(String(100), nullable=False)                 # Owner of the checklist
+    questions = Column(JSON, nullable=False)                       # List of {"q": ..., "a": ..., "status": ...}
+    current_index = Column(Integer, nullable=False, default=0)     # Current question index
+    completed = Column(Boolean, nullable=False, default=False)     # Whether checklist is completed
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class Campaign(Base):
     __tablename__ = "campaigns"
 
@@ -4328,7 +4339,7 @@ async def train_on_pdf_text_only(
     # --- Save to DB ---
     try:
         for qa in checklist["questions"]:
-            db.add(QAChecklist(
+            db.add(QAChecklist_new(
                 session_id=session_id,
                 username=username_for_interactive_session,
                 question=qa["q"],
@@ -7069,6 +7080,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
