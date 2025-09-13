@@ -226,6 +226,17 @@ s3 = boto3.client(
     region_name=AWS_REGION
 )
 
+class PDFQuestion(Base):
+    __tablename__ = "pdf_question"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    session_id = Column(String(100), nullable=False, index=True)   # link to the checklist session
+    username = Column(String(100), nullable=False)                 # owner of the question
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=False)
+    status = Column(String(20), nullable=False, default="unseen")  # unseen / in_progress / done
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 
 class SessionSummary(Base):
     __tablename__ = "session_summary"
@@ -4338,16 +4349,28 @@ async def train_on_pdf_text_only(
 
     # --- Save to DB ---
     try:
+    # --- Save session-wide checklist (just once) ---
+        db.add(QAChecklist_new(
+            session_id=session_id,
+            username=username_for_interactive_session,
+            questions=checklist["questions"],  # ✅ store the full list
+            current_index=0,
+            completed=False
+        ))
+    
+        # --- Save individual questions ---
         for qa in checklist["questions"]:
-            db.add(QAChecklist_new(
+            db.add(PDFQuestion(
                 session_id=session_id,
                 username=username_for_interactive_session,
                 question=qa["q"],
                 answer=qa["a"],
                 status=qa["status"]
             ))
+    
         db.commit()
         print("[DEBUG] Checklist saved to DB")
+    
     except Exception as e:
         print(f"[ERROR] Failed to save checklist to DB: {e}")
         db.rollback()
@@ -4356,7 +4379,6 @@ async def train_on_pdf_text_only(
             status_code=500,
             headers=cors_headers,
         )
-
     # --- Simulate prep_response for frontend compatibility ---
     prep_text = f"Checklist created with {len(checklist['questions'])} questions. Let's start learning!"
     print("[DEBUG] Created simulated prep_response for frontend")
@@ -7080,6 +7102,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
