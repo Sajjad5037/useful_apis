@@ -226,6 +226,13 @@ s3 = boto3.client(
     region_name=AWS_REGION
 )
 
+class StartSessionRequest(BaseModel):
+    subject: str
+    chapter: str
+    className: str
+    pages: List[str]
+
+
 class PDFQuestion(Base):
     __tablename__ = "pdf_question"
 
@@ -4227,31 +4234,30 @@ Improved Essay:
         headers=cors_headers,
     )
 
-@app.post("/train-on-pdf-text-only")
-async def train_on_pdf_text_only(
-    pdfs: List[UploadFile] = File(...),
-    doctorData: Optional[str] = Form(None),
-    request: Request = None,
+@app.post("/start-session-ibne-sina")
+async def start_session_ibne_sina(
+    request: Request,
+    body: StartSessionRequest,
     db: Session = Depends(get_db),
 ):
     """
-    Upload PDFs → Extract text → Generate question checklist → Save to DB → Return session_id
+    Accept JSON with image URLs → Download images → Extract text → Generate QA checklist → Save to DB → Return sessionId & message
     """
-
     origin = request.headers.get("origin") if request else None
     cors_headers = {
         "Access-Control-Allow-Origin": origin if origin else "*",
         "Access-Control-Allow-Credentials": "true",
     }
 
-    print("[DEBUG] /train-on-pdf-text-only called")
+    print("[DEBUG] /start-session-ibne-sina called")
 
-    # --- Parse doctorData ---
+    # --- Parse doctorData from query/form header if present ---
+    doctor_data_str = request.headers.get("doctordata")  # optional, can be None
     doctor = {}
-    if doctorData:
-        print(f"[DEBUG] doctorData received: {doctorData}")
+    if doctor_data_str:
+        print(f"[DEBUG] doctorData received: {doctor_data_str}")
         try:
-            doctor = json.loads(doctorData)
+            doctor = json.loads(doctor_data_str)
             print(f"[DEBUG] Parsed doctorData: {doctor}")
         except json.JSONDecodeError as e:
             print(f"[ERROR] Failed to parse doctorData: {e}")
@@ -4260,41 +4266,44 @@ async def train_on_pdf_text_only(
                 status_code=400,
                 headers=cors_headers,
             )
-
     username_for_interactive_session = doctor.get("name") if doctor else None
     print(f"[DEBUG] username_for_interactive_session = {username_for_interactive_session}")
 
-    # --- Extract text from PDFs ---
+    # --- Download images and run OCR ---
     combined_text = ""
-    for i, pdf in enumerate(pdfs, start=1):
-        print(f"[DEBUG] Reading PDF #{i}: {pdf.filename}")
-        pdf_bytes = await pdf.read()
-        print(f"[DEBUG] PDF #{i} size: {len(pdf_bytes)} bytes")
+    for i, url in enumerate(body.pages, start=1):
+        print(f"[DEBUG] Downloading image #{i}: {url}")
         try:
-            pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
-            print(f"[DEBUG] Opened PDF #{i} with {len(pdf_document)} pages")
+            resp = requests.get(url)
+            resp.raise_for_status()
+            image_bytes = resp.content
         except Exception as e:
-            print(f"[ERROR] Failed to open PDF {pdf.filename}: {e}")
+            print(f"[ERROR] Failed to download image {url}: {e}")
             continue
 
-        for page_number in range(len(pdf_document)):
-            page = pdf_document[page_number]
-            page_text = page.get_text().strip()
-            print(f"[DEBUG] Page {page_number+1}: extracted {len(page_text)} chars")
-            if page_text:
-                combined_text += page_text + "\n\n"
+        # Wrap image bytes in a pseudo UploadFile object for OCR
+        from io import BytesIO
+        class DummyUploadFile:
+            def __init__(self, name, content):
+                self.filename = name
+                self.file = BytesIO(content)
+        dummy_file = DummyUploadFile(name=f"image_{i}.png", content=image_bytes)
+
+        ocr_text = run_ocr_on_image(dummy_file)
+        print(f"[DEBUG] OCR text length for image #{i}: {len(ocr_text)}")
+        if ocr_text:
+            combined_text += ocr_text + "\n\n"
 
     if not combined_text.strip():
-        print("[WARNING] No text extracted from any PDFs")
+        print("[WARNING] No text extracted from any images")
         return JSONResponse(
-            content={"detail": "No text extracted from PDFs"},
+            content={"detail": "No text extracted from images"},
             status_code=400,
             headers=cors_headers,
         )
-
     print(f"[DEBUG] Total extracted text length: {len(combined_text.strip())}")
 
-    # --- Generate question-answer pairs ---
+    # --- Generate QA pairs using GPT ---
     print("[DEBUG] Sending text to GPT to generate QA pairs")
     qa_generation_prompt = f"""
     You are a helpful class 7 tutor.
@@ -4336,7 +4345,6 @@ async def train_on_pdf_text_only(
         print(f"[DEBUG] Parsed {len(qa_pairs)} QA pairs")
     except json.JSONDecodeError as e:
         print(f"[ERROR] Failed to parse GPT output as JSON: {e}")
-        print(f"[ERROR] Raw GPT output: {gpt_raw[:500]}...")
         return JSONResponse(
             content={"detail": "AI returned invalid question JSON"},
             status_code=500,
@@ -4352,7 +4360,6 @@ async def train_on_pdf_text_only(
         "current_index": 0,
         "completed": False
     }
-    print(f"[DEBUG] Checklist created with {len(checklist['questions'])} questions")
 
     # --- Save in-memory ---
     session_id = str(uuid4())
@@ -4361,42 +4368,33 @@ async def train_on_pdf_text_only(
 
     # --- Save to DB ---
     try:
-        # --- Always save session-wide checklist (once per session) ---
         db.add(QAChecklist_new(
             session_id=session_id,
             username=username_for_interactive_session,
-            questions=checklist["questions"],  # ✅ store the full list
+            questions=checklist["questions"],
             current_index=0,
             completed=False
         ))
-    
-        # ✅ Get the single PDF name
-        pdf_name = pdfs[0].filename if pdfs and pdfs[0].filename else "unknown"
-    
-        # --- Check if this PDF already has questions saved ---
+
+        # Save first image name for reference
+        image_name = body.pages[0] if body.pages else "unknown"
+
         existing = db.query(PDFQuestion_new).filter_by(
             username=username_for_interactive_session,
-            pdf_name=pdf_name
+            pdf_name=image_name
         ).first()
-    
-        if existing:
-            print(f"[DEBUG] Questions for PDF '{pdf_name}' already exist for user '{username_for_interactive_session}'. Skipping question inserts.")
-        else:
-            # --- Save individual questions ---
+
+        if not existing:
             for qa in checklist["questions"]:
                 db.add(PDFQuestion_new(
                     session_id=session_id,
                     username=username_for_interactive_session,
-                    pdf_name=pdf_name,
+                    pdf_name=image_name,
                     question=qa["q"],
                     answer=qa["a"],
                     status=qa["status"]
                 ))
-    
-        # ✅ Commit both QAChecklist_new and (maybe) PDFQuestion_new
         db.commit()
-        print(f"[DEBUG] Checklist saved (questions {'skipped' if existing else 'inserted'}) for PDF '{pdf_name}'")
-    
     except Exception as e:
         print(f"[ERROR] Failed to save checklist to DB: {e}")
         db.rollback()
@@ -4406,22 +4404,16 @@ async def train_on_pdf_text_only(
             headers=cors_headers,
         )
 
-    # --- Simulate prep_response for frontend compatibility ---
+    # --- Return JSON compatible with frontend ---
     prep_text = f"Checklist created with {len(checklist['questions'])} questions. Let's start learning!"
-    print("[DEBUG] Created simulated prep_response for frontend")
-
-    # --- Return ---
-    print("[DEBUG] Returning success JSONResponse")
     return JSONResponse(
         content={
-            "status": "success",
-            "session_id": session_id,
-            "total_text_length": len(combined_text.strip()),
-            "prep_response": prep_text,
+            "sessionId": session_id,
+            "message": prep_text,
+            "total_text_length": len(combined_text.strip())
         },
         headers=cors_headers,
     )
-
 
 
 
@@ -7129,6 +7121,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
