@@ -4848,95 +4848,11 @@ def generate_detailed_summary(conversation_text: str, study_material: str) -> tu
     
 
 
-@app.post("/chat_interactive_tutor_Ibne_Sina", response_model=ChatResponse)
-async def chat_interactive_tutor(
-    request: ChatRequest_Ibne_Sina,
-    db: Session = Depends(get_db)
-):
-    try:
-        print("[DEBUG] ----- New request -----")
-        print(f"[DEBUG] Request: {request}")
-
-        session_id = request.session_id.strip()
-        student_reply = request.message.strip()
-
-        # --- Ensure session and checklist exist ---
-        if session_id not in session_checklists:
-            raise HTTPException(status_code=404, detail="Session ID not found")
-
-        checklist = session_checklists[session_id]
-        current_index = checklist["current_index"]
-
-        # --- Check if all questions are completed ---
-        if current_index >= len(checklist["questions"]):
-            checklist["completed"] = True
-            return ChatResponse(reply="All questions have been completed. Great job!")
-
-        current_question = checklist["questions"][current_index]["q"]
-        expected_answer = checklist["questions"][current_index]["a"]
-        print(f"[DEBUG] Current question: {current_question}")
-
-        # --- Initialize session history ---
-        if session_id not in session_histories:
-            session_histories[session_id] = []
-
-        session_histories[session_id].append({"role": "user", "content": student_reply})
-
-        # --- Check interaction limit ---
-        assistant_messages = [
-            msg for msg in session_histories[session_id] if msg["role"] == "assistant"
-        ]
-        MAX_ASSISTANT_MESSAGES = 10
-        if len(assistant_messages) >= MAX_ASSISTANT_MESSAGES:
-            checklist["completed"] = True
-            return ChatResponse(reply="Your session has ended. Great job!")
-
-        # --- Build GPT messages for interactive tutoring + mastery check ---
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    f"You are a concise, interactive tutor. Focus only on this question: '{current_question}'. "
-                    "Teach the student interactively, ask guiding questions, do not reveal the full answer. "
-                    f"The expected answer is: '{expected_answer}' (internal, do not reveal). "
-                    "Once the student responds, assess if their paraphrased answer demonstrates mastery. "
-                    "If mastered, mark as 'mastered' and move to the next question; otherwise, continue guiding."
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"{student_reply}\nParaphrase your understanding in your own words."
-            }
-        ]
-
-        # --- Ask GPT to guide student and assess mastery ---
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            temperature=0.5
-        )
-
-        gpt_reply = response.choices[0].message.content.strip()
-        usage = response.usage
-        print(f"[DEBUG] GPT reply length: {len(gpt_reply)}")
-
-        # --- Store interaction cost ---
-        cost = calculate_cost("gpt-4o-mini", usage.prompt_tokens, usage.completion_tokens)
-        cost_record = CostPerInteraction(
-            username=request.username,
-            model="gpt-4o-mini",
-            prompt_tokens=usage.prompt_tokens,
-            completion_tokens=usage.completion_tokens,
-            total_tokens=usage.total_tokens,
-            cost_usd=cost,
-            created_at=datetime.utcnow()
-        )
-        db.add(cost_record)
-        db.commit()
-        print("[DEBUG] Cost recorded in DB")
-
-        # --- Update checklist if student mastered the question ---
-        mastery_check_prompt = f"""
+def assess_mastery(student_reply: str, expected_answer: str) -> bool:
+    """
+    Ask GPT whether the student's paraphrased reply shows mastery.
+    """
+    prompt = f"""
 You are an expert tutor. Evaluate whether the student's answer demonstrates
 mastery of the expected answer.
 
@@ -4950,25 +4866,102 @@ Student's answer:
 {student_reply}
 \"\"\"
 
-Respond ONLY with True if the student demonstrates mastery, False otherwise.
+Instructions:
+- Respond ONLY with "True" if the student's answer shows mastery,
+  "False" if it does not.
+- Consider paraphrasing, partial correctness, and conceptual understanding.
+- Do not add any explanations or extra text.
 """
-        mastery_response = client.chat.completions.create(
+    try:
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a precise grading tutor."},
-                {"role": "user", "content": mastery_check_prompt}
+                {"role": "user", "content": prompt}
             ],
             temperature=0
         )
-        mastery_output = mastery_response.choices[0].message.content.strip().lower()
-        if mastery_output == "true":
+        gpt_output = response.choices[0].message.content.strip().lower()
+        return gpt_output == "true"
+    except Exception as e:
+        print(f"[ERROR] GPT mastery check failed: {e}")
+        return False
+
+
+@app.post("/chat_interactive_tutor_Ibne_Sina", response_model=ChatResponse)
+async def chat_interactive_tutor(
+    request: ChatRequest_Ibne_Sina,
+    db: Session = Depends(get_db)
+):
+    try:
+        print("[DEBUG] Received request:", request)
+
+        session_id = request.session_id.strip()
+        student_reply = request.message.strip()
+
+        if session_id not in session_checklists:
+            raise HTTPException(status_code=404, detail="Session ID not found")
+
+        checklist = session_checklists[session_id]
+        current_index = checklist["current_index"]
+
+        # --- All questions completed ---
+        if current_index >= len(checklist["questions"]):
+            checklist["completed"] = True
+            return ChatResponse(reply="All questions completed. Great job!")
+
+        current_question = checklist["questions"][current_index]["q"]
+        expected_answer = checklist["questions"][current_index]["a"]
+
+        # --- Teach the current question ---
+        teaching_messages = [
+            {
+                "role": "system",
+                "content": (
+                    f"You are a concise interactive tutor. Focus ONLY on this question: '{current_question}'. "
+                    "Teach the concept clearly. Do not ask mastery questions yet. "
+                    "Do not reveal the full expected answer directly."
+                )
+            },
+            {
+                "role": "user",
+                "content": "Student is ready to learn. Guide them interactively."
+            }
+        ]
+
+        teach_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=teaching_messages,
+            temperature=0.5
+        )
+        gpt_teach_reply = teach_response.choices[0].message.content.strip()
+
+        # --- Update session history ---
+        if session_id not in session_histories:
+            session_histories[session_id] = []
+        session_histories[session_id].append({"role": "assistant", "content": gpt_teach_reply})
+        session_histories[session_id].append({"role": "user", "content": student_reply})
+
+        # --- Assess mastery after student reply ---
+        if assess_mastery(student_reply, expected_answer):
             checklist["current_index"] += 1
-            print(f"[DEBUG] Mastery achieved. Moving to next question index {checklist['current_index']}")
+            print(f"[DEBUG] Mastered question {current_index}, moving to {checklist['current_index']}")
 
-        # --- Update session history with GPT reply ---
-        session_histories[session_id].append({"role": "assistant", "content": gpt_reply})
+        # --- Record usage cost ---
+        usage = teach_response.usage
+        cost = calculate_cost("gpt-4o-mini", usage.prompt_tokens, usage.completion_tokens)
+        db.add(CostPerInteraction(
+            username=request.username,
+            model="gpt-4o-mini",
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
+            cost_usd=cost,
+            created_at=datetime.utcnow()
+        ))
+        db.commit()
 
-        return ChatResponse(reply=gpt_reply)
+        return ChatResponse(reply=gpt_teach_reply)
 
     except Exception as e:
         print(f"[ERROR] Internal server error: {e}")
@@ -7110,6 +7103,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
