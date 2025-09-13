@@ -100,6 +100,8 @@ import tempfile
 
 
 session_checklists={} #to be used to keep track of questions extract from the given pdf and their corresponding answer
+session_histories = {}
+session_texts = {}
 MAX_USER_COST = 0.4 #dollars
 MODEL_COSTS = {
     "gpt-4o-mini": {
@@ -4843,129 +4845,80 @@ def generate_detailed_summary(conversation_text: str, study_material: str) -> tu
     summary_text = response.choices[0].message.content.strip()
     usage = response.usage
     return summary_text, usage
+    
 
 
-
-@app.post("/chat_interactive_tutor_Ibe_Sina", response_model=ChatResponse)
+@app.post("/chat_interactive_tutor_Ibne_Sina", response_model=ChatResponse)
 async def chat_interactive_tutor(
     request: ChatRequest_Ibne_Sina,
     db: Session = Depends(get_db)
 ):
     try:
-        print("[DEBUG] ----- Received new request -----")
-        print(f"[DEBUG] Request data: {request}")
+        print("[DEBUG] ----- New request -----")
+        print(f"[DEBUG] Request: {request}")
 
         session_id = request.session_id.strip()
-        user_message = request.message.strip()
-        print(f"[DEBUG] session_id: '{session_id}'")
-        print(f"[DEBUG] user_message length: {len(user_message)}")
+        student_reply = request.message.strip()
 
-        if session_id not in session_texts:
-            print(f"[ERROR] Session ID '{session_id}' not found")
+        # --- Ensure session and checklist exist ---
+        if session_id not in session_checklists:
             raise HTTPException(status_code=404, detail="Session ID not found")
 
-        full_text = session_texts[session_id]["text"]
-        opener_prep_response = session_texts[session_id].get("prep_response", "")
+        checklist = session_checklists[session_id]
+        current_index = checklist["current_index"]
 
-        # --- System and user messages ---
-        system_message = {
-            "role": "system",
-            "content": (
-                "You are a concise, interactive tutor. Help the student understand the study material, "
-                "ask questions to check understanding, but do NOT provide summaries yet."
-            ),
-        }
+        # --- Check if all questions are completed ---
+        if current_index >= len(checklist["questions"]):
+            checklist["completed"] = True
+            return ChatResponse(reply="All questions have been completed. Great job!")
 
-        user_intro_message = {
-            "role": "user",
-            "content": f"Study material:\n{full_text}\nThe student wants interactive help."
-        }
+        current_question = checklist["questions"][current_index]["q"]
+        expected_answer = checklist["questions"][current_index]["a"]
+        print(f"[DEBUG] Current question: {current_question}")
 
-        user_current_message = {
-            "role": "user",
-            "content": f"{user_message}\nRespond interactively with explanations and questions only."
-        }
+        # --- Initialize session history ---
+        if session_id not in session_histories:
+            session_histories[session_id] = []
 
-        # --- Initialize or update session history ---
-        if request.first_message or session_id not in session_histories:
-            session_histories[session_id] = [
-                system_message,
-                user_intro_message,
-            ]
-            if opener_prep_response:
-                session_histories[session_id].append(
-                    {"role": "assistant", "content": opener_prep_response}
-                )
-            session_histories[session_id].append(user_current_message)
-            messages = session_histories[session_id]
-        else:
-            messages = session_histories[session_id]
-            messages.append(user_current_message)
+        session_histories[session_id].append({"role": "user", "content": student_reply})
 
-        # --- Interaction limit check ---
-        assistant_messages = [msg for msg in messages if msg["role"] == "assistant"]
-        MAX_ASSISTANT_MESSAGES = 5
-
+        # --- Check interaction limit ---
+        assistant_messages = [
+            msg for msg in session_histories[session_id] if msg["role"] == "assistant"
+        ]
+        MAX_ASSISTANT_MESSAGES = 10
         if len(assistant_messages) >= MAX_ASSISTANT_MESSAGES:
-            final_reply = "Your session has ended."
-            print("[DEBUG] Interaction limit reached. Preparing one-line summary...")
+            checklist["completed"] = True
+            return ChatResponse(reply="Your session has ended. Great job!")
 
-            # Prepare conversation text
-            conversation_text = "\n".join(
-                f"{msg['role']}: {msg['content']}" for msg in messages if msg["role"] != "system"
-            )
-            print(f"[DEBUG] Conversation text length: {len(conversation_text)} characters")
-            print(f"[DEBUG] Conversation text preview: {conversation_text[:200]}...")
-            try:
-                # Generate single-sentence summary
-                full_text = session_texts[session_id]["text"]  # already exists above
+        # --- Build GPT messages for interactive tutoring + mastery check ---
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    f"You are a concise, interactive tutor. Focus only on this question: '{current_question}'. "
+                    "Teach the student interactively, ask guiding questions, do not reveal the full answer. "
+                    f"The expected answer is: '{expected_answer}' (internal, do not reveal). "
+                    "Once the student responds, assess if their paraphrased answer demonstrates mastery. "
+                    "If mastered, mark as 'mastered' and move to the next question; otherwise, continue guiding."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"{student_reply}\nParaphrase your understanding in your own words."
+            }
+        ]
 
-                summary_text, usage = generate_detailed_summary(conversation_text, full_text)
-
-                print(f"[DEBUG] Generated session summary: {summary_text}")
-
-                # --- Store summary cost ---
-                
-                if usage:
-                    cost = calculate_cost("gpt-4o-mini", usage.prompt_tokens, usage.completion_tokens)
-                    cost_record = CostPerInteraction(
-                        username=request.username,
-                        model="gpt-4o-mini",
-                        prompt_tokens=usage.prompt_tokens,
-                        completion_tokens=usage.completion_tokens,
-                        total_tokens=usage.total_tokens,
-                        cost_usd=cost,
-                        created_at=datetime.utcnow()
-                    )
-                    db.add(cost_record)
-                    db.commit()
-                    print("[DEBUG] Cost record saved to DB")
-
-                # --- Save summary in DB ---
-                summary_record = SessionSummary2(
-                    session_id=session_id,
-                    username=request.username,
-                    summary=summary_text,
-                    created_at=datetime.utcnow()
-                )
-                db.add(summary_record)
-                db.commit()
-                print("[DEBUG] Session summary saved to DB")
-
-            except Exception as e:
-                print(f"[ERROR] Failed to generate session summary: {e}")
-
-            return ChatResponse(reply=final_reply)
-
-        # --- Normal interaction with student ---
+        # --- Ask GPT to guide student and assess mastery ---
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
-            temperature=0.5,
+            temperature=0.5
         )
 
-        reply = response.choices[0].message.content.strip()
+        gpt_reply = response.choices[0].message.content.strip()
         usage = response.usage
+        print(f"[DEBUG] GPT reply length: {len(gpt_reply)}")
 
         # --- Store interaction cost ---
         cost = calculate_cost("gpt-4o-mini", usage.prompt_tokens, usage.completion_tokens)
@@ -4980,12 +4933,42 @@ async def chat_interactive_tutor(
         )
         db.add(cost_record)
         db.commit()
-        print("[DEBUG] Cost record saved to DB")
+        print("[DEBUG] Cost recorded in DB")
 
-        # Update session history with assistant reply
-        session_histories[session_id].append({"role": "assistant", "content": reply})
+        # --- Update checklist if student mastered the question ---
+        mastery_check_prompt = f"""
+You are an expert tutor. Evaluate whether the student's answer demonstrates
+mastery of the expected answer.
 
-        return ChatResponse(reply=reply)
+Expected answer:
+\"\"\"
+{expected_answer}
+\"\"\"
+
+Student's answer:
+\"\"\"
+{student_reply}
+\"\"\"
+
+Respond ONLY with True if the student demonstrates mastery, False otherwise.
+"""
+        mastery_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a precise grading tutor."},
+                {"role": "user", "content": mastery_check_prompt}
+            ],
+            temperature=0
+        )
+        mastery_output = mastery_response.choices[0].message.content.strip().lower()
+        if mastery_output == "true":
+            checklist["current_index"] += 1
+            print(f"[DEBUG] Mastery achieved. Moving to next question index {checklist['current_index']}")
+
+        # --- Update session history with GPT reply ---
+        session_histories[session_id].append({"role": "assistant", "content": gpt_reply})
+
+        return ChatResponse(reply=gpt_reply)
 
     except Exception as e:
         print(f"[ERROR] Internal server error: {e}")
@@ -7127,6 +7110,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
