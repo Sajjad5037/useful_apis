@@ -231,7 +231,7 @@ class StartSessionRequest(BaseModel):
     chapter: str
     className: str
     pages: List[str]
-    doctorData: Optional[str] = None  # <-- matches the frontend
+    name: str  # directly receive username
 
 class PDFQuestion(Base):
     __tablename__ = "pdf_question"
@@ -4266,7 +4266,7 @@ async def start_session_ibne_sina(
                 status_code=400,
                 headers=cors_headers,
             )
-    username_for_interactive_session = doctor.get("name") if doctor else None
+    username_for_interactive_session = request.name
     print(f"[DEBUG] username_for_interactive_session = {username_for_interactive_session}")
 
     # --- Download images and run OCR ---
@@ -7127,6 +7127,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
