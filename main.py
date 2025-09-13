@@ -96,6 +96,9 @@ vectorstore = None
 total_pdf = 0
 import tempfile
 
+
+
+session_checklists={} #to be used to keep track of questions extract from the given pdf and their corresponding answer
 MAX_USER_COST = 0.4 #dollars
 MODEL_COSTS = {
     "gpt-4o-mini": {
@@ -377,6 +380,16 @@ class CostPerInteraction(Base):
     completion_tokens = Column(Integer, nullable=False)
     total_tokens = Column(Integer, nullable=False)
     cost_usd = Column(Numeric(10, 6), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class QAChecklist(Base):
+    __tablename__ = "qa_checklist"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username = Column(String(100), nullable=False)             # owner of the checklist
+    questions = Column(JSON, nullable=False)                   # list of {"q": ..., "a": ..., "status": ...}
+    current_index = Column(Integer, nullable=False, default=0) # index of the current question
+    completed = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class Campaign(Base):
@@ -4179,7 +4192,6 @@ Improved Essay:
         headers=cors_headers,
     )
 
-
 @app.post("/train-on-pdf-text-only")
 async def train_on_pdf_text_only(
     pdfs: List[UploadFile] = File(...),
@@ -4187,7 +4199,9 @@ async def train_on_pdf_text_only(
     request: Request = None,
     db: Session = Depends(get_db),
 ):
-    """Upload text-based PDFs → extract text → Help student prepare for test → Save to DB"""
+    """
+    Upload PDFs → Extract text → Generate question checklist → Save to DB → Return session_id
+    """
 
     origin = request.headers.get("origin") if request else None
     cors_headers = {
@@ -4195,22 +4209,12 @@ async def train_on_pdf_text_only(
         "Access-Control-Allow-Credentials": "true",
     }
 
-    if not pdfs:
-        print("[DEBUG] No PDFs uploaded")
-        return JSONResponse(
-            content={"detail": "No PDFs uploaded"},
-            status_code=400,
-            headers=cors_headers,
-        )
-
-    # Parse doctorData
+    # --- Parse doctorData ---
     doctor = {}
     if doctorData:
         try:
             doctor = json.loads(doctorData)
-            print(f"[DEBUG] doctorData parsed successfully: {doctor}")
-        except json.JSONDecodeError as e:
-            print(f"[ERROR] Failed to parse doctorData JSON: {e}")
+        except json.JSONDecodeError:
             return JSONResponse(
                 content={"detail": "Invalid doctorData JSON"},
                 status_code=400,
@@ -4218,16 +4222,13 @@ async def train_on_pdf_text_only(
             )
 
     username_for_interactive_session = doctor.get("name") if doctor else None
-    print(f"[DEBUG] username_for_interactive_session = {username_for_interactive_session}")
 
+    # --- Extract text from PDFs ---
     combined_text = ""
-    # Process PDFs
     for i, pdf in enumerate(pdfs, start=1):
         pdf_bytes = await pdf.read()
-        print(f"[DEBUG] Processing File #{i}: {pdf.filename}, size={len(pdf_bytes)} bytes")
         try:
             pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
-            print(f"[DEBUG] Opened PDF #{i}: {pdf.filename}, pages={len(pdf_document)}")
         except Exception as e:
             print(f"[ERROR] Failed to open PDF {pdf.filename}: {e}")
             continue
@@ -4237,80 +4238,92 @@ async def train_on_pdf_text_only(
             page_text = page.get_text().strip()
             if page_text:
                 combined_text += page_text + "\n\n"
-                print(f"[DEBUG] Extracted {len(page_text)} chars from page {page_number+1}")
-            else:
-                print(f"[WARNING] No text found on page {page_number+1} of {pdf.filename}")
 
     if not combined_text.strip():
-        print("[WARNING] No text extracted from any PDF")
         return JSONResponse(
             content={"detail": "No text extracted from PDFs"},
             status_code=400,
             headers=cors_headers,
         )
 
-    print(f"[DEBUG] Total extracted text length: {len(combined_text.strip())}")
+    # --- Generate question-answer pairs ---
+    qa_generation_prompt = f"""
+    You are a helpful class 7 tutor.
+    
+    Study material:
+    <<<
+    {combined_text.strip()}
+    >>>
+    
+    Task:
+    1. Carefully analyze the content.
+    2. Create a comprehensive set of question-answer pairs that fully cover the key concepts and important details.
+    3. Output JSON only in this format:
+    [
+      {{ "question": "...", "answer": "..." }},
+      ...
+    ]
+    
+    Guidelines:
+    - Cover all major concepts
+    - Avoid redundant or trivial questions
+    - Keep questions clear, age-appropriate, and answerable based only on the material provided
+    """
 
-    # GPT Test Preparation
-    preparation_prompt = f"""
-You are an interactive class 7 test preparation tutor.
-
-A student has uploaded the following study material and asked you to help them prepare for a test:
-
-<<<BEGIN STUDY MATERIAL>>>
-{combined_text.strip()}
-<<<END STUDY MATERIAL>>>
-
-Your instructions:
-
-1. First, acknowledge that you understand the student's request and that you are ready to help them prepare for the test.
-2. Interactively guide the student through the material:
-   - Explain concepts briefly and clearly.
-   - Ask the student questions to check their understanding.
-   - Respond to their answers with encouragement or clarification.
-3. Keep the interaction focused on helping the student understand the material and prepare for the test.
-4. At the end, provide a few sample questions (open-ended, true/false, or fill-in-the-blank) that the student can attempt on their own.
-5. Do NOT provide long-winded summaries upfront. Let the student engage with the content interactively.
-"""
-
-
-    preparation_response = client.chat.completions.create(
+    qa_response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a class 7 test preparation tutor helping a student study effectively."},
-            {"role": "user", "content": preparation_prompt},
+            {"role": "system", "content": "You are a tutor who creates questions from study material."},
+            {"role": "user", "content": qa_generation_prompt},
         ],
-        temperature=0.3,
+        temperature=0.4,
     )
 
-    prep_text = preparation_response.choices[0].message.content.strip()
-    print(f"[DEBUG] GPT response length: {len(prep_text)}")
+    try:
+        qa_pairs = json.loads(qa_response.choices[0].message.content.strip())
+    except json.JSONDecodeError:
+        return JSONResponse(
+            content={"detail": "AI returned invalid question JSON"},
+            status_code=500,
+            headers=cors_headers,
+        )
 
-    # Log usage
-    if hasattr(preparation_response, "usage"):
-        usage = preparation_response.usage
-        log_to_db(db, username_for_interactive_session, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, "gpt-4o-mini")
-    else:
-        total_tokens = len(prep_text) // 4
-        log_to_db(db, username_for_interactive_session, total_tokens, 0, total_tokens, "gpt-4o-mini")
-
-    # Save session
-    session_id = str(uuid4())
-    session_texts[session_id] = {
-        "text": combined_text.strip(),
-        "prep_response": prep_text,
+    # --- Build checklist structure ---
+    checklist = {
+        "questions": [
+            {"q": qa["question"], "a": qa["answer"], "status": "unseen"}
+            for qa in qa_pairs
+        ],
+        "current_index": 0,
+        "completed": False
     }
-    print(f"[DEBUG] Saved session: {session_id}")
 
+    # --- Save in-memory ---
+    session_id = str(uuid4())
+    session_checklists[session_id] = checklist
+
+    # --- Save to DB ---
+    for qa in checklist["questions"]:
+        db.add(QAChecklist(
+            session_id=session_id,
+            username=username_for_interactive_session,
+            question=qa["q"],
+            answer=qa["a"],
+            status=qa["status"]
+        ))
+    db.commit()
+
+    # --- Return ---
     return JSONResponse(
         content={
             "status": "success",
             "session_id": session_id,
-            "total_text_length": len(combined_text.strip()),
-            "prep_response": prep_text,
+            "total_questions": len(checklist["questions"]),
+            "message": "Checklist created. Tutor will now guide student through these questions."
         },
         headers=cors_headers,
     )
+
 
 
 
@@ -7018,6 +7031,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
