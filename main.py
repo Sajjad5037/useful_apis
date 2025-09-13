@@ -231,7 +231,7 @@ class StartSessionRequest(BaseModel):
     chapter: str
     className: str
     pages: List[str]
-
+    doctorData: Optional[str] = None  # <-- matches the frontend
 
 class PDFQuestion(Base):
     __tablename__ = "pdf_question"
@@ -7127,6 +7127,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
