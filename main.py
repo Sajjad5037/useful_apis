@@ -48,6 +48,7 @@ from fastapi import FastAPI, HTTPException, Depends, Form, File, UploadFile, Req
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import (
+    JSON,
     create_engine,
     Column,
     distinct,
@@ -7068,6 +7069,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
