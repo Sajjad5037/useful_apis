@@ -4306,7 +4306,7 @@ async def start_session_ibne_sina(
     # --- Generate QA pairs using GPT ---
     print("[DEBUG] Sending text to GPT to generate QA pairs")
     qa_generation_prompt = f"""
-    You are a helpful class 7 tutor.
+    You are a helpful class 7 tutor. 
     
     Study material:
     <<<
@@ -4314,19 +4314,25 @@ async def start_session_ibne_sina(
     >>>
     
     Task:
-    1. Carefully analyze the content.
-    2. Create a comprehensive set of question-answer pairs that fully cover the key concepts and important details.
-    3. Output JSON only in this format:
+    1. Analyze the content carefully.
+    2. Create a complete set of question-answer pairs that cover all key concepts.
+    3. Return **only** a JSON array of objects in this format:
+    
     [
-      {{ "question": "...", "answer": "..." }},
+      {{
+        "question": "Your question here",
+        "answer": "Correct answer here"
+      }},
       ...
     ]
     
-    Guidelines:
-    - Cover all major concepts
-    - Avoid redundant or trivial questions
-    - Keep questions clear, age-appropriate, and answerable based only on the material provided
+    Rules:
+    - Include all major concepts; avoid trivial/redundant questions.
+    - Keep questions clear, age-appropriate, and answerable solely from the material above.
+    - Do NOT include any text outside the JSON array.
+    - Do NOT add notes, explanations, or examples outside the JSON.
     """
+
 
     qa_response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -7121,6 +7127,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
