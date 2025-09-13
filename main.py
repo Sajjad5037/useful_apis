@@ -4361,7 +4361,7 @@ async def train_on_pdf_text_only(
 
     # --- Save to DB ---
     try:
-    # --- Save session-wide checklist (just once) ---
+        # --- Always save session-wide checklist (once per session) ---
         db.add(QAChecklist_new(
             session_id=session_id,
             username=username_for_interactive_session,
@@ -4369,22 +4369,33 @@ async def train_on_pdf_text_only(
             current_index=0,
             completed=False
         ))
-         # ✅ Get the single PDF name
+    
+        # ✅ Get the single PDF name
         pdf_name = pdfs[0].filename if pdfs and pdfs[0].filename else "unknown"
     
-        # --- Save individual questions ---
-        for qa in checklist["questions"]:
-            db.add(PDFQuestion_new(
-                session_id=session_id,
-                username=username_for_interactive_session,
-                pdf_name=pdf_name,               # ✅ added here
-                question=qa["q"],
-                answer=qa["a"],
-                status=qa["status"]
-            ))
+        # --- Check if this PDF already has questions saved ---
+        existing = db.query(PDFQuestion_new).filter_by(
+            username=username_for_interactive_session,
+            pdf_name=pdf_name
+        ).first()
     
+        if existing:
+            print(f"[DEBUG] Questions for PDF '{pdf_name}' already exist for user '{username_for_interactive_session}'. Skipping question inserts.")
+        else:
+            # --- Save individual questions ---
+            for qa in checklist["questions"]:
+                db.add(PDFQuestion_new(
+                    session_id=session_id,
+                    username=username_for_interactive_session,
+                    pdf_name=pdf_name,
+                    question=qa["q"],
+                    answer=qa["a"],
+                    status=qa["status"]
+                ))
+    
+        # ✅ Commit both QAChecklist_new and (maybe) PDFQuestion_new
         db.commit()
-        print("[DEBUG] Checklist saved to DB")
+        print(f"[DEBUG] Checklist saved (questions {'skipped' if existing else 'inserted'}) for PDF '{pdf_name}'")
     
     except Exception as e:
         print(f"[ERROR] Failed to save checklist to DB: {e}")
@@ -4394,6 +4405,7 @@ async def train_on_pdf_text_only(
             status_code=500,
             headers=cors_headers,
         )
+
     # --- Simulate prep_response for frontend compatibility ---
     prep_text = f"Checklist created with {len(checklist['questions'])} questions. Let's start learning!"
     print("[DEBUG] Created simulated prep_response for frontend")
@@ -7117,6 +7129,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
