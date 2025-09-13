@@ -4912,29 +4912,32 @@ async def chat_interactive_tutor(
 
         current_question = checklist["questions"][current_index]["q"]
         expected_answer = checklist["questions"][current_index]["a"]
-
-        # --- Teach the current question ---
+        
+        # --- Prepare teaching messages for the current question ---
         teaching_messages = [
             {
                 "role": "system",
                 "content": (
-                    f"You are a concise interactive tutor. Focus ONLY on this question: '{current_question}'. "
-                    "Teach the concept clearly. Do not ask mastery questions yet. "
-                    "Do not reveal the full expected answer directly."
+                    f"You are a concise, interactive tutor. "
+                    f"Focus ONLY on this question: '{current_question}'. "
+                    "Explain the concept clearly, step by step. "
+                    "Do NOT ask mastery questions yet and do NOT reveal the full expected answer."
                 )
             },
             {
                 "role": "user",
-                "content": "Student is ready to learn. Guide them interactively."
+                "content": "The student is ready to learn. Teach interactively and check understanding along the way."
             }
         ]
-
+        
+        # --- Call GPT to generate teaching content ---
         teach_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=teaching_messages,
             temperature=0.5
         )
         gpt_teach_reply = teach_response.choices[0].message.content.strip()
+
 
         # --- Update session history ---
         if session_id not in session_histories:
@@ -7103,6 +7106,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
