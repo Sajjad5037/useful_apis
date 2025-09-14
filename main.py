@@ -4413,8 +4413,9 @@ async def start_session_ibne_sina(
         )
 
     # --- Return JSON compatible with frontend ---
-    questions_text = "\n".join([f"{i+1}. {q['q']}" for i, q in enumerate(checklist["questions"])])
-    prep_text = f"I have created the following questions that I will help you to prepare:\n\n{questions_text}\n\nLet's start learning!"
+    # Format prep_text so each question appears on a new line in HTML
+    questions_text = "<br>".join([f"{i+1}. {q['q']}" for i, q in enumerate(checklist["questions"])])
+    prep_text = f"I have created the following questions that I will help you to prepare:<br><br>{questions_text}<br><br>Let's start learning!"
     return JSONResponse(
         content={
             "sessionId": session_id,
@@ -7108,6 +7109,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
