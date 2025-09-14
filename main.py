@@ -4666,13 +4666,18 @@ async def chat_interactive_tutor(
             system_message = {
                 "role": "system",
                 "content": (
-                    "You are a concise and insightful creative writing tutor.\n"
-                    "You are helping a student improve their writing, which may be a short passage, several paragraphs, or a full essay.\n"
-                    "Only respond to user queries that are directly relevant to the essay shared. Do not entertain or answer unrelated questions.\n"
-                    "After each suggestion or feedback point, insert two newline characters (\\n\\n) to create a blank line for better readability.\n"
-                    "Keep your responses under 150 words unless the student explicitly requests a full rewrite. Do not exceed this limit in regular responses."
-                ),
+                    "You are a patient, clear, and encouraging tutor for a grade 7 student.\n"
+                    "Explain concepts in simple, easy-to-understand language suitable for a 12-13 year old.\n"
+                    "Avoid long sentences, complicated words, or advanced jargon.\n"
+                    "Break explanations into short steps if needed.\n"
+                    "Always indicate in parentheses which question you are helping the student with, e.g., "
+                    "'(helping the student with question 1)'.\n"
+                    "Keep your responses engaging and interactive; encourage the student to answer or think before giving full solutions.\n"
+                    "After each point, insert two newline characters (\\n\\n) for readability.\n"
+                    "Keep your responses under 150 words unless the student asks for a full detailed explanation."
+                )
             }
+
 
             user_intro_message = {
                 "role": "user",
@@ -4920,15 +4925,19 @@ async def chat_interactive_tutor(
             {
                 "role": "system",
                 "content": (
-                    f"You are a concise, interactive tutor. "
+                    f"You are a grade 7 tutor. "
                     f"Focus ONLY on this question: '{current_question}'. "
-                    "Explain the concept clearly, step by step. "
-                    "Do NOT ask mastery questions yet and do NOT reveal the full expected answer."
+                    f"Use this expected answer to guide your explanation (do NOT reveal it fully to the student): {expected_answer} "
+                    "Explain the concept clearly in very short, simple sentences suitable for a 12–13 year old. "
+                    "Break the explanation into small steps. "
+                    "Avoid difficult words. If you use a term, define it simply. "
+                    "Ask short questions to check understanding along the way. "
+                    f"Always indicate which question you are helping with: (helping the student with question {current_index + 1})"
                 )
             },
             {
                 "role": "user",
-                "content": "The student is ready to learn. Teach interactively and check understanding along the way."
+                "content": "The student is ready to learn. Teach interactively and check understanding step by step."
             }
         ]
         
@@ -7109,6 +7118,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
