@@ -4896,10 +4896,7 @@ Instructions:
 
 
 @app.post("/chat_interactive_tutor_Ibne_Sina", response_model=ChatResponse)
-async def chat_interactive_tutor(
-    request: ChatRequest_Ibne_Sina,
-    db: Session = Depends(get_db)
-):
+async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = Depends(get_db)):
     try:
         session_id = request.session_id.strip()
         student_reply = request.message.strip()
@@ -4910,6 +4907,7 @@ async def chat_interactive_tutor(
         checklist = session_checklists[session_id]
         current_index = checklist["current_index"]
         current_step = checklist.get("current_step", 0)  # Track step per question
+        total_steps = checklist.get("total_steps", 3)    # Can customize per question if needed
 
         # --- All questions completed ---
         if current_index >= len(checklist["questions"]):
@@ -4919,37 +4917,45 @@ async def chat_interactive_tutor(
         current_question = checklist["questions"][current_index]["q"]
         expected_answer = checklist["questions"][current_index]["a"]
 
-        # --- Check mastery of previous step (if any) ---
+        # --- Check mastery of previous step ---
         if student_reply:
             mastered = assess_mastery(student_reply, expected_answer)
             if mastered:
                 current_step += 1
                 print(f"[DEBUG] Student mastered step {current_step} of question {current_index + 1}")
             else:
-                # Repeat same step
                 print(f"[DEBUG] Student did NOT master step {current_step} of question {current_index + 1}")
 
-        # --- Prepare teaching messages for current step ---
+        # --- Determine if we need to move to next question ---
+        if current_step >= total_steps:
+            checklist["current_index"] += 1
+            checklist["current_step"] = 0
+            current_index = checklist["current_index"]
+            current_step = 0
+            if current_index >= len(checklist["questions"]):
+                checklist["completed"] = True
+                return ChatResponse(reply="All questions completed. Great job!")
+            current_question = checklist["questions"][current_index]["q"]
+            expected_answer = checklist["questions"][current_index]["a"]
+
+        # --- Prepare teaching messages only if student needs guidance ---
         teaching_messages = [
             {
                 "role": "system",
                 "content": (
                     f"You are a grade 7 tutor. "
                     f"Focus ONLY on this question: '{current_question}'. "
-                    f"Use the expected answer to guide your explanation (do NOT reveal it fully). "
-                    "Explain in very short, simple sentences suitable for a 12–13 year old. "
-                    "Break explanation into small steps. "
+                    f"Use this expected answer to guide your explanation (do NOT reveal it fully to the student): {expected_answer} "
+                    "Explain the concept clearly in very short, simple sentences suitable for a 12–13 year old. "
+                    "Break the explanation into small steps. "
                     "Avoid difficult words. If you use a term, define it simply. "
-                    "Ask one short question per step to check understanding. "
-                    f"Indicate which question and step: (helping with question {current_index + 1}, step {current_step + 1})"
+                    "Ask short questions to check understanding along the way. "
+                    f"Always start your response with '(helping the student with question {current_index + 1}, step {current_step + 1})'."
                 )
             },
             {
                 "role": "user",
-                "content": (
-                    f"The student is ready to learn. Teach only step {current_step + 1} "
-                    "and wait for the student's reply before moving to the next step."
-                )
+                "content": "The student is ready to learn. Teach interactively and check understanding step by step."
             }
         ]
 
@@ -4958,7 +4964,7 @@ async def chat_interactive_tutor(
             model="gpt-4o-mini",
             messages=teaching_messages,
             temperature=0.3,
-            max_tokens=200
+            max_tokens=250
         )
         gpt_reply = teach_response.choices[0].message.content.strip()
 
@@ -4971,14 +4977,6 @@ async def chat_interactive_tutor(
 
         # --- Save updated step index ---
         checklist["current_step"] = current_step
-
-        # --- Move to next question if last step mastered ---
-        # Assuming we define "total_steps" per question, here we use 3 as example
-        total_steps = 3
-        if current_step >= total_steps:
-            checklist["current_index"] += 1
-            checklist["current_step"] = 0
-            print(f"[DEBUG] Moving to question {checklist['current_index'] + 1}")
 
         # --- Record usage cost ---
         usage = teach_response.usage
@@ -4999,6 +4997,7 @@ async def chat_interactive_tutor(
     except Exception as e:
         print(f"[ERROR] Internal server error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
+
 
 
 @app.post("/api/pdf_chatbot")
@@ -7135,6 +7134,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
