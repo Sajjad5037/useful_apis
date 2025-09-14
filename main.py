@@ -4901,8 +4901,6 @@ async def chat_interactive_tutor(
     db: Session = Depends(get_db)
 ):
     try:
-        print("[DEBUG] Received request:", request)
-
         session_id = request.session_id.strip()
         student_reply = request.message.strip()
 
@@ -4911,6 +4909,7 @@ async def chat_interactive_tutor(
 
         checklist = session_checklists[session_id]
         current_index = checklist["current_index"]
+        current_step = checklist.get("current_step", 0)  # Track step per question
 
         # --- All questions completed ---
         if current_index >= len(checklist["questions"]):
@@ -4919,48 +4918,67 @@ async def chat_interactive_tutor(
 
         current_question = checklist["questions"][current_index]["q"]
         expected_answer = checklist["questions"][current_index]["a"]
-        
-        # --- Prepare teaching messages for the current question ---
+
+        # --- Check mastery of previous step (if any) ---
+        if student_reply:
+            mastered = assess_mastery(student_reply, expected_answer)
+            if mastered:
+                current_step += 1
+                print(f"[DEBUG] Student mastered step {current_step} of question {current_index + 1}")
+            else:
+                # Repeat same step
+                print(f"[DEBUG] Student did NOT master step {current_step} of question {current_index + 1}")
+
+        # --- Prepare teaching messages for current step ---
         teaching_messages = [
             {
                 "role": "system",
                 "content": (
                     f"You are a grade 7 tutor. "
                     f"Focus ONLY on this question: '{current_question}'. "
-                    f"Use this expected answer to guide your explanation (do NOT reveal it fully to the student): {expected_answer} "
-                    "Explain the concept clearly in very short, simple sentences suitable for a 12–13 year old. "
-                    "Break the explanation into small steps. "
+                    f"Use the expected answer to guide your explanation (do NOT reveal it fully). "
+                    "Explain in very short, simple sentences suitable for a 12–13 year old. "
+                    "Break explanation into small steps. "
                     "Avoid difficult words. If you use a term, define it simply. "
-                    "Ask short questions to check understanding along the way. "
-                    f"Always indicate which question you are helping with: (helping the student with question {current_index + 1})"
+                    "Ask one short question per step to check understanding. "
+                    f"Indicate which question and step: (helping with question {current_index + 1}, step {current_step + 1})"
                 )
             },
             {
                 "role": "user",
-                "content": "The student is ready to learn. Teach interactively and check understanding step by step."
+                "content": (
+                    f"The student is ready to learn. Teach only step {current_step + 1} "
+                    "and wait for the student's reply before moving to the next step."
+                )
             }
         ]
-        
-        # --- Call GPT to generate teaching content ---
+
+        # --- Call GPT ---
         teach_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=teaching_messages,
-            temperature=0.3,   # Lower temperature for concise, deterministic output
-            max_tokens=250      # Limit reply length to avoid overwhelming the student
+            temperature=0.3,
+            max_tokens=200
         )
-        gpt_teach_reply = teach_response.choices[0].message.content.strip()
-
+        gpt_reply = teach_response.choices[0].message.content.strip()
 
         # --- Update session history ---
         if session_id not in session_histories:
             session_histories[session_id] = []
-        session_histories[session_id].append({"role": "assistant", "content": gpt_teach_reply})
-        session_histories[session_id].append({"role": "user", "content": student_reply})
+        session_histories[session_id].append({"role": "assistant", "content": gpt_reply})
+        if student_reply:
+            session_histories[session_id].append({"role": "user", "content": student_reply})
 
-        # --- Assess mastery after student reply ---
-        if assess_mastery(student_reply, expected_answer):
+        # --- Save updated step index ---
+        checklist["current_step"] = current_step
+
+        # --- Move to next question if last step mastered ---
+        # Assuming we define "total_steps" per question, here we use 3 as example
+        total_steps = 3
+        if current_step >= total_steps:
             checklist["current_index"] += 1
-            print(f"[DEBUG] Mastered question {current_index}, moving to {checklist['current_index']}")
+            checklist["current_step"] = 0
+            print(f"[DEBUG] Moving to question {checklist['current_index'] + 1}")
 
         # --- Record usage cost ---
         usage = teach_response.usage
@@ -4976,12 +4994,11 @@ async def chat_interactive_tutor(
         ))
         db.commit()
 
-        return ChatResponse(reply=gpt_teach_reply)
+        return ChatResponse(reply=gpt_reply)
 
     except Exception as e:
         print(f"[ERROR] Internal server error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
-
 
 
 @app.post("/api/pdf_chatbot")
@@ -7118,6 +7135,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
