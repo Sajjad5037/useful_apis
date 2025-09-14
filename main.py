@@ -4946,18 +4946,24 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
                     f"You are a grade 7 tutor. "
                     f"Focus ONLY on this question: '{current_question}'. "
                     f"Use this expected answer to guide your explanation (do NOT reveal it fully to the student): {expected_answer} "
-                    "Explain the concept clearly in very short, simple sentences suitable for a 12–13 year old. "
-                    "Break the explanation into small steps. "
-                    "Avoid difficult words. If you use a term, define it simply. "
-                    "Ask short questions to check understanding along the way. "
+                    "Explain the concept in very short, simple sentences suitable for a 12–13 year old. "
+                    "Break the explanation into small steps. Avoid difficult words; if you use a term, define it simply. "
+                    "Ask short questions to check understanding after each step. "
+                    "If the student says they do not know, give a small hint or rephrase your explanation in an easier way. "
+                    "Do NOT move to the next step or question until the student demonstrates understanding. "
                     f"Always start your response with '(helping the student with question {current_index + 1}, step {current_step + 1})'."
                 )
             },
             {
                 "role": "user",
-                "content": "The student is ready to learn. Teach interactively and check understanding step by step."
+                "content": (
+                    "The student is ready to learn. Teach interactively and check understanding step by step. "
+                    "If the student says they do not know, guide them with a hint or a simpler explanation. "
+                    "Wait for their response before proceeding."
+                )
             }
         ]
+
 
         # --- Call GPT ---
         teach_response = client.chat.completions.create(
@@ -7134,6 +7140,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
