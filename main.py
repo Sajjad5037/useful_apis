@@ -5060,6 +5060,90 @@ async def chat(
 
     return JSONResponse(content=response)
 
+@app.post("/api/train_model_website_pdf")
+async def train_model(pages: PageRange):
+    try:
+        start_page = pages.start_page
+        end_page = pages.end_page
+        username_for_interactive_session = pages.user_name
+
+        print("=" * 50)
+        print(f"[INFO] Received request to train model")
+        print(f"[INFO] Page range: {start_page} to {end_page}")
+        print(f"[INFO] Username: {username_for_interactive_session}")
+
+        combined_text = {}
+        total_pdf = 0
+
+        print("[INFO] Listing S3 objects in 'upload/'")
+        response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix="upload/")
+
+        if "Contents" not in response:
+            print("[WARNING] No contents found in S3 under 'upload/'")
+            return JSONResponse(
+                status_code=404,
+                content={"error": "No PDF files found in the S3 'upload/' folder."}
+            )
+
+        for obj in response["Contents"]:
+            key = obj["Key"]
+            if key.lower().endswith(".pdf") and not key.endswith("/"):
+                try:
+                    print(f"[INFO] Processing file: {key}")
+                    total_pdf += 1
+
+                    s3_obj = s3.get_object(Bucket=BUCKET_NAME, Key=key)
+                    file_stream = BytesIO(s3_obj["Body"].read())
+
+                    print(f"[INFO] Extracting text from PDF '{key}' between pages {start_page} and {end_page}")
+                    pdf_data = extract_text_from_pdf(file_stream, start_page, end_page)
+
+                    combined_text.update(pdf_data)
+
+                except Exception as e:
+                    print(f"[ERROR] Failed to process {key}")
+                    traceback.print_exc()
+                    continue
+
+        if not combined_text:
+            print("[WARNING] No text extracted from any PDF.")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "No valid text extracted from any PDF."}
+            )
+
+        print("[INFO] Creating/loading vector store")
+        vectorstore, embeddings = create_or_load_vectorstore(
+            pdf_text=combined_text,
+            username=username_for_interactive_session,
+            openai_api_key=openai_api_key,
+            s3_client=s3,
+            bucket_name=BUCKET_NAME
+        )
+
+        print(f"[SUCCESS] Vectorstore trained using {total_pdf} PDFs.")
+        return JSONResponse(
+            status_code=200,
+            content={"message": f"Model trained successfully from {total_pdf} PDFs!"}
+        )
+
+    except ClientError as e:
+        print(f"[S3 ERROR] Client error: {e}")
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Failed to access S3 bucket.", "details": str(e)}
+        )
+
+    except Exception as e:
+        print(f"[ERROR] Unexpected error during training: {e}")
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Model could not be trained!", "details": str(e)}
+        )
+
+
 @app.post("/api/train_model")
 async def train_model(pages: PageRange, db: Session = Depends(get_db)):
     
@@ -7203,6 +7287,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
