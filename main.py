@@ -7,6 +7,7 @@ import os
 import vertexai
 import sys
 import fitz 
+from google.oauth2 import service_account
 from google.cloud import storage
 import base64
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -217,11 +218,19 @@ app.add_middleware(
 
 Base = declarative_base()
 
+try:
+    credentials_info = json.loads(os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"])
+except KeyError:
+    raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS_JSON is not set in environment")
+except json.JSONDecodeError as e:
+    raise RuntimeError(f"Invalid JSON in GOOGLE_APPLICATION_CREDENTIALS_JSON: {e}")
 
-gcp_credentials_info = json.loads(os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"])
+credentials = service_account.Credentials.from_service_account_info(credentials_info)
+
+
 
 # Initialize GCS client
-storage_client = storage.Client.from_service_account_info(gcp_credentials_info)
+storage_client = storage.Client(credentials=credentials)
 
 # Use a unique variable name for your bucket
 bucket_name_pdf_upload = "portfolio-pdfs-storage"
@@ -6082,9 +6091,17 @@ async def solve_math_problem(image: UploadFile = File(...)):
         "solution": f"Simplified result: {solution}"
     }
 
+from fastapi import UploadFile, File, HTTPException
+from fastapi.responses import JSONResponse
+from typing import Union, List
+from io import BytesIO
+
 @app.post("/api/upload_to_gcs")
 async def upload_pdfs_to_gcs(pdfs: Union[UploadFile, List[UploadFile]] = File(...)):
     print("🔹 [START] Upload endpoint called")
+
+    # Debug: Show which service account is active
+    print(f"🪪 Using service account: {credentials.service_account_email}")
 
     # Normalize to list
     if not isinstance(pdfs, list):
@@ -6102,22 +6119,27 @@ async def upload_pdfs_to_gcs(pdfs: Union[UploadFile, List[UploadFile]] = File(..
         for pdf in pdfs:
             print(f"\n📄 Processing file: {pdf.filename}")
 
+            # Validate extension
             if not pdf.filename.strip().lower().endswith(".pdf"):
                 print(f"❌ Skipping {pdf.filename} — not a PDF")
                 raise HTTPException(status_code=400, detail=f"{pdf.filename} is not a PDF")
 
+            # Upload path
             blob_path = f"upload/{pdf.filename}"
             print(f"📍 Creating blob at path: {blob_path}")
             blob = bucket.blob(blob_path)
 
+            # Read file bytes
             print(f"📤 Reading bytes from file: {pdf.filename}")
             file_bytes = await pdf.read()
             print(f"📦 File size read: {len(file_bytes)} bytes")
 
+            # Upload to GCS
             print(f"⬆️ Uploading to bucket {bucket_name_pdf_upload} ...")
             blob.upload_from_file(BytesIO(file_bytes), content_type="application/pdf")
             print(f"✅ Uploaded {pdf.filename}")
 
+            # Make public
             print(f"🌐 Making {pdf.filename} public ...")
             blob.make_public()
             print(f"🔗 Public URL: {blob.public_url}")
@@ -6130,7 +6152,6 @@ async def upload_pdfs_to_gcs(pdfs: Union[UploadFile, List[UploadFile]] = File(..
     except Exception as e:
         print(f"\n💥 [ERROR] Upload failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
-
 
 @app.post("/api/upload")
 async def upload_pdfs(pdfs: Union[UploadFile, List[UploadFile]] = File(...)):
@@ -7204,6 +7225,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
