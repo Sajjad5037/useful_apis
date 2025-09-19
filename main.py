@@ -1109,8 +1109,15 @@ def is_relevant_to_programming(message: str) -> bool:
     return any(keyword in message_lower for keyword in programming_keywords)
 
 def separate_sentences(text):
+    # Print the input text for debugging
+    print("[DEBUG] Input text to separate_sentences:\n", text)
+    
     # Split by newline characters and filter out any empty strings
     sentences = [sentence for sentence in text.split("\n") if sentence.strip()]
+    
+    # Print the resulting sentences list for debugging
+    print("[DEBUG] Sentences extracted:", sentences)
+    
     return sentences
 
 
@@ -7381,6 +7388,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
