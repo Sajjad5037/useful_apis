@@ -1461,6 +1461,100 @@ old function :
 #     except Exception as e:
 #         print(f"An unexpected error occurred: {e}")
 #         return None, None, None
+def create_or_load_vectorstore_website_pdf(
+    pdf_text,
+    username,
+    openai_api_key,
+    s3_client,
+    bucket_name,
+    vectorstore_key="vectorstore.faiss",
+    embeddings_key="embeddings.pkl"
+):
+    try:
+        print("[INFO] Starting creation of new vector store and embeddings...")
+        global vectorstore
+
+        print("[INFO] Initializing RecursiveCharacterTextSplitter...")
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,      # larger chunks to keep instructions together
+            chunk_overlap=100,   # overlap to prevent cutting important lines
+            separators=["\n\n", "\n", ".", " "]
+        )
+        print("[INFO] Text splitter initialized.")
+
+        documents_with_page_info = []
+        print("[INFO] Splitting text into chunks and creating Document objects...")
+        for pdf_name, page_content in pdf_text.items():
+            for page_number, text in page_content.items():
+                if text.strip():
+                    chunks = text_splitter.split_text(text)
+                    print(f"[DEBUG] PDF '{pdf_name}', Page {page_number}: Split into {len(chunks)} chunks.")
+                    for chunk in chunks:
+                        document_with_page_info = Document(
+                            page_content=chunk,
+                            metadata={"pdf_name": pdf_name, "page_number": page_number}
+                        )
+                        documents_with_page_info.append(document_with_page_info)
+        print(f"[INFO] Created {len(documents_with_page_info)} document chunks in total.")
+
+        print("[INFO] Initializing OpenAI client...")
+        client = OpenAI(api_key=openai_api_key)
+        print("[INFO] OpenAI client initialized.")
+
+        texts = [doc.page_content for doc in documents_with_page_info]
+
+        print("[INFO] Requesting embeddings from OpenAI API...")
+        openai_response = client.embeddings.create(
+            model="text-embedding-ada-002",
+            input=texts
+        )
+        print("[INFO] Embeddings received from OpenAI API.")
+
+        embeddings_list = [data.embedding for data in openai_response.data]
+
+        # Wrap embeddings in a LangChain-compatible Embeddings class
+        class PrecomputedEmbeddings(Embeddings):
+            def __init__(self, precomputed):
+                self.precomputed = precomputed
+                self.index = 0  # track which embedding to return
+
+            def embed_documents(self, texts):
+                result = self.precomputed[self.index:self.index + len(texts)]
+                self.index += len(texts)
+                return result
+
+            def embed_query(self, text):
+                resp = client.embeddings.create(
+                    model="text-embedding-ada-002",
+                    input=text
+                )
+                return resp.data[0].embedding
+
+        embeddings = PrecomputedEmbeddings(precomputed=embeddings_list)
+
+        print("[INFO] Creating FAISS vector store from documents and embeddings...")
+        vectorstore = FAISS.from_documents(documents_with_page_info, embeddings)
+        print("[INFO] Vector store created.")
+
+        print(f"[INFO] Saving vector store locally to '{vectorstore_key}'...")
+        vectorstore.save_local(vectorstore_key)
+        print("[INFO] Vector store saved locally.")
+
+        embeddings_params = {"openai_api_key": openai_api_key}
+        print(f"[INFO] Saving embeddings parameters locally to '{embeddings_key}'...")
+        joblib.dump(embeddings_params, embeddings_key)
+        print("[INFO] Embeddings parameters saved.")
+
+        print("[SUCCESS] Vector store and embeddings creation complete.")
+        return vectorstore, embeddings
+
+    except Exception as e:
+        print(f"[ERROR] Exception occurred: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+
 
 def create_or_load_vectorstore(
     pdf_text,
@@ -5113,7 +5207,7 @@ async def train_model(pages: PageRange):
             )
 
         print("[INFO] Creating/loading vector store")
-        vectorstore, embeddings = create_or_load_vectorstore(
+        vectorstore, embeddings = create_or_load_vectorstore_website_pdf(
             pdf_text=combined_text,
             username=username_for_interactive_session,
             openai_api_key=openai_api_key,
@@ -7287,6 +7381,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
