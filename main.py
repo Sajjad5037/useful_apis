@@ -98,12 +98,6 @@ vectorstore = None
 total_pdf = 0
 import tempfile
 
-creds_env = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-if creds_env:
-    creds_path = "/tmp/service_account.json"
-    with open(creds_path, "w") as f:
-        f.write(creds_env)
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_path
 
 session_checklists={} #to be used to keep track of questions extract from the given pdf and their corresponding answer
 session_histories = {}
@@ -218,22 +212,6 @@ app.add_middleware(
 
 Base = declarative_base()
 
-try:
-    credentials_info = json.loads(os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"])
-except KeyError:
-    raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS_JSON is not set in environment")
-except json.JSONDecodeError as e:
-    raise RuntimeError(f"Invalid JSON in GOOGLE_APPLICATION_CREDENTIALS_JSON: {e}")
-
-credentials = service_account.Credentials.from_service_account_info(credentials_info)
-
-
-
-# Initialize GCS client
-storage_client = storage.Client(credentials=credentials)
-
-# Use a unique variable name for your bucket
-bucket_name_pdf_upload = "portfolio-pdfs-storage"
 
 # AWS S3 config (use Railway ENV variables in deployment)
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
@@ -7225,6 +7203,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
