@@ -97,7 +97,12 @@ vectorstore = None
 total_pdf = 0
 import tempfile
 
-
+creds_env = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+if creds_env:
+    creds_path = "/tmp/service_account.json"
+    with open(creds_path, "w") as f:
+        f.write(creds_env)
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_path
 
 session_checklists={} #to be used to keep track of questions extract from the given pdf and their corresponding answer
 session_histories = {}
@@ -211,6 +216,15 @@ app.add_middleware(
 )
 
 Base = declarative_base()
+
+
+gcp_credentials_info = json.loads(os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"])
+
+# Initialize GCS client
+storage_client = storage.Client.from_service_account_info(gcp_credentials_info)
+
+# Use a unique variable name for your bucket
+bucket_name_pdf_upload = "portfolio-pdfs-storage"
 
 # AWS S3 config (use Railway ENV variables in deployment)
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
@@ -6068,6 +6082,56 @@ async def solve_math_problem(image: UploadFile = File(...)):
         "solution": f"Simplified result: {solution}"
     }
 
+@app.post("/api/upload_to_gcs")
+async def upload_pdfs_to_gcs(pdfs: Union[UploadFile, List[UploadFile]] = File(...)):
+    print("🔹 [START] Upload endpoint called")
+
+    # Normalize to list
+    if not isinstance(pdfs, list):
+        print("📁 Only one file received — wrapping into list")
+        pdfs = [pdfs]
+    else:
+        print(f"📁 Multiple files received: {[pdf.filename for pdf in pdfs]}")
+
+    uploaded_files = []
+
+    try:
+        print(f"🔹 Connecting to bucket: {bucket_name_pdf_upload}")
+        bucket = storage_client.bucket(bucket_name_pdf_upload)
+
+        for pdf in pdfs:
+            print(f"\n📄 Processing file: {pdf.filename}")
+
+            if not pdf.filename.strip().lower().endswith(".pdf"):
+                print(f"❌ Skipping {pdf.filename} — not a PDF")
+                raise HTTPException(status_code=400, detail=f"{pdf.filename} is not a PDF")
+
+            blob_path = f"upload/{pdf.filename}"
+            print(f"📍 Creating blob at path: {blob_path}")
+            blob = bucket.blob(blob_path)
+
+            print(f"📤 Reading bytes from file: {pdf.filename}")
+            file_bytes = await pdf.read()
+            print(f"📦 File size read: {len(file_bytes)} bytes")
+
+            print(f"⬆️ Uploading to bucket {bucket_name_pdf_upload} ...")
+            blob.upload_from_file(BytesIO(file_bytes), content_type="application/pdf")
+            print(f"✅ Uploaded {pdf.filename}")
+
+            print(f"🌐 Making {pdf.filename} public ...")
+            blob.make_public()
+            print(f"🔗 Public URL: {blob.public_url}")
+
+            uploaded_files.append(blob.public_url)
+
+        print("\n✅ [DONE] All files uploaded successfully")
+        return JSONResponse(content={"message": "Files uploaded successfully", "files": uploaded_files})
+
+    except Exception as e:
+        print(f"\n💥 [ERROR] Upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
 @app.post("/api/upload")
 async def upload_pdfs(pdfs: Union[UploadFile, List[UploadFile]] = File(...)):
     # Normalize to list even if a single file is uploaded
@@ -7140,6 +7204,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
