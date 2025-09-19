@@ -4957,13 +4957,17 @@ def generate_detailed_summary(conversation_text: str, study_material: str) -> tu
     
 
 
-def assess_mastery(student_reply: str, expected_answer: str) -> bool:
+def assess_mastery(student_reply: str, expected_answer: str) -> str:
     """
-    Ask GPT whether the student's paraphrased reply shows mastery.
+    Ask GPT whether the student's answer shows mastery.
+    Returns:
+        "correct"  -> fully understands
+        "partial"  -> partially correct, minor misconceptions
+        "incorrect" -> does not understand
     """
     prompt = f"""
-You are an expert tutor. Evaluate whether the student's answer demonstrates
-mastery of the expected answer.
+You are an expert tutoring assistant. Evaluate whether the student's answer demonstrates understanding
+of the expected answer. Consider paraphrasing, partial correctness, and conceptual understanding.
 
 Expected answer:
 \"\"\"
@@ -4976,10 +4980,11 @@ Student's answer:
 \"\"\"
 
 Instructions:
-- Respond ONLY with "True" if the student's answer shows mastery,
-  "False" if it does not.
-- Consider paraphrasing, partial correctness, and conceptual understanding.
-- Do not add any explanations or extra text.
+- Respond with ONLY one of the following words:
+    "correct" if the student's answer fully shows mastery,
+    "partial" if it shows some understanding but has minor errors,
+    "incorrect" if it shows misunderstanding or no understanding.
+- Do not add any explanations.
 """
     try:
         response = client.chat.completions.create(
@@ -4991,14 +4996,20 @@ Instructions:
             temperature=0
         )
         gpt_output = response.choices[0].message.content.strip().lower()
-        return gpt_output == "true"
+        if gpt_output in ["correct", "partial", "incorrect"]:
+            return gpt_output
+        return "incorrect"
     except Exception as e:
         print(f"[ERROR] GPT mastery check failed: {e}")
-        return False
+        return "incorrect"
+
 
 
 @app.post("/chat_interactive_tutor_Ibne_Sina", response_model=ChatResponse)
 async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = Depends(get_db)):
+    """
+    Interactive tutor endpoint with step-based adaptive guidance.
+    """
     try:
         session_id = request.session_id.strip()
         student_reply = request.message.strip()
@@ -5008,85 +5019,92 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
 
         checklist = session_checklists[session_id]
         current_index = checklist["current_index"]
-        current_step = checklist.get("current_step", 0)  # Track step per question
-        total_steps = checklist.get("total_steps", 3)    # Can customize per question if needed
 
-        # --- All questions completed ---
+        # All questions completed
         if current_index >= len(checklist["questions"]):
             checklist["completed"] = True
             return ChatResponse(reply="All questions completed. Great job!")
 
-        current_question = checklist["questions"][current_index]["q"]
-        expected_answer = checklist["questions"][current_index]["a"]
+        # Retrieve current question and its steps
+        current_question_data = checklist["questions"][current_index]
+        current_question = current_question_data["q"]
+        steps = current_question_data.get("steps", ["Understand the concept"])  # Default single step
+        current_step = checklist.get("current_step", 0)
+        total_steps = len(steps)
 
-        # --- Check mastery of previous step ---
+        # Mastery assessment
         if student_reply:
-            mastered = assess_mastery(student_reply, expected_answer)
-            if mastered:
-                current_step += 1
-                print(f"[DEBUG] Student mastered step {current_step} of question {current_index + 1}")
-            else:
-                print(f"[DEBUG] Student did NOT master step {current_step} of question {current_index + 1}")
+            expected_answer = steps[current_step]
+            mastery = assess_mastery(student_reply, expected_answer)
+            checklist.setdefault("step_status", {})[current_step] = mastery
 
-        # --- Determine if we need to move to next question ---
+            if mastery == "correct":
+                current_step += 1
+                checklist["current_step"] = current_step
+            elif mastery == "partial":
+                # Keep step same but send a hint
+                pass  # AI will handle hint via system prompt
+            else:
+                # incorrect → stay on same step, simplify explanation
+                pass
+
+        # Check if all steps of current question are done
         if current_step >= total_steps:
             checklist["current_index"] += 1
             checklist["current_step"] = 0
             current_index = checklist["current_index"]
-            current_step = 0
             if current_index >= len(checklist["questions"]):
                 checklist["completed"] = True
                 return ChatResponse(reply="All questions completed. Great job!")
-            current_question = checklist["questions"][current_index]["q"]
-            expected_answer = checklist["questions"][current_index]["a"]
+            current_question_data = checklist["questions"][current_index]
+            current_question = current_question_data["q"]
+            steps = current_question_data.get("steps", ["Understand the concept"])
+            current_step = 0
 
-        # --- Prepare teaching messages only if student needs guidance ---
+        # Prepare adaptive teaching message
+        last_student_reply = student_reply if student_reply else ""
+        step_description = steps[current_step]
+
         teaching_messages = [
             {
                 "role": "system",
                 "content": (
-                    f"You are a grade 7 tutor. "
-                    f"Focus ONLY on this question: '{current_question}'. "
-                    f"Use this expected answer to guide your explanation (do NOT reveal it fully to the student): {expected_answer} "
-                    "Explain the concept in very short, simple sentences suitable for a 12–13 year old. "
-                    "Break the explanation into small steps. Avoid difficult words; if you use a term, define it simply. "
-                    "Ask short questions to check understanding after each step. "
-                    "If the student says they do not know, give a small hint or rephrase your explanation in an easier way. "
-                    "Do NOT move to the next step or question until the student demonstrates understanding. "
-                    f"Always start your response with '(helping the student with question {current_index + 1}, step {current_step + 1})'."
+                    f"You are a grade 7 tutor guiding the student interactively.\n"
+                    f"Question: {current_question}\n"
+                    f"Step {current_step + 1}: {step_description}\n"
+                    f"Student last reply: '{last_student_reply}'\n"
+                    "Instructions:\n"
+                    "- Explain in short, simple sentences suitable for a 12–13 year old.\n"
+                    "- Ask one short question after each explanation to check understanding.\n"
+                    "- If the student is partially correct, give a gentle hint or simpler rephrasing.\n"
+                    "- If the student is incorrect, explain in an easier way.\n"
+                    "- Only move to next step when the student demonstrates understanding.\n"
+                    "- Avoid repeating the same sentences word-for-word.\n"
+                    f"Start your response with '(helping the student with question {current_index + 1}, step {current_step + 1})'."
                 )
             },
             {
                 "role": "user",
-                "content": (
-                    "The student is ready to learn. Teach interactively and check understanding step by step. "
-                    "If the student says they do not know, guide them with a hint or a simpler explanation. "
-                    "Wait for their response before proceeding."
-                )
+                "content": "The student is ready to learn. Teach interactively and check understanding step by step. Wait for their response before proceeding."
             }
         ]
 
-
-        # --- Call GPT ---
+        # Call GPT
         teach_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=teaching_messages,
-            temperature=0.3,
-            max_tokens=250
+            temperature=0.5,
+            max_tokens=300
         )
         gpt_reply = teach_response.choices[0].message.content.strip()
 
-        # --- Update session history ---
-        if session_id not in session_histories:
-            session_histories[session_id] = []
-        session_histories[session_id].append({"role": "assistant", "content": gpt_reply})
+        # Update session history
+        session_histories.setdefault(session_id, [])
         if student_reply:
             session_histories[session_id].append({"role": "user", "content": student_reply})
+        session_histories[session_id].append({"role": "assistant", "content": gpt_reply})
 
-        # --- Save updated step index ---
-        checklist["current_step"] = current_step
-
-        # --- Record usage cost ---
+        # Save usage cost
         usage = teach_response.usage
         cost = calculate_cost("gpt-4o-mini", usage.prompt_tokens, usage.completion_tokens)
         db.add(CostPerInteraction(
@@ -5105,6 +5123,7 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
     except Exception as e:
         print(f"[ERROR] Internal server error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
+
 
 
 
@@ -7388,6 +7407,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
