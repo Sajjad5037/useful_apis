@@ -6414,6 +6414,38 @@ async def send_email(
         return {"success": True, "message": "Email sent successfully."}
     except Exception as e:
         return {"success": False, "message": f"Failed to send email: {str(e)}"}
+
+@app.post("/api/send-email-portfolio-website")
+async def send_email_rafis(
+    name: str = Form(...),
+    email: str = Form(...),
+    message: str = Form(...)
+):
+    try:
+        msg = EmailMessage()
+        msg['Subject'] = 'New Contact Form Submission - Portfolio Website'
+        msg['From'] = SMTP_USER
+        msg['To'] = 'proactive1@live.com'  # where you want to receive messages
+        msg.set_content(f"""
+New message from contact form:
+
+Name: {name}
+Email: {email}
+
+Message:
+{message}
+""")
+
+        # Send email over TLS
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+
+        return {"success": True, "message": "Email sent successfully."}
+
+    except Exception as e:
+        return {"success": False, "message": f"Failed to send email: {str(e)}"}
     
 @app.post("/api/reservationRafisKitchen")
 async def make_reservation(reservation: Reservation):
@@ -7402,6 +7434,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
