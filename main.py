@@ -6422,10 +6422,15 @@ async def send_email_rafis(
     message: str = Form(...)
 ):
     try:
+        print("Received contact form submission:")
+        print(f"Name: {name}")
+        print(f"Email: {email}")
+        print(f"Message: {message}")
+
         msg = EmailMessage()
         msg['Subject'] = 'New Contact Form Submission - Portfolio Website'
         msg['From'] = SMTP_USER
-        msg['To'] = 'proactive1@live.com'  # where you want to receive messages
+        msg['To'] = 'proactive1@live.com'
         msg.set_content(f"""
 New message from contact form:
 
@@ -6436,16 +6441,22 @@ Message:
 {message}
 """)
 
-        # Send email over TLS
+        print("Connecting to SMTP server...")
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            print("Starting TLS...")
             server.starttls()
+            print(f"Logging in as {SMTP_USER}...")
             server.login(SMTP_USER, SMTP_PASS)
+            print("Sending email...")
             server.send_message(msg)
+            print("Email sent successfully!")
 
         return {"success": True, "message": "Email sent successfully."}
 
     except Exception as e:
+        print("Error sending email:", str(e))
         return {"success": False, "message": f"Failed to send email: {str(e)}"}
+        
     
 @app.post("/api/reservationRafisKitchen")
 async def make_reservation(reservation: Reservation):
@@ -7434,6 +7445,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
