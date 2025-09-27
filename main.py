@@ -4471,11 +4471,24 @@ async def start_session_ibne_sina(
         "completed": False
     }
 
+    
     # --- Save in-memory ---
     session_id = str(uuid4())
     session_checklists[session_id] = checklist
     print(f"[DEBUG] Saved checklist to memory with session_id: {session_id}")
-
+    print(f"[DEBUG] Checklist questions for session {session_id}:")
+    for i, q in enumerate(checklist["questions"], start=1):
+        print(f"  Q{i}: {q['q']} (Status: {q['status']})")
+    
+    # --- Initialize session history with AI’s first message (questions) ---
+    questions_text = "\n".join([f"{i+1}. {q['q']}" for i, q in enumerate(checklist["questions"])])
+    initial_message = f"I have created the following questions that I will help you prepare:\n\n{questions_text}\n\nLet's start learning!"
+    
+    session_histories[session_id] = [
+        {"role": "assistant", "content": initial_message}
+    ]
+    print(f"[DEBUG] Initialized session history for session {session_id} with AI first message:")
+    print(initial_message)
     # --- Save to DB ---
     try:
         db.add(QAChecklist_new(
@@ -7445,6 +7458,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
