@@ -4756,142 +4756,123 @@ def get_dashboard():
 
 
 
-@app.post("/chat_interactive_tutor", response_model=ChatResponse)
-async def chat_interactive_tutor(
-    request: ChatRequest_CSS,
-    db: Session = Depends(get_db)
-):
+@app.post("/chat_interactive_tutor_Ibne_Sina", response_model=ChatResponse)
+async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = Depends(get_db)):
+    """
+    Interactive tutor endpoint with step-based adaptive guidance.
+    Tracks mastery, provides hints, and moves to next question automatically.
+    """
     try:
-        print("[DEBUG] Received request:", request)
         session_id = request.session_id.strip()
-        user_message = request.message.strip()
-        print(f"[DEBUG] session_id: {session_id}")
-        print(f"[DEBUG] user_message: {user_message}")
+        student_reply = request.message.strip()
+        username = request.username.strip()
 
-        if session_id not in session_texts:
-            print(f"[ERROR] Session ID {session_id} not found in session_texts")
+        # --- Validate session ---
+        if session_id not in session_checklists:
             raise HTTPException(status_code=404, detail="Session ID not found")
 
-        full_text = session_texts[session_id]
-        print(f"[DEBUG] Retrieved full_text of length {len(full_text)}")
+        checklist = session_checklists[session_id]
+        current_index = checklist["current_index"]
+        current_step = checklist.get("current_step", 0)
 
-        if request.first_message:
-            print("[DEBUG] Processing first message of the session")
+        # --- Check if all questions completed ---
+        if current_index >= len(checklist["questions"]):
+            checklist["completed"] = True
+            print(f"[DEBUG] Session {session_id} completed all questions.")
+            return ChatResponse(reply="All questions completed. Great job!")
 
-            system_message = {
+        # --- Retrieve current question and steps ---
+        current_question_data = checklist["questions"][current_index]
+        current_question = current_question_data["q"]
+        steps = current_question_data.get("steps", ["Understand the concept"])
+        total_steps = len(steps)
+        step_description = steps[current_step]
+
+        # --- Assess mastery ---
+        mastery = "not attempted"
+        if student_reply:
+            expected_answer = step_description
+            mastery = assess_mastery(student_reply, expected_answer)
+            checklist.setdefault("step_status", {})[current_step] = mastery
+            print(f"[DEBUG] Student reply: '{student_reply}' | Expected: '{expected_answer}' | Mastery: {mastery}")
+
+        # --- Move to next step or question ---
+        if mastery == "correct":
+            current_step += 1
+        elif mastery == "partial":
+            # Give hint but still allow moving to next step if student shows partial understanding
+            current_step += 1  # optional: remove if you want to repeat partial step
+        # Do not advance if mastery is incorrect
+
+        # Update checklist tracking
+        if current_step >= total_steps:
+            current_index += 1
+            current_step = 0
+            checklist["current_index"] = current_index
+            checklist["current_step"] = current_step
+            checklist["step_status"] = {}
+            if current_index >= len(checklist["questions"]):
+                checklist["completed"] = True
+                print(f"[DEBUG] Session {session_id} completed all questions after last step.")
+                return ChatResponse(reply="All questions completed. Great job!")
+
+        # Save updated indices
+        checklist["current_step"] = current_step
+        checklist["current_index"] = current_index
+
+        # --- Prepare AI teaching message ---
+        step_status = checklist.get("step_status", {}).get(current_step, "not attempted")
+        last_student_reply = student_reply if student_reply else ""
+
+        teaching_messages = [
+            {
                 "role": "system",
                 "content": (
-                    "You are a patient, clear, and encouraging tutor for a grade 7 student.\n"
-                    "Explain concepts in simple, easy-to-understand language suitable for a 12-13 year old.\n"
-                    "Avoid long sentences, complicated words, or advanced jargon.\n"
-                    "Break explanations into short steps if needed.\n"
-                    "Always indicate in parentheses which question you are helping the student with, e.g., "
-                    "'(helping the student with question 1)'.\n"
-                    "Keep your responses engaging and interactive; encourage the student to answer or think before giving full solutions.\n"
-                    "After each point, insert two newline characters (\\n\\n) for readability.\n"
-                    "Keep your responses under 150 words unless the student asks for a full detailed explanation."
+                    f"You are a grade 7 tutor.\n"
+                    f"Question: {current_question}\n"
+                    f"Step {current_step + 1}: {steps[current_step]}\n"
+                    f"Step status: {step_status}\n"
+                    f"Student last reply: '{last_student_reply}'\n"
+                    "Instructions:\n"
+                    "- Explain in short, simple sentences suitable for a 12–13 year old.\n"
+                    "- Ask one short question after explanation to check understanding.\n"
+                    "- If mastery is 'partial', give a gentle hint or simpler rephrasing.\n"
+                    "- If mastery is 'incorrect', explain in an easier way.\n"
+                    "- Only move to the next step when the student demonstrates correct understanding.\n"
+                    "- Avoid repeating the same sentences word-for-word.\n"
+                    f"Start your response with '(helping the student with question {current_index + 1}, step {current_step + 1})'."
                 )
-            }
-
-
-            user_intro_message = {
+            },
+            {
                 "role": "user",
                 "content": (
-                    f"Here is the student's writing passage:\n\n{full_text}\n\n"
-                    "Please keep your feedback concise (within 150 words) unless asked for a full essay rewrite and use line breaks after each point."
-                    "Keep this in mind for the session. Now, here is my question:"
+                    "The student is ready to learn. Teach interactively and check understanding step by step. "
+                    "Wait for their response before proceeding."
                 )
             }
+        ]
 
-            user_current_message = {
-                "role": "user",
-                "content": (
-                    f"{user_message}\n\n"
-                    "Please insert two newline characters (\\n\\n) after each suggestion to improve readability. "
-                    "Keep the response under 150 words. "
-                    "Do not respond to queries unrelated to the essay."
-                )
-            }
-
-            messages = [system_message, user_intro_message, user_current_message]
-            session_histories[session_id] = messages.copy()
-            print(f"[DEBUG] Initialized session_histories[{session_id}] with messages")
-
-        else:
-            if session_id not in session_histories:
-                print(f"[WARN] Session history missing for session ID {session_id}. Initializing with intro + full_text.")
-            
-                system_message = {
-                    "role": "system",
-                    "content": (
-                        "You are a concise and insightful creative writing tutor.\n"
-                        "You are helping a student improve their writing...\n"
-                        "Only respond to user queries that are directly relevant to the essay shared...\n"
-                    )
-                }
-            
-                user_intro_message = {
-                    "role": "user",
-                    "content": (
-                        f"Here is the student's writing passage:\n\n{session_texts[session_id]}\n\n"
-                        "Please keep your feedback concise (within 150 words) unless asked for a full rewrite..."
-                    )
-                }
-            
-                session_histories[session_id] = [system_message, user_intro_message]
-
-            messages = session_histories[session_id]
-            print(f"[DEBUG] Current session message count: {len(messages)}")
-            messages.append({"role": "user", "content": user_message})
-            print(f"[DEBUG] Appended user message to session history")
-
-        # --- Call OpenAI ---
-        model_name = "gpt-3.5-turbo"
-        print(f"[DEBUG] Sending request to OpenAI model {model_name} with {len(messages)} messages")
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=messages,
+        # --- Call GPT ---
+        teach_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=teaching_messages,
             temperature=0.5,
+            max_tokens=300
         )
+        gpt_reply = teach_response.choices[0].message.content.strip()
+        print(f"[DEBUG] GPT Reply: {gpt_reply[:200]}... (truncated)")
 
-        reply = response.choices[0].message.content.strip()
-        usage = response.usage
-        print(f"[DEBUG] OpenAI response received, reply length: {len(reply)}")
-        print(f"[DEBUG] Token usage: {usage}")
+        # --- Update session history ---
+        session_histories.setdefault(session_id, [])
+        if student_reply:
+            session_histories[session_id].append({"role": "user", "content": student_reply})
+        session_histories[session_id].append({"role": "assistant", "content": gpt_reply})
+        print(f"[DEBUG] Updated session history for session {session_id}. Total messages: {len(session_histories[session_id])}")
 
-        # --- Store Cost Info ---
-        cost = calculate_cost(model_name, usage.prompt_tokens, usage.completion_tokens)
-        print(f"[DEBUG] Calculated cost: ${cost:.6f}")
-
-        cost_record = CostPerInteraction(
-            username=username_for_interactive_session,
-            model=model_name,
-            prompt_tokens=usage.prompt_tokens,
-            completion_tokens=usage.completion_tokens,
-            total_tokens=usage.total_tokens,
-            cost_usd=cost,
-            created_at=datetime.utcnow()
-        )
-
-        try:
-            db.add(cost_record)
-            db.commit()
-            print("[DEBUG] Cost record saved to database")
-        except SQLAlchemyError as e:
-            db.rollback()
-            print(f"[ERROR] Failed to save cost_record to database: {e}")
-
-        # --- Update session history and return ---
-        session_histories[session_id].append({"role": "assistant", "content": reply})
-        print("[DEBUG] Appended assistant reply to session history")
-        return ChatResponse(reply=reply)
-
-    except HTTPException:
-        # Re-raise HTTPExceptions so FastAPI can handle them normally
-        raise
+        return ChatResponse(reply=gpt_reply)
 
     except Exception as e:
-        print(f"[ERROR] Internal server error: {e}")
+        print(f"[ERROR] Internal server error in session {request.session_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
 
 def generate_one_line_summary(conversation_text: str) -> tuple[str, dict]:
@@ -7480,6 +7461,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
