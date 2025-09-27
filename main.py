@@ -5011,20 +5011,23 @@ Do not add any explanation.
         print(f"[ERROR] GPT mastery check failed: {e}")
         return "incorrect"
 
-
 @app.post("/chat_interactive_tutor_Ibne_Sina", response_model=ChatResponse)
 async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = Depends(get_db)):
     """
     Interactive tutor endpoint with step-based adaptive guidance.
     Tracks mastery, provides hints, and moves to next question automatically.
+    Logs student and AI messages for full traceability.
     """
     try:
         session_id = request.session_id.strip()
         student_reply = request.message.strip()
         username = request.username.strip()
 
+        print(f"[DEBUG] /chat_interactive_tutor_Ibne_Sina called | Session: {session_id} | Student reply: '{student_reply}'", flush=True)
+
         # --- Validate session ---
         if session_id not in session_checklists:
+            print(f"[ERROR] Session ID {session_id} not found in memory.", flush=True)
             raise HTTPException(status_code=404, detail="Session ID not found")
 
         checklist = session_checklists[session_id]
@@ -5034,7 +5037,7 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
         # --- Check if all questions completed ---
         if current_index >= len(checklist["questions"]):
             checklist["completed"] = True
-            print(f"[DEBUG] Session {session_id} completed all questions.")
+            print(f"[DEBUG] Session {session_id} completed all questions.", flush=True)
             return ChatResponse(reply="All questions completed. Great job!")
 
         # --- Retrieve current question and steps ---
@@ -5050,11 +5053,12 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
             expected_answer = step_description
             mastery = assess_mastery(student_reply, expected_answer)
             checklist.setdefault("step_status", {})[current_step] = mastery
-            print(f"[DEBUG] Student reply: '{student_reply}' | Expected: '{expected_answer}' | Mastery: {mastery}")
+            print(f"[DEBUG] Student reply: '{student_reply}' | Expected: '{expected_answer}' | Mastery: {mastery}", flush=True)
 
             if mastery == "correct":
                 current_step += 1
                 checklist["current_step"] = current_step
+                print(f"[DEBUG] Mastery correct. Moving to step {current_step}", flush=True)
 
         # --- Move to next question if steps completed ---
         if current_step >= total_steps:
@@ -5065,7 +5069,7 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
             current_step = 0
             if current_index >= len(checklist["questions"]):
                 checklist["completed"] = True
-                print(f"[DEBUG] Session {session_id} completed all questions after last step.")
+                print(f"[DEBUG] Session {session_id} completed all questions after last step.", flush=True)
                 return ChatResponse(reply="All questions completed. Great job!")
             current_question_data = checklist["questions"][current_index]
             current_question = current_question_data["q"]
@@ -5113,14 +5117,14 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
             max_tokens=300
         )
         gpt_reply = teach_response.choices[0].message.content.strip()
-        print(f"[DEBUG] GPT Reply: {gpt_reply[:200]}... (truncated)")
+        print(f"[DEBUG] GPT Reply: {gpt_reply[:300]}... (truncated)", flush=True)
 
         # --- Update session history ---
         session_histories.setdefault(session_id, [])
-        if student_reply:
-            session_histories[session_id].append({"role": "user", "content": student_reply})
+        session_histories[session_id].append({"role": "user", "content": student_reply})
         session_histories[session_id].append({"role": "assistant", "content": gpt_reply})
-        print(f"[DEBUG] Updated session history for session {session_id}. Total messages: {len(session_histories[session_id])}")
+        print(f"[DEBUG] Updated session history for session {session_id}. Total messages: {len(session_histories[session_id])}", flush=True)
+        print(f"[DEBUG] Last 2 messages:\n  User: {student_reply}\n  Assistant: {gpt_reply}", flush=True)
 
         # --- Save usage cost ---
         usage = teach_response.usage
@@ -5135,19 +5139,20 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
             created_at=datetime.utcnow()
         ))
         db.commit()
-        print(f"[DEBUG] Recorded cost for session {session_id}: ${cost:.4f}")
+        print(f"[DEBUG] Recorded cost for session {session_id}: ${cost:.4f}", flush=True)
 
         # --- Debug: current checklist state ---
-        print(f"[DEBUG] Session {session_id} Checklist:")
+        print(f"[DEBUG] Session {session_id} Checklist state:", flush=True)
         for i, q in enumerate(checklist["questions"], start=1):
             status = "completed" if i-1 < checklist["current_index"] else "unseen"
-            print(f"  Q{i}: {q['q']} (Status: {status})")
+            print(f"  Q{i}: {q['q']} (Status: {status})", flush=True)
 
         return ChatResponse(reply=gpt_reply)
 
     except Exception as e:
-        print(f"[ERROR] Internal server error in session {request.session_id}: {e}")
+        print(f"[ERROR] Internal server error in session {request.session_id}: {e}", flush=True)
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
+
 
 
 
@@ -7475,6 +7480,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
