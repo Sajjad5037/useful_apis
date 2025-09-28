@@ -4,6 +4,7 @@ from enum import Enum
 import subprocess
 import docx2txt
 import os
+
 import vertexai
 import sys
 import fitz 
@@ -236,6 +237,15 @@ class StartSessionRequest(BaseModel):
     pages: List[str]
     name: str  # directly receive username
 
+class StudentProgressLog(Base):
+    __tablename__ = "student_progress_log"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String(100), nullable=False)            # student's username
+    pdf_name = Column(String(255), nullable=False)        # which PDF this session was on
+    status = Column(String(50), nullable=False)           # e.g., completed, in-progress
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
 class PDFQuestion(Base):
     __tablename__ = "pdf_question"
 
@@ -4528,6 +4538,7 @@ async def start_session_ibne_sina(
         "questions": qa_pairs,
         "current_index": 0,
         "completed": False,
+        "pdf_name": body.pdf_name or image_name,  # use pdf_name if provided, else fallback
     }
     print(f"[DEBUG] Saved checklist in memory for session {session_id}")
 
@@ -4830,6 +4841,29 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
         if current_index >= len(checklist["questions"]):
             checklist["completed"] = True
             print(f"[DEBUG] Session {session_id} completed all questions.")
+            print(f"[DEBUG] Username: {username}")
+            print(f"[DEBUG] Retrieved PDF name from checklist: {checklist.get('pdf_name', 'Unknown PDF')}")
+            print(f"[DEBUG] Checklist summary: total_questions={len(checklist['questions'])}, "
+                  f"completed={checklist['completed']}, final_index={current_index}")
+        
+            # Save to StudentProgressLog
+            try:
+                new_log = StudentProgressLog(
+                    name=username,
+                    pdf_name=checklist.get("pdf_name", "Unknown PDF"),
+                    status="completed"
+                )
+                db.add(new_log)
+                db.commit()
+                print(f"[DEBUG] StudentProgressLog entry created -> "
+                      f"id={new_log.id if hasattr(new_log, 'id') else 'N/A'}, "
+                      f"name={new_log.name}, "
+                      f"pdf_name={new_log.pdf_name}, "
+                      f"status={new_log.status}")
+            except Exception as db_error:
+                db.rollback()
+                print(f"[ERROR] Failed to save StudentProgressLog for session {session_id}: {db_error}")
+        
             return ChatResponse(reply="All questions completed. Great job!")
 
         # --- Retrieve current question and steps ---
@@ -7512,6 +7546,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
