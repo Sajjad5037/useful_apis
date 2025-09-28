@@ -4839,6 +4839,36 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
         student_reply = request.message.strip()
         username = request.username.strip()
 
+        try:
+        session_id = request.session_id.strip()
+        student_reply = request.message.strip()
+        username = request.username.strip()
+
+        # --- Debug print to ensure endpoint is called ---
+        print(f"[DEBUG] /chat_interactive_tutor_Ibne_Sina called | Session: {session_id} | Username: {username} | Student reply: '{student_reply}'", flush=True)
+
+        # --- Test DB insert on first call ---
+        try:
+            new_log = StudentProgressLog(
+                name=username,
+                pdf_name="TEST_PDF",
+                status="test_entry"
+            )
+            db.add(new_log)
+            db.commit()
+            print(
+                f"[DEBUG] StudentProgressLog test entry created -> "
+                f"id={new_log.id}, "
+                f"name={new_log.name}, "
+                f"pdf_name={new_log.pdf_name}, "
+                f"status={new_log.status}",
+                flush=True
+            )
+        except Exception as db_error:
+            db.rollback()
+            print(f"[ERROR] Failed to save StudentProgressLog test entry: {db_error}", flush=True)
+
+
         # --- Validate session ---
         if session_id not in session_checklists:
             raise HTTPException(status_code=404, detail="Session ID not found")
@@ -7567,6 +7597,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
