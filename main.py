@@ -4824,6 +4824,7 @@ def get_dashboard():
 #             headers=cors_headers,
 #         )
 
+
 @app.post("/chat_interactive_tutor_Ibne_Sina", response_model=ChatResponse)
 async def chat_interactive_tutor(
     request: ChatRequest_Ibne_Sina,
@@ -4852,20 +4853,23 @@ async def chat_interactive_tutor(
         current_index = checklist["current_index"]
         current_step = checklist.get("current_step", 0)
 
-        # --- Ensure pdf_name is valid ---
-        pdf_name_to_save = checklist.get("pdf_name") or "Unknown PDF"
+        # --- Check if all questions completed ---
+        if current_index >= len(checklist["questions"]):
+            checklist["completed"] = True
+            print(f"[DEBUG] Session {session_id} completed all questions.", flush=True)
 
-        # --- Create StudentProgressLog on first interaction only ---
-        if not checklist.get("db_logged"):
+            # --- Ensure pdf_name is valid ---
+            pdf_name_to_save = checklist.get("pdf_name") or "Unknown PDF"
+
+            # --- Create StudentProgressLog when all questions are done ---
             try:
                 new_log = StudentProgressLog(
                     name=username or "Unknown Student",
                     pdf_name=pdf_name_to_save,
-                    status="in_progress"
+                    status="well_prepared"
                 )
                 db.add(new_log)
                 db.commit()
-                checklist["db_logged"] = True  # mark that DB entry is done
                 print(
                     f"[DEBUG] StudentProgressLog created -> "
                     f"id={new_log.id}, name={new_log.name}, "
@@ -4875,24 +4879,6 @@ async def chat_interactive_tutor(
             except Exception as db_error:
                 db.rollback()
                 print(f"[ERROR] Failed to save StudentProgressLog: {db_error}", flush=True)
-
-        # --- Check if all questions completed ---
-        if current_index >= len(checklist["questions"]):
-            checklist["completed"] = True
-            print(f"[DEBUG] Session {session_id} completed all questions.", flush=True)
-
-            # Update the log to 'well_prepared' when fully done
-            try:
-                log_entry = db.query(StudentProgressLog).filter_by(
-                    name=username, pdf_name=pdf_name_to_save
-                ).order_by(StudentProgressLog.id.desc()).first()
-                if log_entry:
-                    log_entry.status = "well_prepared"
-                    db.commit()
-                    print(f"[DEBUG] StudentProgressLog status updated to 'well_prepared'", flush=True)
-            except Exception as e:
-                db.rollback()
-                print(f"[ERROR] Failed to update StudentProgressLog status: {e}", flush=True)
 
             return ChatResponse(reply="All questions completed. Great job!")
 
@@ -4930,6 +4916,29 @@ async def chat_interactive_tutor(
             if current_index >= len(checklist["questions"]):
                 checklist["completed"] = True
                 print(f"[DEBUG] Session {session_id} completed all questions after last step.", flush=True)
+
+                # --- Ensure pdf_name is valid ---
+                pdf_name_to_save = checklist.get("pdf_name") or "Unknown PDF"
+
+                # --- Create StudentProgressLog when all questions are done ---
+                try:
+                    new_log = StudentProgressLog(
+                        name=username or "Unknown Student",
+                        pdf_name=pdf_name_to_save,
+                        status="well_prepared"
+                    )
+                    db.add(new_log)
+                    db.commit()
+                    print(
+                        f"[DEBUG] StudentProgressLog created -> "
+                        f"id={new_log.id}, name={new_log.name}, "
+                        f"pdf_name={new_log.pdf_name}, status={new_log.status}",
+                        flush=True
+                    )
+                except Exception as db_error:
+                    db.rollback()
+                    print(f"[ERROR] Failed to save StudentProgressLog: {db_error}", flush=True)
+
                 return ChatResponse(reply="All questions completed. Great job!")
 
             # Update current question after increment
@@ -7442,6 +7451,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
