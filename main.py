@@ -4832,28 +4832,7 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
     Interactive tutor endpoint with step-based adaptive guidance.
     Tracks mastery, provides hints, and moves to next question automatically.
     """
-    # Save to StudentProgressLog
-    try:
-        new_log = StudentProgressLog(
-            name=username,
-            pdf_name=checklist.get("pdf_name", "Unknown PDF"),
-            status="completed"
-        )
-        db.add(new_log)
-        db.commit()
-        print(
-            f"[DEBUG] StudentProgressLog entry created -> "
-            f"id={new_log.id if hasattr(new_log, 'id') else 'N/A'}, "
-            f"name={new_log.name}, "
-            f"pdf_name={new_log.pdf_name}, "
-            f"status={new_log.status}"
-        )
-    except Exception as db_error:
-        db.rollback()
-        print(
-            f"[ERROR] Failed to save StudentProgressLog "
-            f"for session {session_id}: {db_error}"
-        )
+    
         
     try:
         session_id = request.session_id.strip()
@@ -4950,6 +4929,29 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
                 )
             }
         ]
+        #adding dumy entry into database 
+            # Save to StudentProgressLog
+        try:
+            new_log = StudentProgressLog(
+                name=username,
+                pdf_name=checklist.get("pdf_name", "Unknown PDF"),
+                status="completed"
+            )
+            db.add(new_log)
+            db.commit()
+            print(
+                f"[DEBUG] StudentProgressLog entry created -> "
+                f"id={new_log.id if hasattr(new_log, 'id') else 'N/A'}, "
+                f"name={new_log.name}, "
+                f"pdf_name={new_log.pdf_name}, "
+                f"status={new_log.status}"
+            )
+        except Exception as db_error:
+            db.rollback()
+            print(
+                f"[ERROR] Failed to save StudentProgressLog "
+                f"for session {session_id}: {db_error}"
+            )
 
         # --- Call GPT ---
         teach_response = client.chat.completions.create(
@@ -7560,6 +7562,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
