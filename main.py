@@ -237,6 +237,14 @@ class StartSessionRequest(BaseModel):
     pages: List[str]
     name: str  # directly receive username
 
+class StartSessionRequest_ibne_sina(BaseModel):
+    subject: str
+    chapter: str
+    className: str
+    pages: List[str]
+    name: str  # directly receive username
+    pdf_name: Optional[str] = None  # optional, can fall back to first image name
+
 class StudentProgressLog(Base):
     __tablename__ = "student_progress_log"
 
@@ -4362,7 +4370,7 @@ Improved Essay:
 @app.post("/start-session-ibne-sina")
 async def start_session_ibne_sina(
     request: Request,
-    body: StartSessionRequest,
+    body: StartSessionRequest_ibne_sina,
     db: Session = Depends(get_db),
 ):
     """
@@ -4538,7 +4546,7 @@ async def start_session_ibne_sina(
         "questions": qa_pairs,
         "current_index": 0,
         "completed": False,
-        "pdf_name": body.pdf_name or image_name,  # use pdf_name if provided, else fallback
+        "pdf_name": body.chapter or image_name,  # use as frontend is send pdf_name in chapter
     }
     print(f"[DEBUG] Saved checklist in memory for session {session_id}")
 
@@ -7546,6 +7554,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
