@@ -437,6 +437,17 @@ class QAChecklist_new(Base):
     completed = Column(Boolean, nullable=False, default=False)     # Whether checklist is completed
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class PDFQuestion_new(Base):
+    __tablename__ = "pdf_questions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(36), nullable=False, index=True)   # link back to the checklist session
+    username = Column(String(255), nullable=False, index=True)
+    pdf_name = Column(String(1024), nullable=False, index=True)   # could be a file name or first image url
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=True)
+    status = Column(String(50), nullable=False, default="unseen")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
 class Campaign(Base):
     __tablename__ = "campaigns"
 
@@ -4345,7 +4356,8 @@ async def start_session_ibne_sina(
     db: Session = Depends(get_db),
 ):
     """
-    Accept JSON with image URLs → Download images → Extract text → Generate QA checklist → Save to DB → Return sessionId & message
+    Accept JSON with image URLs → Download images → Extract text →
+    Generate Questions → Generate Answers (batched) → Save to DB → Return sessionId & message
     """
     origin = request.headers.get("origin") if request else None
     cors_headers = {
@@ -4353,13 +4365,13 @@ async def start_session_ibne_sina(
         "Access-Control-Allow-Credentials": "true",
     }
 
+    print("=" * 80)
     print("[DEBUG] /start-session-ibne-sina called")
 
-    # --- Parse doctorData from query/form header if present ---
-    doctor_data_str = request.headers.get("doctordata")  # optional, can be None
+    # --- doctorData (optional) ---
+    doctor_data_str = request.headers.get("doctordata")
     doctor = {}
     if doctor_data_str:
-        print(f"[DEBUG] doctorData received: {doctor_data_str}")
         try:
             doctor = json.loads(doctor_data_str)
             print(f"[DEBUG] Parsed doctorData: {doctor}")
@@ -4370,36 +4382,39 @@ async def start_session_ibne_sina(
                 status_code=400,
                 headers=cors_headers,
             )
+
     username_for_interactive_session = body.name
     print(f"[DEBUG] username_for_interactive_session = {username_for_interactive_session}")
 
-    # --- Download images and run OCR ---
+    # --- Step 1: Download images and run OCR ---
     combined_text = ""
     for i, url in enumerate(body.pages, start=1):
-        print(f"[DEBUG] Downloading image #{i}: {url}")
+        print(f"[DEBUG] Processing page #{i}: {url}")
         try:
             resp = requests.get(url)
             resp.raise_for_status()
-            image_bytes = resp.content
+            print(f"[DEBUG] Downloaded image #{i}, size: {len(resp.content)} bytes")
+
+            from io import BytesIO
+            class DummyUploadFile:
+                def __init__(self, name, content):
+                    self.filename = name
+                    self.file = BytesIO(content)
+
+            dummy_file = DummyUploadFile(name=f"image_{i}.png", content=resp.content)
+            ocr_text = run_ocr_on_image(dummy_file)
+
+            if ocr_text:
+                print(f"[DEBUG] OCR extracted {len(ocr_text)} chars from page #{i}")
+                combined_text += ocr_text + "\n\n"
+            else:
+                print(f"[WARNING] OCR returned empty text for page #{i}")
         except Exception as e:
-            print(f"[ERROR] Failed to download image {url}: {e}")
+            print(f"[ERROR] Failed to process image {url}: {e}")
             continue
 
-        # Wrap image bytes in a pseudo UploadFile object for OCR
-        from io import BytesIO
-        class DummyUploadFile:
-            def __init__(self, name, content):
-                self.filename = name
-                self.file = BytesIO(content)
-        dummy_file = DummyUploadFile(name=f"image_{i}.png", content=image_bytes)
-
-        ocr_text = run_ocr_on_image(dummy_file)
-        print(f"[DEBUG] OCR text length for image #{i}: {len(ocr_text)}")
-        if ocr_text:
-            combined_text += ocr_text + "\n\n"
-
     if not combined_text.strip():
-        print("[WARNING] No text extracted from any images")
+        print("[ERROR] No text extracted from any images — aborting session init.")
         return JSONResponse(
             content={"detail": "No text extracted from images"},
             status_code=400,
@@ -4407,108 +4422,141 @@ async def start_session_ibne_sina(
         )
     print(f"[DEBUG] Total extracted text length: {len(combined_text.strip())}")
 
-    # --- Generate QA pairs using GPT ---
-    print("[DEBUG] Sending text to GPT to generate QA pairs")
-    qa_generation_prompt = f"""
-    You are a helpful class 7 tutor. 
-    
+    # --- Step 2: Generate QUESTIONS only ---
+    print("[DEBUG] Sending text to GPT to generate QUESTIONS only")
+    question_prompt = f"""
+    You are a helpful class 7 tutor.
+
     Study material:
     <<<
     {combined_text.strip()}
     >>>
-    
+
     Task:
-    1. Analyze the content carefully.
-    2. Create a complete set of question-answer pairs that cover all key concepts.
-    3. Return **only** a JSON array of objects in this format:
-    
-    [
-      {{
-        "question": "Your question here",
-        "answer": "Correct answer here"
-      }},
-      ...
-    ]
-    
-    Rules:
-    - Include all major concepts; avoid trivial/redundant questions.
-    - Keep questions clear, age-appropriate, and answerable solely from the material above.
-    - Do NOT include any text outside the JSON array.
-    - Do NOT add notes, explanations, or examples outside the JSON.
+    - Generate a complete list of clear, age-appropriate questions that
+      fully cover the study material.
+    - Return ONLY a JSON array of strings, like:
+    ["Question 1", "Question 2", ...]
+    - Do NOT include answers.
+    - Do NOT add explanations or extra text.
     """
 
-
-    qa_response = client.chat.completions.create(
+    question_response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are a tutor who creates questions from study material."},
-            {"role": "user", "content": qa_generation_prompt},
+            {"role": "user", "content": question_prompt},
         ],
-        temperature=0.4,
+        temperature=0.3,
     )
 
-    gpt_raw = qa_response.choices[0].message.content.strip()
-    print(f"[DEBUG] GPT returned {len(gpt_raw)} chars")
+    gpt_raw_questions = question_response.choices[0].message.content.strip()
+    print(f"[DEBUG] GPT returned {len(gpt_raw_questions)} chars for QUESTIONS")
 
     try:
-        qa_pairs = json.loads(gpt_raw)
-        print(f"[DEBUG] Parsed {len(qa_pairs)} QA pairs")
+        questions = json.loads(gpt_raw_questions)
+        print(f"[DEBUG] Parsed {len(questions)} questions")
     except json.JSONDecodeError as e:
-        print(f"[ERROR] Failed to parse GPT output as JSON: {e}")
+        print(f"[ERROR] Failed to parse questions JSON: {e}")
         return JSONResponse(
-            content={"detail": "AI returned invalid question JSON"},
+            content={"detail": "AI returned invalid questions JSON"},
             status_code=500,
             headers=cors_headers,
         )
 
-    # --- Build checklist structure ---
-    checklist = {
-        "questions": [
-            {"q": qa["question"], "a": qa["answer"], "status": "unseen"}
-            for qa in qa_pairs
-        ],
-        "current_index": 0,
-        "completed": False
-    }
+    # --- Step 3: Generate ANSWERS for all questions in one batch ---
+    print("[DEBUG] Sending {len(questions)} questions to GPT to generate answers in batch")
 
-    
-    # --- Save in-memory ---
-    session_id = str(uuid4())
-    session_checklists[session_id] = checklist
-    print(f"[DEBUG] Saved checklist to memory with session_id: {session_id}")
-    print(f"[DEBUG] Checklist questions for session {session_id}:")
-    for i, q in enumerate(checklist["questions"], start=1):
-        print(f"  Q{i}: {q['q']} (Status: {q['status']})")
-    
-    # --- Initialize session history with AI’s first message (questions) ---
-    questions_text = "\n".join([f"{i+1}. {q['q']}" for i, q in enumerate(checklist["questions"])])
-    initial_message = f"I have created the following questions that I will help you prepare:\n\n{questions_text}\n\nLet's start learning!"
-    
-    session_histories[session_id] = [
-        {"role": "assistant", "content": initial_message}
+    answer_prompt = f"""
+    Study material:
+    <<<
+    {combined_text.strip()}
+    >>>
+
+    Questions:
+    {json.dumps(questions, indent=2)}
+
+    Task:
+    - Answer EACH question clearly, concisely, and ONLY from the study material.
+    - Return the result as a JSON array of objects:
+    [
+      {{
+        "question": "Q1 text here",
+        "answer": "Answer to Q1 here"
+      }},
+      ...
     ]
-    print(f"[DEBUG] Initialized session history for session {session_id} with AI first message:")
-    print(initial_message)
-    # --- Save to DB ---
+    - Do NOT include any text outside the JSON.
+    """
+
+    answer_response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a tutor who answers questions based only on study material."},
+            {"role": "user", "content": answer_prompt},
+        ],
+        temperature=0.3,
+    )
+
+    gpt_raw_answers = answer_response.choices[0].message.content.strip()
+    print(f"[DEBUG] GPT returned {len(gpt_raw_answers)} chars for ANSWERS")
+
     try:
+        qa_pairs_raw = json.loads(gpt_raw_answers)
+        print(f"[DEBUG] Parsed {len(qa_pairs_raw)} answers")
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] Failed to parse answers JSON: {e}")
+        return JSONResponse(
+            content={"detail": "AI returned invalid answers JSON"},
+            status_code=500,
+            headers=cors_headers,
+        )
+
+    # Safeguard: Ensure same count
+    if len(qa_pairs_raw) != len(questions):
+        print(f"[WARNING] Question/Answer count mismatch: {len(questions)} questions vs {len(qa_pairs_raw)} answers")
+
+    qa_pairs = [
+        {"q": qa.get("question", f"Missing Q{i+1}"), "a": qa.get("answer", "Answer not found"), "status": "unseen"}
+        for i, qa in enumerate(qa_pairs_raw)
+    ]
+    print(f"[DEBUG] Finalized {len(qa_pairs)} question-answer pairs")
+
+    # --- Step 4: Save in-memory ---
+    session_id = str(uuid4())
+    session_checklists[session_id] = {
+        "questions": qa_pairs,
+        "current_index": 0,
+        "completed": False,
+    }
+    print(f"[DEBUG] Saved checklist in memory for session {session_id}")
+
+    # --- Step 5: Initialize history ---
+    questions_text = "\n".join([f"{i+1}. {qa['q']}" for i, qa in enumerate(qa_pairs)])
+    initial_message = f"I have created the following questions based on your material:\n\n{questions_text}\n\nLet's start learning!"
+    session_histories[session_id] = [{"role": "assistant", "content": initial_message}]
+    print(f"[DEBUG] Initialized session history with {len(qa_pairs)} questions")
+
+    # --- Step 6: Save to DB ---
+    try:
+        print("[DEBUG] Saving checklist to DB")
         db.add(QAChecklist_new(
             session_id=session_id,
             username=username_for_interactive_session,
-            questions=checklist["questions"],
+            questions=qa_pairs,
             current_index=0,
             completed=False
         ))
 
-        # Save first image name for reference
         image_name = body.pages[0] if body.pages else "unknown"
-
         existing = db.query(PDFQuestion_new).filter_by(
             username=username_for_interactive_session,
             pdf_name=image_name
         ).first()
 
         if not existing:
-            for qa in checklist["questions"]:
+            print(f"[DEBUG] Saving {len(qa_pairs)} QAs to PDFQuestion_new table")
+            for qa in qa_pairs:
                 db.add(PDFQuestion_new(
                     session_id=session_id,
                     username=username_for_interactive_session,
@@ -4518,19 +4566,22 @@ async def start_session_ibne_sina(
                     status=qa["status"]
                 ))
         db.commit()
+        print("[DEBUG] Successfully committed to DB")
     except Exception as e:
-        print(f"[ERROR] Failed to save checklist to DB: {e}")
         db.rollback()
+        print(f"[ERROR] Failed to save checklist to DB: {e}")
         return JSONResponse(
             content={"detail": "Failed to save checklist to DB"},
             status_code=500,
             headers=cors_headers,
         )
 
-    # --- Return JSON compatible with frontend ---
-    # Format prep_text so each question appears on a new line in HTML
-    questions_text = "<br>".join([f"{i+1}. {q['q']}" for i, q in enumerate(checklist["questions"])])
-    prep_text = f"I have created the following questions that I will help you to prepare:<br><br>{questions_text}<br><br>Let's start learning!"
+    # --- Step 7: Return response ---
+    questions_text = "<br>".join([f"{i+1}. {qa['q']}" for i, qa in enumerate(qa_pairs)])
+    prep_text = f"I have created the following questions:<br><br>{questions_text}<br><br>Let's start learning!"
+    print(f"[DEBUG] Returning session {session_id} to frontend")
+    print("=" * 80)
+
     return JSONResponse(
         content={
             "sessionId": session_id,
