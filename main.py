@@ -4846,25 +4846,6 @@ async def chat_interactive_tutor(
             flush=True
         )
 
-        # --- Test DB insert on first call ---
-        try:
-            new_log = StudentProgressLog(
-                name=username,
-                pdf_name="TEST_PDF",
-                status="test_entry"
-            )
-            db.add(new_log)
-            db.commit()
-            print(
-                f"[DEBUG] StudentProgressLog test entry created -> "
-                f"id={new_log.id}, name={new_log.name}, "
-                f"pdf_name={new_log.pdf_name}, status={new_log.status}",
-                flush=True
-            )
-        except Exception as db_error:
-            db.rollback()
-            print(f"[ERROR] Failed to save StudentProgressLog test entry: {db_error}", flush=True)
-
         # --- Validate session ---
         if session_id not in session_checklists:
             raise HTTPException(status_code=404, detail="Session ID not found")
@@ -4877,6 +4858,26 @@ async def chat_interactive_tutor(
         if current_index >= len(checklist["questions"]):
             checklist["completed"] = True
             print(f"[DEBUG] Session {session_id} completed all questions.", flush=True)
+
+            # --- Test DB insert when session is completed ---
+            try:
+                 new_log = StudentProgressLog(
+                    name=username,
+                    pdf_name=checklist.get("pdf_name", "Unknown PDF"),  # fetch from checklist
+                    status="well_prepared"
+                )
+                db.add(new_log)
+                db.commit()
+                print(
+                    f"[DEBUG] StudentProgressLog test entry created -> "
+                    f"id={new_log.id}, name={new_log.name}, "
+                    f"pdf_name={new_log.pdf_name}, status={new_log.status}",
+                    flush=True
+                )
+            except Exception as db_error:
+                db.rollback()
+                print(f"[ERROR] Failed to save StudentProgressLog test entry: {db_error}", flush=True)
+
             return ChatResponse(reply="All questions completed. Great job!")
 
         # --- Retrieve current question and steps ---
@@ -4954,7 +4955,6 @@ async def chat_interactive_tutor(
             }
         ]
 
-        
         # --- Call GPT ---
         teach_response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -4977,7 +4977,6 @@ async def chat_interactive_tutor(
     except Exception as e:
         print(f"[ERROR] Internal server error in session {request.session_id}: {e}", flush=True)
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
-
 
 
 def generate_one_line_summary(conversation_text: str) -> tuple[str, dict]:
@@ -5098,151 +5097,7 @@ Do not add any explanation.
         print(f"[ERROR] GPT mastery check failed: {e}")
         return "incorrect"
 
-@app.post("/chat_interactive_tutor_Ibne_Sina", response_model=ChatResponse)
-async def chat_interactive_tutor(
-    request: ChatRequest_Ibne_Sina,
-    db: Session = Depends(get_db)
-):
-    """
-    Interactive tutor endpoint with step-based adaptive guidance.
-    Tracks mastery, provides hints, and moves to next question automatically.
-    Logs student and AI messages for full traceability.
-    """
-    try:
-        session_id = request.session_id.strip()
-        student_reply = request.message.strip()
-        username = request.username.strip()
 
-        # --- Debug print to ensure endpoint is called ---
-        print(f"[DEBUG] /chat_interactive_tutor_Ibne_Sina called | Session: {session_id} | Username: {username} | Student reply: '{student_reply}'", flush=True)
-
-        # --- Test DB insert on first call ---
-        try:
-            new_log = StudentProgressLog(
-                name=username,
-                pdf_name="TEST_PDF",
-                status="test_entry"
-            )
-            db.add(new_log)
-            db.commit()
-            print(
-                f"[DEBUG] StudentProgressLog test entry created -> "
-                f"id={new_log.id}, "
-                f"name={new_log.name}, "
-                f"pdf_name={new_log.pdf_name}, "
-                f"status={new_log.status}",
-                flush=True
-            )
-        except Exception as db_error:
-            db.rollback()
-            print(f"[ERROR] Failed to save StudentProgressLog test entry: {db_error}", flush=True)
-
-        # --- Validate session ---
-        if session_id not in session_checklists:
-            print(f"[ERROR] Session ID {session_id} not found in memory.", flush=True)
-            raise HTTPException(status_code=404, detail="Session ID not found")
-
-        checklist = session_checklists[session_id]
-        current_index = checklist.get("current_index", 0)
-        current_step = checklist.get("current_step", 0)
-
-        # --- Check if all questions completed ---
-        if current_index >= len(checklist["questions"]):
-            checklist["completed"] = True
-            print(f"[DEBUG] Session {session_id} completed all questions.", flush=True)
-            return ChatResponse(reply="All questions completed. Great job!")
-
-        # --- Retrieve current question and steps ---
-        current_question_data = checklist["questions"][current_index]
-        current_question = current_question_data["q"]
-        steps = current_question_data.get("steps", ["Understand the concept"])
-        total_steps = len(steps)
-        step_description = steps[current_step]
-
-        # --- Assess mastery ---
-        mastery = "not attempted"
-        if student_reply:
-            expected_answer = step_description
-            mastery = assess_mastery(student_reply, expected_answer)
-            checklist.setdefault("step_status", {})[current_step] = mastery
-            print(f"[DEBUG] Student reply: '{student_reply}' | Expected: '{expected_answer}' | Mastery: {mastery}", flush=True)
-
-            if mastery == "correct":
-                current_step += 1
-                checklist["current_step"] = current_step
-                print(f"[DEBUG] Mastery correct. Moving to step {current_step}", flush=True)
-
-        # --- Move to next question if steps completed ---
-        if current_step >= total_steps:
-            current_index += 1
-            current_step = 0
-            checklist["current_index"] = current_index
-            checklist["current_step"] = current_step
-            checklist["step_status"] = {}
-            if current_index >= len(checklist["questions"]):
-                checklist["completed"] = True
-                print(f"[DEBUG] Session {session_id} completed all questions after last step.", flush=True)
-                return ChatResponse(reply="All questions completed. Great job!")
-            # Update for next question
-            current_question_data = checklist["questions"][current_index]
-            current_question = current_question_data["q"]
-            steps = current_question_data.get("steps", ["Understand the concept"])
-            total_steps = len(steps)
-            step_description = steps[current_step]
-
-        # --- Prepare AI teaching message ---
-        step_status = checklist.get("step_status", {}).get(current_step, "not attempted")
-        last_student_reply = student_reply or ""
-
-        teaching_messages = [
-            {
-                "role": "system",
-                "content": (
-                    f"You are a grade 7 tutor.\n"
-                    f"Question: {current_question}\n"
-                    f"Step {current_step + 1}: {step_description}\n"
-                    f"Step status: {step_status}\n"
-                    f"Student last reply: '{last_student_reply}'\n"
-                    "Instructions:\n"
-                    "- Explain in short, simple sentences suitable for a 12–13 year old.\n"
-                    "- Ask one short question after explanation to check understanding.\n"
-                    "- If mastery is 'partial', give a gentle hint or simpler rephrasing.\n"
-                    "- If mastery is 'incorrect', explain in an easier way.\n"
-                    "- Only move to the next step when the student demonstrates correct understanding.\n"
-                    "- Avoid repeating the same sentences word-for-word.\n"
-                    f"Start your response with '(helping the student with question {current_index + 1}, step {current_step + 1})'."
-                )
-            },
-            {
-                "role": "user",
-                "content": (
-                    "The student is ready to learn. Teach interactively and check understanding step by step. "
-                    "Wait for their response before proceeding."
-                )
-            }
-        ]
-
-        # --- Call GPT ---
-        teach_response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=teaching_messages,
-            temperature=0.5,
-            max_tokens=300
-        )
-        gpt_reply = teach_response.choices[0].message.content.strip()
-        print(f"[DEBUG] GPT Reply: {gpt_reply[:300]}... (truncated)", flush=True)
-
-        # --- Update session history ---
-        session_histories.setdefault(session_id, [])
-        session_histories[session_id].append({"role": "user", "content": student_reply})
-        session_histories[session_id].append({"role": "assistant", "content": gpt_reply})
-        print(f"[DEBUG] Updated session history for session {session_id}. Total messages: {len(session_histories[session_id])}", flush=True)
-
-        return ChatResponse(reply=gpt_reply)
-
-    except Exception as e:
-        print(f"[ERROR] Internal server error in session {request.session_id}: {e}", flush=True)
-        raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
 
 
 
@@ -7571,6 +7426,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
