@@ -4839,7 +4839,7 @@ async def chat_interactive_tutor(
         student_reply = request.message.strip()
         username = request.username.strip()
 
-        # --- Debug print to ensure endpoint is called ---
+        # --- Debug print ---
         print(
             f"[DEBUG] /chat_interactive_tutor_Ibne_Sina called | "
             f"Session: {session_id} | Username: {username} | Student reply: '{student_reply}'",
@@ -4859,24 +4859,24 @@ async def chat_interactive_tutor(
             checklist["completed"] = True
             print(f"[DEBUG] Session {session_id} completed all questions.", flush=True)
 
-            # --- Test DB insert when session is completed ---
+            # --- Log completion in DB ---
             try:
-                 new_log = StudentProgressLog(
+                new_log = StudentProgressLog(
                     name=username,
-                    pdf_name=checklist.get("pdf_name", "Unknown PDF"),  # fetch from checklist
+                    pdf_name=checklist.get("pdf_name", "Unknown PDF"),
                     status="well_prepared"
                 )
                 db.add(new_log)
                 db.commit()
                 print(
-                    f"[DEBUG] StudentProgressLog test entry created -> "
+                    f"[DEBUG] StudentProgressLog created -> "
                     f"id={new_log.id}, name={new_log.name}, "
                     f"pdf_name={new_log.pdf_name}, status={new_log.status}",
                     flush=True
                 )
             except Exception as db_error:
                 db.rollback()
-                print(f"[ERROR] Failed to save StudentProgressLog test entry: {db_error}", flush=True)
+                print(f"[ERROR] Failed to save StudentProgressLog: {db_error}", flush=True)
 
             return ChatResponse(reply="All questions completed. Great job!")
 
@@ -7426,6 +7426,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
