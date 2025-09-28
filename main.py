@@ -5006,6 +5006,7 @@ def generate_one_line_summary(conversation_text: str) -> tuple[str, dict]:
 
     summary_text = response.choices[0].message.content.strip()
     usage = response.usage
+    
 
     # ✅ Safety check: validate format
     if not summary_text.startswith("The student and I talked about "):
@@ -5094,7 +5095,10 @@ Do not add any explanation.
         return "incorrect"
 
 @app.post("/chat_interactive_tutor_Ibne_Sina", response_model=ChatResponse)
-async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = Depends(get_db)):
+async def chat_interactive_tutor(
+    request: ChatRequest_Ibne_Sina,
+    db: Session = Depends(get_db)
+):
     """
     Interactive tutor endpoint with step-based adaptive guidance.
     Tracks mastery, provides hints, and moves to next question automatically.
@@ -5105,7 +5109,29 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
         student_reply = request.message.strip()
         username = request.username.strip()
 
-        print(f"[DEBUG] /chat_interactive_tutor_Ibne_Sina called | Session: {session_id} | Student reply: '{student_reply}'", flush=True)
+        # --- Debug print to ensure endpoint is called ---
+        print(f"[DEBUG] /chat_interactive_tutor_Ibne_Sina called | Session: {session_id} | Username: {username} | Student reply: '{student_reply}'", flush=True)
+
+        # --- Test DB insert on first call ---
+        try:
+            new_log = StudentProgressLog(
+                name=username,
+                pdf_name="TEST_PDF",
+                status="test_entry"
+            )
+            db.add(new_log)
+            db.commit()
+            print(
+                f"[DEBUG] StudentProgressLog test entry created -> "
+                f"id={new_log.id}, "
+                f"name={new_log.name}, "
+                f"pdf_name={new_log.pdf_name}, "
+                f"status={new_log.status}",
+                flush=True
+            )
+        except Exception as db_error:
+            db.rollback()
+            print(f"[ERROR] Failed to save StudentProgressLog test entry: {db_error}", flush=True)
 
         # --- Validate session ---
         if session_id not in session_checklists:
@@ -5113,7 +5139,7 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
             raise HTTPException(status_code=404, detail="Session ID not found")
 
         checklist = session_checklists[session_id]
-        current_index = checklist["current_index"]
+        current_index = checklist.get("current_index", 0)
         current_step = checklist.get("current_step", 0)
 
         # --- Check if all questions completed ---
@@ -5144,15 +5170,16 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
 
         # --- Move to next question if steps completed ---
         if current_step >= total_steps:
-            checklist["current_index"] += 1
-            checklist["current_step"] = 0
-            checklist["step_status"] = {}
-            current_index = checklist["current_index"]
+            current_index += 1
             current_step = 0
+            checklist["current_index"] = current_index
+            checklist["current_step"] = current_step
+            checklist["step_status"] = {}
             if current_index >= len(checklist["questions"]):
                 checklist["completed"] = True
                 print(f"[DEBUG] Session {session_id} completed all questions after last step.", flush=True)
                 return ChatResponse(reply="All questions completed. Great job!")
+            # Update for next question
             current_question_data = checklist["questions"][current_index]
             current_question = current_question_data["q"]
             steps = current_question_data.get("steps", ["Understand the concept"])
@@ -5161,7 +5188,7 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
 
         # --- Prepare AI teaching message ---
         step_status = checklist.get("step_status", {}).get(current_step, "not attempted")
-        last_student_reply = student_reply if student_reply else ""
+        last_student_reply = student_reply or ""
 
         teaching_messages = [
             {
@@ -5206,28 +5233,6 @@ async def chat_interactive_tutor(request: ChatRequest_Ibne_Sina, db: Session = D
         session_histories[session_id].append({"role": "user", "content": student_reply})
         session_histories[session_id].append({"role": "assistant", "content": gpt_reply})
         print(f"[DEBUG] Updated session history for session {session_id}. Total messages: {len(session_histories[session_id])}", flush=True)
-        print(f"[DEBUG] Last 2 messages:\n  User: {student_reply}\n  Assistant: {gpt_reply}", flush=True)
-
-        # --- Save usage cost ---
-        usage = teach_response.usage
-        cost = calculate_cost("gpt-4o-mini", usage.prompt_tokens, usage.completion_tokens)
-        db.add(CostPerInteraction(
-            username=username,
-            model="gpt-4o-mini",
-            prompt_tokens=usage.prompt_tokens,
-            completion_tokens=usage.completion_tokens,
-            total_tokens=usage.total_tokens,
-            cost_usd=cost,
-            created_at=datetime.utcnow()
-        ))
-        db.commit()
-        print(f"[DEBUG] Recorded cost for session {session_id}: ${cost:.4f}", flush=True)
-
-        # --- Debug: current checklist state ---
-        print(f"[DEBUG] Session {session_id} Checklist state:", flush=True)
-        for i, q in enumerate(checklist["questions"], start=1):
-            status = "completed" if i-1 < checklist["current_index"] else "unseen"
-            print(f"  Q{i}: {q['q']} (Status: {status})", flush=True)
 
         return ChatResponse(reply=gpt_reply)
 
@@ -7562,6 +7567,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
