@@ -4839,14 +4839,12 @@ async def chat_interactive_tutor(
         student_reply = request.message.strip()
         username = request.username.strip()
 
-        # --- Debug print ---
         print(
             f"[DEBUG] /chat_interactive_tutor_Ibne_Sina called | "
             f"Session: {session_id} | Username: {username} | Student reply: '{student_reply}'",
             flush=True
         )
 
-        # --- Validate session ---
         if session_id not in session_checklists:
             raise HTTPException(status_code=404, detail="Session ID not found")
 
@@ -4854,20 +4852,20 @@ async def chat_interactive_tutor(
         current_index = checklist["current_index"]
         current_step = checklist.get("current_step", 0)
 
-        # --- Check if all questions completed ---
-        if current_index >= len(checklist["questions"]):
-            checklist["completed"] = True
-            print(f"[DEBUG] Session {session_id} completed all questions.", flush=True)
+        # --- Ensure pdf_name is valid ---
+        pdf_name_to_save = checklist.get("pdf_name") or "Unknown PDF"
 
-            # --- Log completion in DB ---
+        # --- Create StudentProgressLog on first interaction only ---
+        if not checklist.get("db_logged"):
             try:
                 new_log = StudentProgressLog(
-                    name=username,
-                    pdf_name=checklist.get("pdf_name", "Unknown PDF"),
-                    status="well_prepared"
+                    name=username or "Unknown Student",
+                    pdf_name=pdf_name_to_save,
+                    status="in_progress"
                 )
                 db.add(new_log)
                 db.commit()
+                checklist["db_logged"] = True  # mark that DB entry is done
                 print(
                     f"[DEBUG] StudentProgressLog created -> "
                     f"id={new_log.id}, name={new_log.name}, "
@@ -4877,6 +4875,24 @@ async def chat_interactive_tutor(
             except Exception as db_error:
                 db.rollback()
                 print(f"[ERROR] Failed to save StudentProgressLog: {db_error}", flush=True)
+
+        # --- Check if all questions completed ---
+        if current_index >= len(checklist["questions"]):
+            checklist["completed"] = True
+            print(f"[DEBUG] Session {session_id} completed all questions.", flush=True)
+
+            # Update the log to 'well_prepared' when fully done
+            try:
+                log_entry = db.query(StudentProgressLog).filter_by(
+                    name=username, pdf_name=pdf_name_to_save
+                ).order_by(StudentProgressLog.id.desc()).first()
+                if log_entry:
+                    log_entry.status = "well_prepared"
+                    db.commit()
+                    print(f"[DEBUG] StudentProgressLog status updated to 'well_prepared'", flush=True)
+            except Exception as e:
+                db.rollback()
+                print(f"[ERROR] Failed to update StudentProgressLog status: {e}", flush=True)
 
             return ChatResponse(reply="All questions completed. Great job!")
 
@@ -4925,7 +4941,7 @@ async def chat_interactive_tutor(
 
         # --- Prepare AI teaching message ---
         step_status = checklist.get("step_status", {}).get(current_step, "not attempted")
-        last_student_reply = student_reply if student_reply else ""
+        last_student_reply = student_reply or ""
 
         teaching_messages = [
             {
@@ -7426,6 +7442,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
