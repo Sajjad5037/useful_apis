@@ -558,6 +558,22 @@ class Vector(UserDefinedType):
     def column_expression(self, col):
         return col
 
+class StudentSession_ibne_sina(Base):
+    __tablename__ = "student_sessions_ibne_sina"
+
+    id = Column(Integer, primary_key=True, index=True)
+    subject = Column(String, nullable=False)
+    student_id = Column(String, nullable=False)
+    student_name = Column(String, nullable=False)
+    pdf_name = Column(String, nullable=False)
+    preparedness = Column(String, default="Not evaluated")  # optional field
+
+class FinishSessionRequest(BaseModel):
+    subject: str
+    student_id: str
+    student_name: str
+    pdf: str
+    preparedness: str = "Not evaluated"  # optional default
 
 #for database query
 class ChatRequest(BaseModel):
@@ -4397,7 +4413,34 @@ def get_form_data(db: Session = Depends(get_db)):
     except Exception as e:
         print(f"[ERROR] /api/form-data failed: {e}", flush=True)
         return {"error": "Failed to fetch form data"}
-        
+
+
+@app.post("/api/finish_session_ibne_sina")
+def finish_session(request: FinishSessionRequest, db: Session = Depends(get_db)):
+    try:
+        # --- Debug logs ---
+        print(f"[DEBUG] Received finish session request: {request}")
+
+        # --- Create DB entry ---
+        session_entry = StudentSession_ibne_sina(
+            subject=request.subject,
+            student_id=request.student_id,
+            student_name=request.student_name,
+            pdf_name=request.pdf,
+            preparedness=request.preparedness
+        )
+        db.add(session_entry)
+        db.commit()
+        db.refresh(session_entry)
+
+        print(f"[DEBUG] Session saved: {session_entry}")
+
+        return {"message": f"Session for {request.student_name} saved successfully."}
+
+    except Exception as e:
+        print(f"[ERROR] Failed to save session: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save session in the database")
+
 @app.post("/api/evaluate_ibne_sina")
 async def evaluate_ibne_sina(
     subject: str = Form(...),
@@ -7625,6 +7668,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
