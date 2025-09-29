@@ -4503,7 +4503,7 @@ async def evaluate_ibne_sina(
             temperature=0.3,
         )
 
-        ai_feedback = evaluation_response.choices[0].message["content"]
+        ai_feedback = evaluation_response.choices[0].message.content
         print(f"[DEBUG] OpenAI Raw Response: {ai_feedback[:300]}...", flush=True)
 
         
@@ -7615,6 +7615,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
