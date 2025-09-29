@@ -4397,6 +4397,95 @@ def get_form_data(db: Session = Depends(get_db)):
     except Exception as e:
         print(f"[ERROR] /api/form-data failed: {e}", flush=True)
         return {"error": "Failed to fetch form data"}
+        
+@app.post("/api/evaluate_ibne_sina")
+async def evaluate_ibne_sina(
+    subject: str = Form(...),
+    pdf: str = Form(...),
+    question: str = Form(...),
+    text: str = Form(None),
+    image: UploadFile = File(None),
+    db: Session = Depends(get_db)
+):
+    try:
+        if image:
+            # ✅ OCR + cleanup (use your existing helper)
+            combined_text = ""
+            result = await extract_text_helper(image)
+            extracted_text = result.get("text", "") if isinstance(result, dict) else ""
+            if extracted_text:
+                combined_text += extracted_text.strip() + "\n\n"
+
+            if not combined_text.strip():
+                return JSONResponse(
+                    content={"detail": "No text extracted from image"},
+                    status_code=400,
+                )
+
+            corrected_text = combined_text.strip()
+
+            # ✅ AI improvement / evaluation prompt
+            improvement_prompt = f"""
+            You are an expert creative writing tutor. Your goal is to help a student improve their writing skills.
+
+            1. Rewrite the following essay with:
+               - Better overall structure and flow
+               - Clear grammar, punctuation, and sentence construction
+               - Richer and more precise vocabulary
+               - Logical organization and smooth transitions
+               - Formal academic style appropriate for A-level essays
+
+            2. Keep the original meaning intact. Do not add new ideas.
+
+            3. Wrap **only the words, phrases, or sentences that are changed or improved** in double asterisks to highlight the actual improvements. Do NOT wrap the parts that remain unchanged.
+
+            4. After the essay, provide a short note (2–3 sentences) summarizing key improvements.
+
+            Original OCR-corrected essay:
+            <<< BEGIN TEXT >>>
+            {corrected_text}
+            <<< END TEXT >>>
+            """
+
+            improvement_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a creative writing tutor helping a student improve their essay.",
+                    },
+                    {"role": "user", "content": improvement_prompt},
+                ],
+                temperature=0.3,
+            )
+
+            improved_answer = improvement_response.choices[0].message["content"]
+
+            # Final evaluated student answer
+            student_answer = corrected_text
+
+            # Example marks + notes (you can refine this later)
+            marks = 7
+            notes = improved_answer
+
+        elif text:
+            # ✅ Handle text input directly
+            student_answer = text
+            marks = 6
+            notes = "Good answer, but could use more detail."
+
+        else:
+            return JSONResponse(
+                {"error": "No answer provided"}, status_code=400
+            )
+
+        return {"marks": marks, "notes": notes}
+
+    except Exception as e:
+        return JSONResponse(
+            content={"detail": f"Error during evaluation: {str(e)}"},
+            status_code=500,
+        )
 
 @app.post("/start-session-ibne-sina")
 async def start_session_ibne_sina(
@@ -7486,6 +7575,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
