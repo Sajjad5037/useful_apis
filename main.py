@@ -4405,87 +4405,123 @@ async def evaluate_ibne_sina(
     question: str = Form(...),
     text: str = Form(None),
     image: UploadFile = File(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     try:
+        print("\n[DEBUG] --- New Evaluation Request ---", flush=True)
+        print(f"[DEBUG] Subject: {subject}", flush=True)
+        print(f"[DEBUG] PDF: {pdf}", flush=True)
+        print(f"[DEBUG] Question: {question}", flush=True)
+        print(f"[DEBUG] Text Provided: {bool(text)} | Image Provided: {bool(image)}", flush=True)
+
+        # --- STEP 1: Extract student response ---
+        studentResponse = None
+
         if image:
-            # ✅ OCR + cleanup (use your existing helper)
+            print("[DEBUG] Extracting text from uploaded image...", flush=True)
             combined_text = ""
             result = await extract_text_helper(image)
+            print(f"[DEBUG] OCR Raw Result: {result}", flush=True)
+
             extracted_text = result.get("text", "") if isinstance(result, dict) else ""
+            print(f"[DEBUG] Extracted Text: {extracted_text[:200]}...", flush=True)
+
             if extracted_text:
                 combined_text += extracted_text.strip() + "\n\n"
 
             if not combined_text.strip():
+                print("[DEBUG] No text extracted from image.", flush=True)
                 return JSONResponse(
                     content={"detail": "No text extracted from image"},
                     status_code=400,
                 )
 
-            corrected_text = combined_text.strip()
-
-            # ✅ AI improvement / evaluation prompt
-            improvement_prompt = f"""
-            You are an expert creative writing tutor. Your goal is to help a student improve their writing skills.
-
-            1. Rewrite the following essay with:
-               - Better overall structure and flow
-               - Clear grammar, punctuation, and sentence construction
-               - Richer and more precise vocabulary
-               - Logical organization and smooth transitions
-               - Formal academic style appropriate for A-level essays
-
-            2. Keep the original meaning intact. Do not add new ideas.
-
-            3. Wrap **only the words, phrases, or sentences that are changed or improved** in double asterisks to highlight the actual improvements. Do NOT wrap the parts that remain unchanged.
-
-            4. After the essay, provide a short note (2–3 sentences) summarizing key improvements.
-
-            Original OCR-corrected essay:
-            <<< BEGIN TEXT >>>
-            {corrected_text}
-            <<< END TEXT >>>
-            """
-
-            improvement_response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a creative writing tutor helping a student improve their essay.",
-                    },
-                    {"role": "user", "content": improvement_prompt},
-                ],
-                temperature=0.3,
-            )
-
-            improved_answer = improvement_response.choices[0].message["content"]
-
-            # Final evaluated student answer
-            student_answer = corrected_text
-
-            # Example marks + notes (you can refine this later)
-            marks = 7
-            notes = improved_answer
+            studentResponse = combined_text.strip()
+            print(f"[DEBUG] Final Student Response (from image): {studentResponse[:200]}...", flush=True)
 
         elif text:
-            # ✅ Handle text input directly
-            student_answer = text
-            marks = 6
-            notes = "Good answer, but could use more detail."
+            studentResponse = text.strip()
+            print(f"[DEBUG] Final Student Response (from text): {studentResponse[:200]}...", flush=True)
 
         else:
+            print("[DEBUG] No student answer provided (neither text nor image).", flush=True)
             return JSONResponse(
-                {"error": "No answer provided"}, status_code=400
+                content={"detail": "No student answer provided (text or image required)"},
+                status_code=400,
             )
 
-        return {"marks": marks, "notes": notes}
+        # --- STEP 2: Fetch correct answer from DB ---
+        print("[DEBUG] Fetching correct answer from database...", flush=True)
+        correct_answer_entry = (
+            db.query(PDFQuestion_new)
+            .filter(
+                PDFQuestion_new.status == subject,
+                PDFQuestion_new.pdf_name == pdf,
+                PDFQuestion_new.question == question
+            )
+            .first()
+        )
+        print(f"[DEBUG] DB Query Result: {correct_answer_entry}", flush=True)
+
+        if not correct_answer_entry or not correct_answer_entry.answer:
+            print("[DEBUG] Correct answer not found in database.", flush=True)
+            return JSONResponse(
+                content={"detail": "Correct answer not found in database"},
+                status_code=404,
+            )
+
+        correctAnswer = correct_answer_entry.answer.strip()
+        print(f"[DEBUG] Correct Answer Retrieved: {correctAnswer[:200]}...", flush=True)
+
+        # --- STEP 3: Pass both student + correct answers to OpenAI for evaluation ---
+        evaluation_prompt = f"""
+        You are an examiner. Compare the student's answer with the correct answer.
+
+        Subject: {subject}
+        PDF: {pdf}
+        Question: {question}
+
+        Correct Answer:
+        {correctAnswer}
+
+        Student Answer:
+        {studentResponse}
+
+        Provide:
+        - Marks out of 10
+        - Notes with feedback for improvement
+        """
+        print("[DEBUG] Sending evaluation prompt to OpenAI...", flush=True)
+        print(f"[DEBUG] Prompt Preview: {evaluation_prompt[:300]}...", flush=True)
+
+        evaluation_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an examiner evaluating student responses."},
+                {"role": "user", "content": evaluation_prompt},
+            ],
+            temperature=0.3,
+        )
+
+        ai_feedback = evaluation_response.choices[0].message["content"]
+        print(f"[DEBUG] OpenAI Raw Response: {ai_feedback[:300]}...", flush=True)
+
+        # --- STEP 4: Return response ---
+        print("[DEBUG] Returning evaluation result to frontend.", flush=True)
+        return {
+            "student_answer": studentResponse,
+            "correct_answer": correctAnswer,
+            "evaluation": ai_feedback,
+        }
 
     except Exception as e:
+        print(f"[ERROR] Exception occurred: {str(e)}", flush=True)
         return JSONResponse(
-            content={"detail": f"Error during evaluation: {str(e)}"},
+            content={"error": f"Error during evaluation: {str(e)}"},
             status_code=500,
         )
+
+
 
 @app.post("/start-session-ibne-sina")
 async def start_session_ibne_sina(
@@ -7575,6 +7611,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
