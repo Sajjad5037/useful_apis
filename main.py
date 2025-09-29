@@ -4367,6 +4367,37 @@ Improved Essay:
         headers=cors_headers,
     )
 
+@app.get("/api/form-data-ibne-sina")
+def get_form_data(db: Session = Depends(get_db)):
+    """
+    Returns subjects, PDFs, and questions for frontend dropdowns.
+    Data is extracted from pdf_questions table:
+      - subjects -> from status column
+      - pdfs     -> from pdf_name column
+      - questions-> from question column
+    """
+
+    try:
+        # Distinct values
+        subjects = db.query(distinct(PDFQuestion_new.status)).all()
+        pdfs = db.query(distinct(PDFQuestion_new.pdf_name)).all()
+        questions = db.query(distinct(PDFQuestion_new.question)).all()
+
+        # Flatten (tuples -> list)
+        subjects = [s[0] for s in subjects if s[0]]
+        pdfs = [p[0] for p in pdfs if p[0]]
+        questions = [q[0] for q in questions if q[0]]
+
+        return {
+            "subjects": subjects,
+            "pdfs": pdfs,
+            "questions": questions
+        }
+
+    except Exception as e:
+        print(f"[ERROR] /api/form-data failed: {e}", flush=True)
+        return {"error": "Failed to fetch form data"}
+
 @app.post("/start-session-ibne-sina")
 async def start_session_ibne_sina(
     request: Request,
@@ -7451,6 +7482,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
