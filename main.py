@@ -4509,17 +4509,25 @@ async def evaluate_ibne_sina(
         print(f"[DEBUG] OpenAI Raw Response: {ai_feedback[:300]}...", flush=True)
 
         
-        # --- STEP 4: Return response ---
-        print("[DEBUG] Returning evaluation result to frontend.", flush=True)
+        # --- STEP 4: Determine if student passed ---
+        passed = None
+        if "not likely" in ai_feedback.lower():
+            passed = False
+        elif "likely" in ai_feedback.lower():
+            passed = True
+        else:
+            passed = None  # in case AI response is unclear
+        
+        # --- Return response including the flag ---
         return JSONResponse(
             content={
                 "student_answer": studentResponse,
                 "correct_answer": correctAnswer,
                 "evaluation": ai_feedback,
+                "passed": passed,
             },
             status_code=200,
         )
-
     except Exception as e:
         print(f"[ERROR] Exception occurred: {str(e)}", flush=True)
         return JSONResponse(
@@ -7617,6 +7625,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
