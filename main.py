@@ -4425,6 +4425,19 @@ def get_form_data(db: Session = Depends(get_db)):
         return {"error": "Failed to fetch form data"}
 
 
+@app.get("/distinct_subjects_ibne_sina")
+def distinct_subjects_ibne_sina(db: Session = Depends(get_db)):
+    try:
+        # Query distinct subjects from the table
+        subjects = db.query(distinct(StudentSession_ibne_sina.subject)).all()
+        # db returns list of tuples like [('sociology',), ('Economics',)]
+        subject_list = [s[0] for s in subjects]
+        return subject_list
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch distinct subjects: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch subjects")
+
+
 @app.post("/student_report_ibne_sina", response_model=List[StudentReportItem_ibne_sina])
 def student_report(request: StudentReportRequest_ibne_Sina, db: Session = Depends(get_db)):
     try:
@@ -7712,6 +7725,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
