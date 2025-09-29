@@ -4506,13 +4506,17 @@ async def evaluate_ibne_sina(
         ai_feedback = evaluation_response.choices[0].message["content"]
         print(f"[DEBUG] OpenAI Raw Response: {ai_feedback[:300]}...", flush=True)
 
+        
         # --- STEP 4: Return response ---
         print("[DEBUG] Returning evaluation result to frontend.", flush=True)
-        return {
-            "student_answer": studentResponse,
-            "correct_answer": correctAnswer,
-            "evaluation": ai_feedback,
-        }
+        return JSONResponse(
+            content={
+                "student_answer": studentResponse,
+                "correct_answer": correctAnswer,
+                "evaluation": ai_feedback,
+            },
+            status_code=200,
+        )
 
     except Exception as e:
         print(f"[ERROR] Exception occurred: {str(e)}", flush=True)
@@ -7611,6 +7615,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
