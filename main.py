@@ -253,7 +253,17 @@ class StudentProgressLog(Base):
     pdf_name = Column(String(255), nullable=False)        # which PDF this session was on
     status = Column(String(50), nullable=False)           # e.g., completed, in-progress
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
+class StudentReportRequest_ibne_Sina(BaseModel):
+    student_id: str
+    student_name: str
+    subject: str
+
+class StudentReportItem_ibne_sina(BaseModel):
+    subject: str
+    pdf_name: str
+    preparedness: str
+
 class PDFQuestion(Base):
     __tablename__ = "pdf_question"
 
@@ -4415,6 +4425,40 @@ def get_form_data(db: Session = Depends(get_db)):
         return {"error": "Failed to fetch form data"}
 
 
+@app.post("/student_report_ibne_sina", response_model=List[StudentReportItem_ibne_sina])
+def student_report(request: StudentReportRequest_ibne_Sina, db: Session = Depends(get_db)):
+    try:
+        # --- Query the table with filters ---
+        results = (
+            db.query(StudentSession_ibne_sina)
+            .filter(
+                StudentSession_ibne_sina.student_id == request.student_id,
+                StudentSession_ibne_sina.student_name == request.student_name,
+                StudentSession_ibne_sina.subject == request.subject
+            )
+            .all()
+        )
+
+        if not results:
+            return []
+
+        # --- Prepare response ---
+        report = [
+            StudentReportItem_ibne_sina(
+                subject=r.subject,
+                pdf_name=r.pdf_name,
+                preparedness=r.preparedness
+            )
+            for r in results
+        ]
+
+        return report
+
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch student report: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch student report")
+
+
 @app.post("/api/finish_session_ibne_sina")
 def finish_session(request: FinishSessionRequest, db: Session = Depends(get_db)):
     try:
@@ -7668,6 +7712,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
