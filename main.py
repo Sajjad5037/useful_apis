@@ -4577,7 +4577,8 @@ async def start_session_ibne_sina(
         "questions": qa_pairs,
         "current_index": 0,
         "completed": False,
-        "pdf_name": body.chapter or image_name,  # use as frontend is send pdf_name in chapter
+        "pdf_name": body.chapter or image_name,  # frontend sends pdf_name in chapter
+        "subject": body.subject,                 # new subject field
     }
     print(f"[DEBUG] Saved checklist in memory for session {session_id}")
 
@@ -4892,12 +4893,15 @@ async def chat_interactive_tutor(
             # --- Ensure pdf_name is valid ---
             pdf_name_to_save = checklist.get("pdf_name") or "Unknown PDF"
 
+            # --- Ensure subject is valid ---
+            subject_to_save = checklist.get("subject") or "Unknown Subject"
+
             # --- Create StudentProgressLog when all questions are done ---
             try:
                 new_log = StudentProgressLog(
                     name=username or "Unknown Student",
                     pdf_name=pdf_name_to_save,
-                    status="well_prepared"
+                    status=subject_to_save
                 )
                 db.add(new_log)
                 db.commit()
@@ -7482,6 +7486,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
