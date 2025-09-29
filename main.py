@@ -4476,21 +4476,26 @@ async def evaluate_ibne_sina(
         # --- STEP 3: Pass both student + correct answers to OpenAI for evaluation ---
         evaluation_prompt = f"""
         You are an examiner. Compare the student's answer with the correct answer.
-
+        
         Subject: {subject}
         PDF: {pdf}
         Question: {question}
-
+        
         Correct Answer:
         {correctAnswer}
-
+        
         Student Answer:
         {studentResponse}
-
+        
         Provide:
         - Marks out of 10
-        - Notes with feedback for improvement
+        - A short overall judgment on whether the student is likely to do well or not well in the exam for this question
+        
+        Example Response:
+        Marks: 8/10
+        The student understands the main idea and is likely to do well, though adding a bit more detail would strengthen their exam performance.
         """
+
         print("[DEBUG] Sending evaluation prompt to OpenAI...", flush=True)
         print(f"[DEBUG] Prompt Preview: {evaluation_prompt[:300]}...", flush=True)
 
@@ -7615,6 +7620,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
