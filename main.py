@@ -4487,14 +4487,11 @@ async def evaluate_ibne_sina(
         Student Answer:
         {studentResponse}
         
-        Provide:
-        - Marks out of 10
-        - A short overall judgment on whether the student is likely to do well or not well in the exam for this question
-        
-        Example Response:
-        Marks: 8/10
-        The student understands the main idea and is likely to do well, though adding a bit more detail would strengthen their exam performance.
+        Provide your response in this exact format:
+        Marks: X/10
+        Feedback: The student is [likely / not likely] to do well in the exam for this question.
         """
+
 
         print("[DEBUG] Sending evaluation prompt to OpenAI...", flush=True)
         print(f"[DEBUG] Prompt Preview: {evaluation_prompt[:300]}...", flush=True)
@@ -7620,6 +7617,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
