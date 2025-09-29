@@ -4437,6 +4437,50 @@ def distinct_subjects_ibne_sina(db: Session = Depends(get_db)):
         print(f"[ERROR] Failed to fetch distinct subjects: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch subjects")
 
+@app.get("/distinct_pdfs_ibne_sina", response_model=List[str])
+def distinct_pdfs_ibne_sina(
+    subject: str = Query(..., description="Subject name to filter PDFs"),
+    db: Session = Depends(get_db)
+):
+    try:
+        # Query distinct pdf_name for the given subject
+        pdfs = (
+            db.query(distinct(StudentSession_ibne_sina.pdf_name))
+            .filter(StudentSession_ibne_sina.subject == subject)
+            .all()
+        )
+
+        # db returns list of tuples like [('Chapter1.pdf',), ('Chapter2.pdf',)]
+        pdf_list = [p[0] for p in pdfs]
+        return pdf_list
+
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch distinct PDFs for subject '{subject}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch PDFs")
+
+
+@app.get("/questions_by_pdf_ibne_sina", response_model=List[str])
+def questions_by_pdf_ibne_sina(
+    pdf_name: str = Query(..., description="PDF name to fetch questions for"),
+    db: Session = Depends(get_db)
+):
+    try:
+        # Query distinct questions for the given PDF
+        questions = (
+            db.query(StudentSession_ibne_sina.question_text)
+            .filter(StudentSession_ibne_sina.pdf_name == pdf_name)
+            .all()
+        )
+
+        # db returns list of tuples like [('Question 1',), ('Question 2',)]
+        question_list = [q[0] for q in questions]
+        return question_list
+
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch questions for PDF '{pdf_name}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch questions")
+
+
 
 @app.post("/student_report_ibne_sina", response_model=List[StudentReportItem_ibne_sina])
 def student_report(request: StudentReportRequest_ibne_Sina, db: Session = Depends(get_db)):
@@ -7725,6 +7769,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
