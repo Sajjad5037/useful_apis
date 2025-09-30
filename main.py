@@ -4466,20 +4466,30 @@ def questions_by_pdf_ibne_sina(
     """
     Fetch all questions for a given PDF filename.
     Matches only the filename portion of pdf_name in pdf_questions table.
+    Includes detailed debug prints.
     """
     try:
-        # Match the last part of pdf_name with the filename sent from frontend
-        questions_query = (
-            db.query(PDFQuestion_new.question)
-            .filter(func.substr(PDFQuestion_new.pdf_name,
-                                -func.length(pdf_name)) == pdf_name)
-            .all()
-        )
+        print(f"[DEBUG] Received pdf_name from frontend: '{pdf_name}'")
 
-        # Convert list of tuples to list of strings
-        questions_list = [q[0] for q in questions_query]
+        # Query all rows and check which ones match the filename at the end
+        all_rows = db.query(PDFQuestion_new.pdf_name, PDFQuestion_new.question).all()
+        print(f"[DEBUG] Total rows in pdf_questions table: {len(all_rows)}")
 
-        return questions_list
+        # Filter manually for filename match and collect questions
+        matched_questions = []
+        for row in all_rows:
+            stored_pdf_name = row.pdf_name
+            question_text = row.question
+            filename_only = stored_pdf_name.split("/")[-1]  # extract last part
+            print(f"[DEBUG] Checking DB pdf_name: '{stored_pdf_name}' -> filename: '{filename_only}'")
+
+            if filename_only == pdf_name:
+                print(f"[DEBUG] Match found! Question: '{question_text}'")
+                matched_questions.append(question_text)
+
+        print(f"[DEBUG] Total matched questions: {len(matched_questions)}")
+
+        return matched_questions
 
     except Exception as e:
         print(f"[ERROR] Failed to fetch questions for PDF '{pdf_name}': {e}")
@@ -7772,6 +7782,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
