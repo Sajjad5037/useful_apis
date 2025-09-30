@@ -100,25 +100,25 @@ total_pdf = 0
 import tempfile
 
 
+# --- Step 1: Get Base64 JSON from Railway ---
 json_creds_b64 = os.environ.get("MY_GCP_KEY_B64")
 if not json_creds_b64:
     raise RuntimeError("Environment variable MY_GCP_KEY_B64 is not set!")
 
+# --- Step 2: Decode Base64 to JSON string ---
 json_creds = base64.b64decode(json_creds_b64).decode("utf-8")
 
-# Write the JSON credentials to a temporary file
-with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
-    f.write(json_creds)
-    temp_path = f.name
+# --- Step 3: Load credentials directly from JSON string ---
+credentials = service_account.Credentials.from_service_account_info(
+    eval(json_creds)  # converts JSON string to Python dict
+)
 
-# Load credentials and initialize the GCS client
-credentials = service_account.Credentials.from_service_account_file(temp_path)
+# --- Step 4: Initialize GCS client ---
 client = storage.Client(credentials=credentials, project=credentials.project_id)
 
-# Reference your bucket
+# --- Step 5: Access your bucket ---
 bucket_name = "ibne_sina_app_new"
 bucket_ibne_sina = client.bucket(bucket_name)
-
 
 
 
@@ -7883,6 +7883,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
