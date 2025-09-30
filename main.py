@@ -4461,25 +4461,31 @@ def distinct_pdfs_ibne_sina(
 @app.get("/questions_by_pdf_ibne_sina", response_model=List[str])
 def questions_by_pdf_ibne_sina(
     pdf_name: str = Query(..., description="PDF filename to fetch questions for"),
+    subject: str = Query(..., description="Subject name to filter questions"),
     db: Session = Depends(get_db)
 ):
+    """
+    Fetch all questions for a given PDF filename and subject.
+    Matches only the filename portion of pdf_name.
+    """
     try:
-        # Extract only the filename from the stored pdf_name in DB
-        questions = (
-            db.query(StudentSession_ibne_sina.question_text)
-            .filter(func.substr(StudentSession_ibne_sina.pdf_name,
+        # Filter by subject (status) and PDF filename (match last part of URL)
+        questions_query = (
+            db.query(PDFQuestion_new.question)
+            .filter(PDFQuestion_new.status == subject)  # status is subject
+            .filter(func.substr(PDFQuestion_new.pdf_name,
                                 -func.length(pdf_name)) == pdf_name)
             .all()
         )
 
-        # db returns list of tuples like [('Question 1',), ('Question 2',)]
-        question_list = [q[0] for q in questions]
-        return question_list
+        # Convert list of tuples to list of strings
+        questions_list = [q[0] for q in questions_query]
+
+        return questions_list
 
     except Exception as e:
-        print(f"[ERROR] Failed to fetch questions for PDF '{pdf_name}': {e}")
+        print(f"[ERROR] Failed to fetch questions for PDF '{pdf_name}' and subject '{subject}': {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch questions")
-
 
 @app.post("/student_report_ibne_sina", response_model=List[StudentReportItem_ibne_sina])
 def student_report(request: StudentReportRequest_ibne_Sina, db: Session = Depends(get_db)):
@@ -7768,6 +7774,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
