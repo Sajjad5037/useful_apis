@@ -99,9 +99,6 @@ vectorstore = None
 total_pdf = 0
 import tempfile
 
-GCS_BUCKET_ibne_sina = "ibne_sina_app_new"
-gcs_client_ibne_sina = storage.Client()
-bucket_ibne_sina = gcs_client.bucket(GCS_BUCKET_ibne_sina)
 
 
 
@@ -168,6 +165,9 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
 # OCR client
 ocr_client = vision.ImageAnnotatorClient()
 
+GCS_BUCKET_ibne_sina = "ibne_sina_app_new"
+gcs_client_ibne_sina = storage.Client()
+bucket_ibne_sina = gcs_client.bucket(GCS_BUCKET_ibne_sina)
 
 # Set the correct GOOGLE_APPLICATION_CREDENTIALS to point to that file
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
@@ -7872,6 +7872,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
