@@ -100,25 +100,28 @@ total_pdf = 0
 import tempfile
 
 
-# --- Step 1: Get Base64 JSON from Railway ---
+# 1️⃣ Read the base64 env var
 json_creds_b64 = os.environ.get("MY_GCP_KEY_B64")
 if not json_creds_b64:
     raise RuntimeError("Environment variable MY_GCP_KEY_B64 is not set!")
 
-# --- Step 2: Decode Base64 to JSON string ---
+# 2️⃣ Decode it
 json_creds = base64.b64decode(json_creds_b64).decode("utf-8")
 
-# --- Step 3: Load credentials directly from JSON string ---
-credentials = service_account.Credentials.from_service_account_info(
-    eval(json_creds)  # converts JSON string to Python dict
-)
+# 3️⃣ Write to a temp file
+with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
+    f.write(json_creds)
+    temp_path = f.name
 
-# --- Step 4: Initialize GCS client ---
-client = storage.Client(credentials=credentials, project=credentials.project_id)
+# 4️⃣ Set GOOGLE_APPLICATION_CREDENTIALS
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
 
-# --- Step 5: Access your bucket ---
-bucket_name = "ibne_sina_app_new"
-bucket_ibne_sina = client.bucket(bucket_name)
+# 5️⃣ Initialize GCS client
+GCS_BUCKET_IBNE_SINA = "ibne_sina_app_new"
+gcs_client_ibne_sina = storage.Client()
+bucket_ibne_sina = gcs_client_ibne_sina.bucket(GCS_BUCKET_IBNE_SINA)
+
+print("✅ GCS client initialized, bucket ready.")
 
 
 
@@ -4456,12 +4459,52 @@ def get_form_data(db: Session = Depends(get_db)):
         print(f"[ERROR] /api/form-data failed: {e}", flush=True)
         return {"error": "Failed to fetch form data"}
 
+import os
+import json
+import base64
+import tempfile
+import uuid
+from typing import List
+
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
+from sqlalchemy.orm import Session
+from google.cloud import storage
+
+from models import Syllabus_ibne_sina  # Your SQLAlchemy model
+from database import get_db  # Your DB session generator
+
+app = FastAPI()
+
+# ---------------------------
+# Setup Google Cloud Storage
+# ---------------------------
+json_creds_b64 = os.environ.get("MY_GCP_KEY_B64")
+if not json_creds_b64:
+    raise RuntimeError("Environment variable MY_GCP_KEY_B64 is not set!")
+
+# Decode and write to temp file
+json_creds = base64.b64decode(json_creds_b64).decode("utf-8")
+with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
+    f.write(json_creds)
+    temp_path = f.name
+
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
+
+# Initialize GCS client
+GCS_BUCKET_IBNE_SINA = "ibne_sina_app_new"
+gcs_client_ibne_sina = storage.Client()
+bucket_ibne_sina = gcs_client_ibne_sina.bucket(GCS_BUCKET_IBNE_SINA)
+print("✅ GCS client initialized, bucket ready.")
+
+# ---------------------------
+# Endpoint: Add Syllabus with Images
+# ---------------------------
 @app.post("/syllabus/add-with-images")
 async def add_syllabus_with_images(
     class_name: str = Form(...),
     subject: str = Form(...),
     chapter: str = Form(...),
-    images: list[UploadFile] = File(...),
+    images: List[UploadFile] = File(...),
     db: Session = Depends(get_db)
 ):
     print("🚀 Endpoint called: /syllabus/add-with-images")
@@ -4473,16 +4516,17 @@ async def add_syllabus_with_images(
 
     image_urls = []
 
-    # Upload images to GCS
-    for idx, image in enumerate(images):
+    for idx, image in enumerate(images, start=1):
         try:
             unique_filename = f"{uuid.uuid4()}_{image.filename}"
-            print(f"Uploading image {idx + 1}/{len(images)}: {image.filename} as {unique_filename}")
+            print(f"📤 Uploading image {idx}/{len(images)}: {image.filename} as {unique_filename}")
+            
             blob = bucket_ibne_sina.blob(unique_filename)
             blob.upload_from_file(image.file, content_type=image.content_type)
             blob.make_public()
+            
             image_urls.append(blob.public_url)
-            print(f"✅ Uploaded successfully. Public URL: {blob.public_url}")
+            print(f"✅ Uploaded successfully: {blob.public_url}")
         except Exception as e:
             print(f"❌ Failed to upload image {image.filename}: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to upload image {image.filename}")
@@ -4498,11 +4542,10 @@ async def add_syllabus_with_images(
         db.add(syllabus_entry)
         db.commit()
         db.refresh(syllabus_entry)
-        print(f"✅ DB entry saved with ID: {syllabus_entry.id}")
+        print(f"💾 Saved syllabus entry to DB with id {syllabus_entry.id}")
     except Exception as e:
-        print(f"❌ Failed to save entry in DB: {e}")
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to save syllabus entry")
+        print(f"❌ Failed to save entry to DB: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save syllabus entry to DB")
 
     return {
         "id": syllabus_entry.id,
@@ -4510,8 +4553,7 @@ async def add_syllabus_with_images(
         "subject": subject,
         "chapter": chapter,
         "image_urls": image_urls
-    }
-    
+    }    
 @app.get("/distinct_subjects_ibne_sina")
 def distinct_subjects_ibne_sina(db: Session = Depends(get_db)):
     try:
@@ -7883,6 +7925,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
