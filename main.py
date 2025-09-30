@@ -100,6 +100,25 @@ total_pdf = 0
 import tempfile
 
 
+# Get the JSON string from Railway environment variable
+json_creds = os.environ["MY_GCP_KEY_PATH"]
+
+# Write it to a temporary file
+with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
+    f.write(json_creds)
+    temp_path = f.name
+
+# Load credentials from the temporary file
+credentials = service_account.Credentials.from_service_account_file(temp_path)
+client = storage.Client(credentials=credentials, project=credentials.project_id)
+
+# Example usage: upload a file
+bucket_name = "ibne_sina_app_new"
+bucket_ibne_sina = client.bucket(bucket_name)
+
+
+
+
 
 
 session_checklists={} #to be used to keep track of questions extract from the given pdf and their corresponding answer
@@ -165,9 +184,6 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
 # OCR client
 ocr_client = vision.ImageAnnotatorClient()
 
-GCS_BUCKET_ibne_sina = "ibne_sina_app_new"
-gcs_client_ibne_sina = storage.Client()
-bucket_ibne_sina = gcs_client_ibne_sina.bucket(GCS_BUCKET_ibne_sina)
 
 # Set the correct GOOGLE_APPLICATION_CREDENTIALS to point to that file
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
@@ -4447,7 +4463,7 @@ async def add_syllabus_with_images(
     subject: str = Form(...),
     chapter: str = Form(...),
     images: List[UploadFile] = File(...),
-    db: Session = Depends(get_db)  # use the global DB session
+    db: Session = Depends(get_db)
 ):
     print("🚀 Endpoint called: /syllabus/add-with-images")
     print(f"Received class_name: {class_name}, subject: {subject}, chapter: {chapter}")
@@ -4466,9 +4482,10 @@ async def add_syllabus_with_images(
             print(f"Uploading image {idx + 1}/{len(images)}: {image.filename} as {unique_filename}")
             blob = bucket_ibne_sina.blob(unique_filename)
             blob.upload_from_file(image.file, content_type=image.content_type)
-            blob.make_public()
-            image_urls.append(blob.public_url)
-            print(f"✅ Uploaded successfully. Public URL: {blob.public_url}")
+            # Note: We avoid `make_public()`; instead, generate signed URLs if needed
+            signed_url = blob.generate_signed_url(version="v4", expiration=3600)  # 1 hour expiry
+            image_urls.append(signed_url)
+            print(f"✅ Uploaded successfully. Signed URL: {signed_url}")
         except Exception as e:
             print(f"❌ Failed to upload image {image.filename}: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to upload image {image.filename}")
@@ -4499,7 +4516,6 @@ async def add_syllabus_with_images(
         "chapter": chapter,
         "image_urls": image_urls
     }
-
 
 @app.get("/distinct_subjects_ibne_sina")
 def distinct_subjects_ibne_sina(db: Session = Depends(get_db)):
@@ -7872,6 +7888,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
