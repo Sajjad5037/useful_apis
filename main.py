@@ -4472,7 +4472,7 @@ def questions_by_pdf_ibne_sina(
         print(f"[DEBUG] Received pdf_name from frontend: '{pdf_name}'")
 
         # Query all rows and check which ones match the filename at the end
-        all_rows = db.query(PDFQuestion_new.pdf_name, PDFQuestion_new.question).all()
+        all_rows = db.query(PDFQuestion_ibne_sina.pdf_name, PDFQuestion_ibne_sina.question).all()
         print(f"[DEBUG] Total rows in pdf_questions table: {len(all_rows)}")
 
         # Filter manually for filename match and collect questions
@@ -7796,6 +7796,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
