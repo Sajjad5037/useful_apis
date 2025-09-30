@@ -4608,27 +4608,41 @@ async def evaluate_ibne_sina(
             )
 
         # --- STEP 2: Fetch correct answer from DB ---
+        
+
         print("[DEBUG] Fetching correct answer from database...", flush=True)
+        
+        # If only filename is passed, reconstruct full URL
+        if not pdf.startswith("http"):
+            pdf_full = f"https://storage.googleapis.com/ibne_sina_app/{pdf}"
+            print(f"[DEBUG] Reconstructed full PDF URL: {pdf_full}", flush=True)
+        else:
+            pdf_full = pdf
+            print(f"[DEBUG] Using provided full PDF URL: {pdf_full}", flush=True)
+        
+        # Query using full URL (since DB stores full URLs)
         correct_answer_entry = (
             db.query(PDFQuestion_new)
             .filter(
                 PDFQuestion_new.status == subject,
-                PDFQuestion_new.pdf_name == pdf,
+                PDFQuestion_new.pdf_name == pdf_full,
                 PDFQuestion_new.question == question
             )
             .first()
         )
+        
         print(f"[DEBUG] DB Query Result: {correct_answer_entry}", flush=True)
-
+        
         if not correct_answer_entry or not correct_answer_entry.answer:
-            print("[DEBUG] Correct answer not found in database.", flush=True)
+            print(f"[DEBUG] Correct answer not found in database for PDF '{pdf_full}' and question '{question}'.", flush=True)
             return JSONResponse(
-                content={"detail": "Correct answer not found in database"},
+                content={"detail": f"Correct answer not found for PDF '{pdf_full}'"},
                 status_code=404,
             )
-
+        
         correctAnswer = correct_answer_entry.answer.strip()
-        print(f"[DEBUG] Correct Answer Retrieved: {correctAnswer[:200]}...", flush=True)
+        print(f"[DEBUG] Correct Answer Retrieved (truncated): {correctAnswer[:200]}...", flush=True)
+
 
         # --- STEP 3: Pass both student + correct answers to OpenAI for evaluation ---
         evaluation_prompt = f"""
@@ -7782,6 +7796,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
