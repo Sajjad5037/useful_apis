@@ -99,6 +99,11 @@ vectorstore = None
 total_pdf = 0
 import tempfile
 
+GCS_BUCKET_ibne_sina = "ibne_sina_app_new"
+gcs_client_ibne_sina = storage.Client()
+bucket_ibne_sina = gcs_client.bucket(GCS_BUCKET_ibne_sina)
+
+
 
 session_checklists={} #to be used to keep track of questions extract from the given pdf and their corresponding answer
 session_histories = {}
@@ -253,6 +258,15 @@ class StudentProgressLog(Base):
     pdf_name = Column(String(255), nullable=False)        # which PDF this session was on
     status = Column(String(50), nullable=False)           # e.g., completed, in-progress
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Syllabus_ibne_sina(Base):
+    __tablename__ = "syllabus_ibne_sina"
+    id = Column(Integer, primary_key=True, index=True)
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    chapter = Column(String, nullable=False)
+    image_urls = Column(JSON, nullable=False)  # list of image URLs
 
 class StudentReportRequest_ibne_Sina(BaseModel):
     student_id: str
@@ -4425,6 +4439,68 @@ def get_form_data(db: Session = Depends(get_db)):
         return {"error": "Failed to fetch form data"}
 
 
+
+
+@app.post("/syllabus/add-with-images")
+async def add_syllabus_with_images(
+    class_name: str = Form(...),
+    subject: str = Form(...),
+    chapter: str = Form(...),
+    images: List[UploadFile] = File(...),
+    db: Session = Depends(get_db)  # use the global DB session
+):
+    print("🚀 Endpoint called: /syllabus/add-with-images")
+    print(f"Received class_name: {class_name}, subject: {subject}, chapter: {chapter}")
+    print(f"Number of uploaded images: {len(images)}")
+
+    if not images:
+        print("⚠️ No images uploaded, raising HTTP 400")
+        raise HTTPException(status_code=400, detail="No images uploaded")
+
+    image_urls = []
+
+    # Upload each image to GCS bucket
+    for idx, image in enumerate(images):
+        try:
+            unique_filename = f"{uuid.uuid4()}_{image.filename}"
+            print(f"Uploading image {idx + 1}/{len(images)}: {image.filename} as {unique_filename}")
+            blob = bucket_ibne_sina.blob(unique_filename)
+            blob.upload_from_file(image.file, content_type=image.content_type)
+            blob.make_public()
+            image_urls.append(blob.public_url)
+            print(f"✅ Uploaded successfully. Public URL: {blob.public_url}")
+        except Exception as e:
+            print(f"❌ Failed to upload image {image.filename}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to upload image {image.filename}")
+
+    # Save entry to DB
+    try:
+        print("Saving syllabus entry to DB...")
+        syllabus_entry = Syllabus_ibne_sina(
+            class_name=class_name,
+            subject=subject,
+            chapter=chapter,
+            image_urls=image_urls
+        )
+        db.add(syllabus_entry)
+        db.commit()
+        db.refresh(syllabus_entry)
+        print(f"✅ DB entry saved with ID: {syllabus_entry.id}")
+    except Exception as e:
+        print(f"❌ Failed to save entry in DB: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to save syllabus entry")
+
+    print("Returning response to client...")
+    return {
+        "id": syllabus_entry.id,
+        "class_name": class_name,
+        "subject": subject,
+        "chapter": chapter,
+        "image_urls": image_urls
+    }
+
+
 @app.get("/distinct_subjects_ibne_sina")
 def distinct_subjects_ibne_sina(db: Session = Depends(get_db)):
     try:
@@ -7796,6 +7872,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
