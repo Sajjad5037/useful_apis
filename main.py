@@ -4458,17 +4458,17 @@ def distinct_pdfs_ibne_sina(
         print(f"[ERROR] Failed to fetch distinct PDFs for subject '{subject}': {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch PDFs")
 
-
 @app.get("/questions_by_pdf_ibne_sina", response_model=List[str])
 def questions_by_pdf_ibne_sina(
-    pdf_name: str = Query(..., description="PDF name to fetch questions for"),
+    pdf_name: str = Query(..., description="PDF filename to fetch questions for"),
     db: Session = Depends(get_db)
 ):
     try:
-        # Query distinct questions for the given PDF
+        # Extract only the filename from the stored pdf_name in DB
         questions = (
             db.query(StudentSession_ibne_sina.question_text)
-            .filter(StudentSession_ibne_sina.pdf_name == pdf_name)
+            .filter(func.substr(StudentSession_ibne_sina.pdf_name,
+                                -func.length(pdf_name)) == pdf_name)
             .all()
         )
 
@@ -4479,7 +4479,6 @@ def questions_by_pdf_ibne_sina(
     except Exception as e:
         print(f"[ERROR] Failed to fetch questions for PDF '{pdf_name}': {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch questions")
-
 
 
 @app.post("/student_report_ibne_sina", response_model=List[StudentReportItem_ibne_sina])
@@ -7769,6 +7768,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
