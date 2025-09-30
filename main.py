@@ -4461,18 +4461,16 @@ def distinct_pdfs_ibne_sina(
 @app.get("/questions_by_pdf_ibne_sina", response_model=List[str])
 def questions_by_pdf_ibne_sina(
     pdf_name: str = Query(..., description="PDF filename to fetch questions for"),
-    subject: str = Query(..., description="Subject name to filter questions"),
     db: Session = Depends(get_db)
 ):
     """
-    Fetch all questions for a given PDF filename and subject.
-    Matches only the filename portion of pdf_name.
+    Fetch all questions for a given PDF filename.
+    Matches only the filename portion of pdf_name in pdf_questions table.
     """
     try:
-        # Filter by subject (status) and PDF filename (match last part of URL)
+        # Match the last part of pdf_name with the filename sent from frontend
         questions_query = (
             db.query(PDFQuestion_new.question)
-            .filter(PDFQuestion_new.status == subject)  # status is subject
             .filter(func.substr(PDFQuestion_new.pdf_name,
                                 -func.length(pdf_name)) == pdf_name)
             .all()
@@ -4484,9 +4482,9 @@ def questions_by_pdf_ibne_sina(
         return questions_list
 
     except Exception as e:
-        print(f"[ERROR] Failed to fetch questions for PDF '{pdf_name}' and subject '{subject}': {e}")
+        print(f"[ERROR] Failed to fetch questions for PDF '{pdf_name}': {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch questions")
-
+        
 @app.post("/student_report_ibne_sina", response_model=List[StudentReportItem_ibne_sina])
 def student_report(request: StudentReportRequest_ibne_Sina, db: Session = Depends(get_db)):
     try:
@@ -7774,6 +7772,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
