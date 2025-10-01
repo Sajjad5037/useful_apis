@@ -301,16 +301,16 @@ class PDFQuestion(Base):
 
 class PDFQuestion_new(Base):
     __tablename__ = "pdf_question_new"
-
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    session_id = Column(String(100), nullable=False, index=True)   # link to the checklist session
-    username = Column(String(100), nullable=False)                 # owner of the question
-    pdf_name = Column(String(255), nullable=False)                 # ✅ name of the source PDF
+    session_id = Column(String(100), nullable=False, index=True)
+    username = Column(String(100), nullable=False)
+    pdf_name = Column(String(255), nullable=False)
     question = Column(Text, nullable=False)
     answer = Column(Text, nullable=False)
-    status = Column(String(20), nullable=False, default="unseen")  # unseen / in_progress / done
+    status = Column(String(20), nullable=False, default="unseen")
+    subject = Column(String(100), nullable=True)      # new
+    class_name = Column(String(50), nullable=True)    # new
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
 
 class SessionSummary(Base):
     __tablename__ = "session_summary"
@@ -7929,6 +7929,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
