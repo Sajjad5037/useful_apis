@@ -4458,10 +4458,10 @@ async def add_syllabus_with_images(
     class_name: str = Form(...),
     subject: str = Form(...),
     chapter: str = Form(...),
-    images: List[UploadFile] = File(...),
+    images: list[UploadFile] = File(...),
     db: Session = Depends(get_db)
 ):
-    print("🚀 Endpoint called: /syllabus/add-with-images")
+    print(f"🚀 Endpoint called: /syllabus/add-with-images")
     print(f"Received class_name: {class_name}, subject: {subject}, chapter: {chapter}")
     print(f"Number of uploaded images: {len(images)}")
 
@@ -4474,16 +4474,17 @@ async def add_syllabus_with_images(
         try:
             unique_filename = f"{uuid.uuid4()}_{image.filename}"
             print(f"📤 Uploading image {idx}/{len(images)}: {image.filename} as {unique_filename}")
-            
+
             blob = bucket_ibne_sina.blob(unique_filename)
             blob.upload_from_file(image.file, content_type=image.content_type)
             blob.make_public()
-            
+
             image_urls.append(blob.public_url)
             print(f"✅ Uploaded successfully: {blob.public_url}")
+
         except Exception as e:
             print(f"❌ Failed to upload image {image.filename}: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to upload image {image.filename}")
+            raise HTTPException(status_code=500, detail=f"Failed to upload image {image.filename}: {e}")
 
     # Save to DB
     try:
@@ -4499,7 +4500,7 @@ async def add_syllabus_with_images(
         print(f"💾 Saved syllabus entry to DB with id {syllabus_entry.id}")
     except Exception as e:
         print(f"❌ Failed to save entry to DB: {e}")
-        raise HTTPException(status_code=500, detail="Failed to save syllabus entry to DB")
+        raise HTTPException(status_code=500, detail=f"Failed to save syllabus entry to DB: {e}")
 
     return {
         "id": syllabus_entry.id,
@@ -4508,6 +4509,8 @@ async def add_syllabus_with_images(
         "chapter": chapter,
         "image_urls": image_urls
     }
+
+
 @app.get("/distinct_subjects_ibne_sina")
 def distinct_subjects_ibne_sina(db: Session = Depends(get_db)):
     try:
@@ -7879,6 +7882,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
