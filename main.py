@@ -5079,7 +5079,9 @@ async def start_session_ibne_sina(
                     pdf_name=image_name,
                     question=qa["q"],
                     answer=qa["a"],
-                    status=qa["status"]
+                    status=qa["status"],
+                    subject=body.subject,       # insert subject
+                    class_name=body.className   # insert class name
                 ))
         db.commit()
         print("[DEBUG] Successfully committed to DB")
@@ -7929,6 +7931,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
