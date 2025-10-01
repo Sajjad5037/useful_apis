@@ -5348,35 +5348,37 @@ async def chat_interactive_tutor(
         current_index = checklist["current_index"]
         current_step = checklist.get("current_step", 0)
 
-        # --- Check if all questions completed ---
+        # --- Single place to check if all questions completed ---
         if current_index >= len(checklist["questions"]):
             checklist["completed"] = True
             print(f"[DEBUG] Session {session_id} completed all questions.", flush=True)
 
-            # --- Ensure pdf_name is valid ---
             pdf_name_to_save = checklist.get("pdf_name") or "Unknown PDF"
-
-            # --- Ensure subject is valid ---
             subject_to_save = checklist.get("subject") or "Unknown Subject"
 
-            # --- Create StudentProgressLog when all questions are done ---
+            # --- Create StudentSession_ibne_sina entry ---
             try:
-                new_log = StudentProgressLog(
-                    name=username or "Unknown Student",
+                new_log = StudentSession_ibne_sina(
+                    subject=subject_to_save,
+                    student_id=session_id,  # using session_id as identifier
+                    student_name=username or "Unknown Student",
                     pdf_name=pdf_name_to_save,
-                    status=subject_to_save
+                    preparedness="well_prepared"
                 )
                 db.add(new_log)
                 db.commit()
+                db.refresh(new_log)
+
                 print(
-                    f"[DEBUG] StudentProgressLog created -> "
-                    f"id={new_log.id}, name={new_log.name}, "
-                    f"pdf_name={new_log.pdf_name}, status={new_log.status}",
+                    f"[DEBUG] StudentSession_ibne_sina created -> "
+                    f"id={new_log.id}, subject={new_log.subject}, "
+                    f"student_name={new_log.student_name}, pdf_name={new_log.pdf_name}, "
+                    f"preparedness={new_log.preparedness}",
                     flush=True
                 )
             except Exception as db_error:
                 db.rollback()
-                print(f"[ERROR] Failed to save StudentProgressLog: {db_error}", flush=True)
+                print(f"[ERROR] Failed to save StudentSession_ibne_sina: {db_error}", flush=True)
 
             return ChatResponse(reply="All questions completed. Great job!")
 
@@ -5411,35 +5413,13 @@ async def chat_interactive_tutor(
             checklist["current_step"] = current_step
             checklist["step_status"] = {}
 
+            # If new index now finishes all questions, loop will handle next call
             if current_index >= len(checklist["questions"]):
                 checklist["completed"] = True
-                print(f"[DEBUG] Session {session_id} completed all questions after last step.", flush=True)
+                print(f"[DEBUG] Session {session_id} reached end of questions.", flush=True)
+                return await chat_interactive_tutor(request, db)  # recursive call triggers the "all done" logic above
 
-                # --- Ensure pdf_name is valid ---
-                pdf_name_to_save = checklist.get("pdf_name") or "Unknown PDF"
-
-                # --- Create StudentProgressLog when all questions are done ---
-                try:
-                    new_log = StudentProgressLog(
-                        name=username or "Unknown Student",
-                        pdf_name=pdf_name_to_save,
-                        status="well_prepared"
-                    )
-                    db.add(new_log)
-                    db.commit()
-                    print(
-                        f"[DEBUG] StudentProgressLog created -> "
-                        f"id={new_log.id}, name={new_log.name}, "
-                        f"pdf_name={new_log.pdf_name}, status={new_log.status}",
-                        flush=True
-                    )
-                except Exception as db_error:
-                    db.rollback()
-                    print(f"[ERROR] Failed to save StudentProgressLog: {db_error}", flush=True)
-
-                return ChatResponse(reply="All questions completed. Great job!")
-
-            # Update current question after increment
+            # update next question
             current_question_data = checklist["questions"][current_index]
             current_question = current_question_data["q"]
             steps = current_question_data.get("steps", ["Understand the concept"])
@@ -5471,10 +5451,7 @@ async def chat_interactive_tutor(
             },
             {
                 "role": "user",
-                "content": (
-                    "The student is ready to learn. Teach interactively and check understanding step by step. "
-                    "Wait for their response before proceeding."
-                )
+                "content": "The student is ready to learn. Teach interactively and check understanding step by step."
             }
         ]
 
@@ -5493,6 +5470,7 @@ async def chat_interactive_tutor(
         if student_reply:
             session_histories[session_id].append({"role": "user", "content": student_reply})
         session_histories[session_id].append({"role": "assistant", "content": gpt_reply})
+
         print(f"[DEBUG] Updated session history for session {session_id}. Total messages: {len(session_histories[session_id])}", flush=True)
 
         return ChatResponse(reply=gpt_reply)
@@ -7949,6 +7927,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
