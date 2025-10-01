@@ -4449,6 +4449,50 @@ def get_form_data(db: Session = Depends(get_db)):
         return {"error": "Failed to fetch form data"}
 
 
+@app.get("/classes")
+def get_classes(db: Session = Depends(get_db)):
+    """
+    Returns all distinct class names from syllabus_ibne_sina table.
+    """
+    results = db.query(Syllabus_ibne_sina.class_name).distinct().all()
+    
+    # Flatten list of tuples to a list of strings
+    class_names = [r[0] for r in results]
+    
+    return class_names
+
+@app.get("/subjects", response_model=List[str])
+def get_subjects(class_name: str = Query(..., alias="class"), db: Session = Depends(get_db)):
+    """
+    Returns a list of subjects for a given class_name from syllabus_ibne_sina table.
+    """
+    results = db.query(Syllabus_ibne_sina.subject).filter(Syllabus_ibne_sina.class_name == class_name).distinct().all()
+    subject_list = [r[0] for r in results]  # extract strings from SQLAlchemy tuples
+    return subject_list
+
+@app.get("/chapters", response_model=List[str])
+def get_chapters(
+    class_name: str = Query(..., alias="class"),
+    subject: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns a list of chapters for a given class_name and subject from syllabus_ibne_sina table.
+    """
+    results = (
+        db.query(Syllabus_ibne_sina.chapter)
+        .filter(
+            Syllabus_ibne_sina.class_name == class_name,
+            Syllabus_ibne_sina.subject == subject
+        )
+        .distinct()
+        .all()
+    )
+    chapter_list = [r[0] for r in results]  # extract strings from SQLAlchemy tuples
+    return chapter_list
+
+
+
 # ---------------------------
 # Endpoint: Add Syllabus with Images
 # ---------------------------
@@ -4522,6 +4566,7 @@ def distinct_subjects_ibne_sina(db: Session = Depends(get_db)):
     except Exception as e:
         print(f"[ERROR] Failed to fetch distinct subjects: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch subjects")
+        
 
 @app.get("/distinct_pdfs_ibne_sina", response_model=List[str])
 def distinct_pdfs_ibne_sina(
@@ -7882,6 +7927,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
