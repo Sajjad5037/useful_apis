@@ -4580,9 +4580,9 @@ async def add_syllabus_with_images(
 @app.get("/distinct_subjects_ibne_sina")
 def distinct_subjects_ibne_sina(db: Session = Depends(get_db)):
     try:
-        # Query distinct subjects from the table
-        subjects = db.query(distinct(StudentSession_ibne_sina.subject)).all()
-        # db returns list of tuples like [('sociology',), ('Economics',)]
+        # Query distinct pdf_name (or 'pdf_name' used as subject equivalent) from PDFQuestion_new
+        subjects = db.query(distinct(PDFQuestion_new.pdf_name)).all()
+        # db returns list of tuples like [('Chapter1.pdf',), ('Chapter2.pdf',)]
         subject_list = [s[0] for s in subjects]
         return subject_list
     except Exception as e:
@@ -7929,6 +7929,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
