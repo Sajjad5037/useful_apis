@@ -4599,7 +4599,7 @@ def distinct_pdfs_ibne_sina(
         # Query distinct pdf_name for the given subject
         pdfs = (
             db.query(distinct(PDFQuestion_new.pdf_name))
-            .filter(PDFQuestion_new.status == subject)
+            .filter(PDFQuestion_new.subject == subject)  # ✅ correct column
             .all()
         )
 
@@ -4610,7 +4610,6 @@ def distinct_pdfs_ibne_sina(
     except Exception as e:
         print(f"[ERROR] Failed to fetch distinct PDFs for subject '{subject}': {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch PDFs")
-
 
 @app.get("/questions_by_pdf_ibne_sina", response_model=List[str])
 def questions_by_pdf_ibne_sina(
@@ -4625,15 +4624,13 @@ def questions_by_pdf_ibne_sina(
     try:
         print(f"[DEBUG] Received pdf_name from frontend: '{pdf_name}'")
 
-        # Query all rows and check which ones match the filename at the end
-        all_rows = db.query(PDFQuestion_new.question, PDFQuestion_new.question).all()
+        # Query all rows: pdf_name and question
+        all_rows = db.query(PDFQuestion_new.pdf_name, PDFQuestion_new.question).all()
         print(f"[DEBUG] Total rows in pdf_question_new table: {len(all_rows)}")
 
         # Filter manually for filename match and collect questions
         matched_questions = []
-        for row in all_rows:
-            stored_pdf_name = row.pdf_name
-            question_text = row.question
+        for stored_pdf_name, question_text in all_rows:
             filename_only = stored_pdf_name.split("/")[-1]  # extract last part
             print(f"[DEBUG] Checking DB pdf_name: '{stored_pdf_name}' -> filename: '{filename_only}'")
 
@@ -4642,7 +4639,6 @@ def questions_by_pdf_ibne_sina(
                 matched_questions.append(question_text)
 
         print(f"[DEBUG] Total matched questions: {len(matched_questions)}")
-
         return matched_questions
 
     except Exception as e:
@@ -7931,6 +7927,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
