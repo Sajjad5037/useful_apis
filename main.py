@@ -4498,10 +4498,6 @@ def get_chapter_images(
     chapter: str = Query(...),
     db: Session = Depends(get_db)
 ):
-    """
-    Returns all image URLs for a given class, subject, and chapter.
-    Assumes image_urls is stored as a JSON array in the DB.
-    """
     result = (
         db.query(Syllabus_ibne_sina.image_urls)
         .filter(
@@ -4512,16 +4508,12 @@ def get_chapter_images(
         .first()
     )
 
-    if not result or not result.image_urls:
-        raise HTTPException(status_code=404, detail="No images found for the selected chapter.")
+    if not result:
+        return []
 
-    # Convert JSON string from DB to Python list
-    try:
-        images = json.loads(result.image_urls)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Invalid image_urls format in database.")
+    # ✅ image_urls is already a list, no need for json.loads
+    return result.image_urls
 
-    return images
 
 # ---------------------------
 # Endpoint: Add Syllabus with Images
@@ -7957,6 +7949,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
