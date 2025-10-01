@@ -4446,42 +4446,6 @@ def get_form_data(db: Session = Depends(get_db)):
         print(f"[ERROR] /api/form-data failed: {e}", flush=True)
         return {"error": "Failed to fetch form data"}
 
-import os
-import json
-import base64
-import tempfile
-import uuid
-from typing import List
-
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
-from sqlalchemy.orm import Session
-from google.cloud import storage
-
-from models import Syllabus_ibne_sina  # Your SQLAlchemy model
-from database import get_db  # Your DB session generator
-
-app = FastAPI()
-
-# ---------------------------
-# Setup Google Cloud Storage
-# ---------------------------
-json_creds_b64 = os.environ.get("MY_GCP_KEY_B64")
-if not json_creds_b64:
-    raise RuntimeError("Environment variable MY_GCP_KEY_B64 is not set!")
-
-# Decode and write to temp file
-json_creds = base64.b64decode(json_creds_b64).decode("utf-8")
-with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
-    f.write(json_creds)
-    temp_path = f.name
-
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
-
-# Initialize GCS client
-GCS_BUCKET_IBNE_SINA = "ibne_sina_app_new"
-gcs_client_ibne_sina = storage.Client()
-bucket_ibne_sina = gcs_client_ibne_sina.bucket(GCS_BUCKET_IBNE_SINA)
-print("✅ GCS client initialized, bucket ready.")
 
 # ---------------------------
 # Endpoint: Add Syllabus with Images
@@ -7913,6 +7877,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
