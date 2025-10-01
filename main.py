@@ -100,24 +100,18 @@ total_pdf = 0
 import tempfile
 
 
-# 1️⃣ Read the JSON env var directly
-json_creds_string = os.environ.get("MY_GCP_KEY_JSON")
-if not json_creds_string:
-    raise RuntimeError("Environment variable MY_GCP_KEY_JSON is not set!")
+# 1️⃣ Set the path to your service account JSON file in the project
+SERVICE_ACCOUNT_FILE = "./service_account.json"  # adjust path if needed
 
-# 2️⃣ Write JSON to a temp file
-with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
-    f.write(json_creds_string)
-    temp_path = f.name
+if not os.path.exists(SERVICE_ACCOUNT_FILE):
+    raise RuntimeError(f"Service account file not found at {SERVICE_ACCOUNT_FILE}")
 
-# 3️⃣ Set GOOGLE_APPLICATION_CREDENTIALS for GCS client
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
+# 2️⃣ Set GOOGLE_APPLICATION_CREDENTIALS to point to the JSON file
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = SERVICE_ACCOUNT_FILE
 
-# 4️⃣ Initialize GCS client
+# 3️⃣ Initialize the Google Cloud Storage client
 GCS_BUCKET_IBNE_SINA = "ibne_sina_app_new"
 gcs_client_ibne_sina = storage.Client()
-bucket_ibne_sina = gcs_client_ibne_sina.bucket(GCS_BUCKET_IBNE_SINA)
-
 
 session_checklists={} #to be used to keep track of questions extract from the given pdf and their corresponding answer
 session_histories = {}
@@ -7919,6 +7913,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
