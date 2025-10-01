@@ -100,18 +100,20 @@ total_pdf = 0
 import tempfile
 
 
-# 1️⃣ Set the path to your service account JSON file in the project
-SERVICE_ACCOUNT_FILE = "./service_account.json"  # adjust path if needed
+# 1️⃣ Set the path to your service account JSON file
+SERVICE_ACCOUNT_FILE = "./service_account.json"  # adjust if needed
 
 if not os.path.exists(SERVICE_ACCOUNT_FILE):
     raise RuntimeError(f"Service account file not found at {SERVICE_ACCOUNT_FILE}")
 
-# 2️⃣ Set GOOGLE_APPLICATION_CREDENTIALS to point to the JSON file
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = SERVICE_ACCOUNT_FILE
+# 2️⃣ Initialize the Google Cloud Storage client using the service account file
+gcs_client_ibne_sina = storage.Client.from_service_account_json(SERVICE_ACCOUNT_FILE)
 
-# 3️⃣ Initialize the Google Cloud Storage client
+# 3️⃣ Get the bucket object
 GCS_BUCKET_IBNE_SINA = "ibne_sina_app_new"
-gcs_client_ibne_sina = storage.Client()
+bucket_ibne_sina = gcs_client_ibne_sina.bucket(GCS_BUCKET_IBNE_SINA)
+
+print(f"✅ GCS client initialized, bucket '{GCS_BUCKET_IBNE_SINA}' ready.")
 
 session_checklists={} #to be used to keep track of questions extract from the given pdf and their corresponding answer
 session_histories = {}
@@ -4473,7 +4475,7 @@ async def add_syllabus_with_images(
             unique_filename = f"{uuid.uuid4()}_{image.filename}"
             print(f"📤 Uploading image {idx}/{len(images)}: {image.filename} as {unique_filename}")
             
-            blob = GCS_BUCKET_IBNE_SINA.blob(unique_filename)
+            blob = bucket_ibne_sina.blob(unique_filename)
             blob.upload_from_file(image.file, content_type=image.content_type)
             blob.make_public()
             
@@ -7877,6 +7879,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
