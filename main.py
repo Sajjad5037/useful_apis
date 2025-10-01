@@ -100,30 +100,23 @@ total_pdf = 0
 import tempfile
 
 
-# 1️⃣ Read the base64 env var
-json_creds_b64 = os.environ.get("MY_GCP_KEY_B64")
-if not json_creds_b64:
-    raise RuntimeError("Environment variable MY_GCP_KEY_B64 is not set!")
+# 1️⃣ Read the JSON env var directly
+json_creds_string = os.environ.get("MY_GCP_KEY_JSON")
+if not json_creds_string:
+    raise RuntimeError("Environment variable MY_GCP_KEY_JSON is not set!")
 
-# 2️⃣ Decode it
-json_creds = base64.b64decode(json_creds_b64).decode("utf-8")
-
-# 3️⃣ Write to a temp file
+# 2️⃣ Write JSON to a temp file
 with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
-    f.write(json_creds)
+    f.write(json_creds_string)
     temp_path = f.name
 
-# 4️⃣ Set GOOGLE_APPLICATION_CREDENTIALS
+# 3️⃣ Set GOOGLE_APPLICATION_CREDENTIALS for GCS client
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
 
-# 5️⃣ Initialize GCS client
+# 4️⃣ Initialize GCS client
 GCS_BUCKET_IBNE_SINA = "ibne_sina_app_new"
 gcs_client_ibne_sina = storage.Client()
 bucket_ibne_sina = gcs_client_ibne_sina.bucket(GCS_BUCKET_IBNE_SINA)
-
-print("✅ GCS client initialized, bucket ready.")
-
-
 
 
 session_checklists={} #to be used to keep track of questions extract from the given pdf and their corresponding answer
@@ -4499,6 +4492,7 @@ print("✅ GCS client initialized, bucket ready.")
 # ---------------------------
 # Endpoint: Add Syllabus with Images
 # ---------------------------
+# FastAPI endpoint
 @app.post("/syllabus/add-with-images")
 async def add_syllabus_with_images(
     class_name: str = Form(...),
@@ -4553,7 +4547,7 @@ async def add_syllabus_with_images(
         "subject": subject,
         "chapter": chapter,
         "image_urls": image_urls
-    }    
+    }
 @app.get("/distinct_subjects_ibne_sina")
 def distinct_subjects_ibne_sina(db: Session = Depends(get_db)):
     try:
@@ -7925,6 +7919,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
