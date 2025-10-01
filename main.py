@@ -4473,7 +4473,7 @@ async def add_syllabus_with_images(
             unique_filename = f"{uuid.uuid4()}_{image.filename}"
             print(f"📤 Uploading image {idx}/{len(images)}: {image.filename} as {unique_filename}")
             
-            blob = bucket_ibne_sina.blob(unique_filename)
+            blob = GCS_BUCKET_IBNE_SINA.blob(unique_filename)
             blob.upload_from_file(image.file, content_type=image.content_type)
             blob.make_public()
             
@@ -7877,6 +7877,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
