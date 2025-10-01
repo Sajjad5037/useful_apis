@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "ibne-sina-app",
+  "private_key_id": "611b03fdc526e10bb84448fb4594e66a42130008",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQCqPBCrwv6Q90g7\nwwMTqYCUNRz7H26U+tKjoPeeP/a9kMUb3dZc/mIkW73McRJ1sKPUo31TKa3w+29Y\nn0VYf5JHmCjonEFMKFNv86Rdln+5uy974yg/B+CR/SOfoQLptFDDyznPbkbDegCN\n3exTIlRONqbnSxRGMHHrPPcCJ3zzkQVBK1Oofs82k6rdVCejtuiX7ggC+z4B7UcU\nCMH6cdLPGlwxe9De6SUpR4O7VWBGewn8QBTzKTMd+872d9ZEXPBF6ot+Iq78F+Vr\nBln8xd92shKw+EtgWWLmQJxNyUSSOyIJ8Oc0nuDRYY9SKS9H0SkRFW1BwEfBYl69\nRwF7RxCPAgMBAAECggEAJChd4h2otGHRld/151c5WEFvxmcGtd4Qn3CxJ4uufNUj\nCKg1v8rITbCuv53Erfq20ZNoKyHPMEA3hjtOH135U/udtMp7lBF8p2q4nqg4uNpp\nW4cEJV8m89swldc9JyaFgRDJVqW1og9nzro0V/QStAonqTjpNX9UswJf9LUudQ0f\nLBliNs1U+uXmz09v0Yx8JXMF1jhzF9gxeZbV3OSC4L0DZct/JJbIBCizk97QZsFD\nU4t8Uo4kKHDi9t4V9acaqMOhqw7VSba0Q9lLerHCnUy6Nqwa53jrI1oWTGjcUAuE\nCCxRSa2Rv7zRd4pgYhkRO7ea+EOjRaN3NT8drX6HAQKBgQDqLUR74Hpe3lbIx9wt\n2kMD2FKMMKX8jwnWiOitmsHX18hTBbpWQHTR+TOn7Oz2Rrg85n8XFEDdD1Tcc4iZ\n3A7G95Bc1cop6nzBlRFEdb5l9ajhGyd3nXzdKdByhZKAtm72znAJH0QXxrLDEaa8\nW1BrnfzfX5hqZ/poFS0c2fKkVQKBgQC6GVXOp/O+du8rQck0no9NLDOy+J4PIEpB\nuXbk7jWTSuPowF+yOy6mQpownTlBSi0in8fDDmJT4FyV+TRxmTSOPLqBXeP9QtHo\nfzKYZYj+0WEJgRoRMbl1U5aIaXrfD3ErdXb7sVRlVuuvoRnX6tuaWHNa+uYIumK5\nlgkRH+2lUwKBgQCm0JpRWEYzoFTX8C8zZqCIc6fR/7GuKMLMVXjSekSNmkQ0iAcF\n/CJ7lPasL8VZZmVF1LhB24adMpez9oUffTf1mlL3HsBFfaljSOolB28bOJUVzf8e\nYUyaS3gWrHoBQHPpUoNSrDgYa83Z0ZAh6zZtgvyornNnkSw6yqL5Q3RqhQKBgQCy\nC70xqzQi/I0UGKuUwUKe9fQ8fWpTVHRW70cV/eWaFyN3sl2cGs0l2kDE1BdMJNiL\n8MxhDOj8EILkJXmMWaSTlPxm+to+muhTBSb18OahzNaHDlJPMwCZhLBXsHsS4CZJ\nCugcI+t3zTJOZNZh4lvaDlfHKpZcsV306tuf26k06wKBgQCUvbfZv/c3PGAmAdVI\ndPkT6GBiFDnVY0zkRih9WlnVigibsqAIiuUkwJxvIz7TiyGTi2+2srr1spigJA83\nu3GBvzgXginMGKfbMqSvxGuAZJSIwBuP94b8/AU+QDrYUtXk/xn0wkIV31zOUWVu\nvxsI4eRSp39Kfta79u4XXp9Uxg==\n-----END PRIVATE KEY-----\n",
+  "client_email": "backend-uploader@ibne-sina-app.iam.gserviceaccount.com",
+  "client_id": "107395161282692694212",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/backend-uploader%40ibne-sina-app.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
