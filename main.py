@@ -4598,8 +4598,8 @@ def distinct_pdfs_ibne_sina(
     try:
         # Query distinct pdf_name for the given subject
         pdfs = (
-            db.query(distinct(StudentSession_ibne_sina.pdf_name))
-            .filter(StudentSession_ibne_sina.subject == subject)
+            db.query(distinct(PDFQuestion_new.pdf_name))
+            .filter(PDFQuestion_new.status == subject)
             .all()
         )
 
@@ -4611,22 +4611,23 @@ def distinct_pdfs_ibne_sina(
         print(f"[ERROR] Failed to fetch distinct PDFs for subject '{subject}': {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch PDFs")
 
+
 @app.get("/questions_by_pdf_ibne_sina", response_model=List[str])
 def questions_by_pdf_ibne_sina(
     pdf_name: str = Query(..., description="PDF filename to fetch questions for"),
     db: Session = Depends(get_db)
 ):
     """
-    Fetch all questions for a given PDF filename.
-    Matches only the filename portion of pdf_name in pdf_questions table.
+    Fetch all questions for a given PDF filename from PDFQuestion_new table.
+    Matches only the filename portion of pdf_name.
     Includes detailed debug prints.
     """
     try:
         print(f"[DEBUG] Received pdf_name from frontend: '{pdf_name}'")
 
         # Query all rows and check which ones match the filename at the end
-        all_rows = db.query(PDFQuestion_ibne_sina.pdf_name, PDFQuestion_ibne_sina.question).all()
-        print(f"[DEBUG] Total rows in pdf_questions table: {len(all_rows)}")
+        all_rows = db.query(PDFQuestion_new.pdf_name, PDFQuestion_new.question).all()
+        print(f"[DEBUG] Total rows in pdf_question_new table: {len(all_rows)}")
 
         # Filter manually for filename match and collect questions
         matched_questions = []
@@ -4647,6 +4648,7 @@ def questions_by_pdf_ibne_sina(
     except Exception as e:
         print(f"[ERROR] Failed to fetch questions for PDF '{pdf_name}': {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch questions")
+
         
 @app.post("/student_report_ibne_sina", response_model=List[StudentReportItem_ibne_sina])
 def student_report(request: StudentReportRequest_ibne_Sina, db: Session = Depends(get_db)):
@@ -7927,6 +7929,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
