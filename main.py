@@ -4491,7 +4491,37 @@ def get_chapters(
     chapter_list = [r[0] for r in results]  # extract strings from SQLAlchemy tuples
     return chapter_list
 
+@app.get("/chapter-images", response_model=List[str])
+def get_chapter_images(
+    class_name: str = Query(..., alias="class"),
+    subject: str = Query(...),
+    chapter: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns all image URLs for a given class, subject, and chapter.
+    Assumes image_urls is stored as a JSON array in the DB.
+    """
+    result = (
+        db.query(Syllabus_ibne_sina.image_urls)
+        .filter(
+            Syllabus_ibne_sina.class_name == class_name,
+            Syllabus_ibne_sina.subject == subject,
+            Syllabus_ibne_sina.chapter == chapter
+        )
+        .first()
+    )
 
+    if not result or not result.image_urls:
+        raise HTTPException(status_code=404, detail="No images found for the selected chapter.")
+
+    # Convert JSON string from DB to Python list
+    try:
+        images = json.loads(result.image_urls)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Invalid image_urls format in database.")
+
+    return images
 
 # ---------------------------
 # Endpoint: Add Syllabus with Images
@@ -7927,6 +7957,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
