@@ -4449,6 +4449,30 @@ def get_form_data(db: Session = Depends(get_db)):
         return {"error": "Failed to fetch form data"}
 
 
+@router.post("/syllabus_chapters", response_model=List[SyllabusChapterResponse])
+def get_syllabus_chapters(request: SyllabusRequest, db: Session = Depends(get_db)):
+    try:
+        chapters = (
+            db.query(
+                Syllabus_ibne_sina.subject,
+                Syllabus_ibne_sina.chapter,
+                Syllabus_ibne_sina.image_urls
+            )
+            .filter(Syllabus_ibne_sina.class_name == request.class_name)
+            .distinct()
+            .all()
+        )
+
+        return [
+            {"subject": c.subject, "chapter": c.chapter, "image_urls": c.image_urls}
+            for c in chapters
+        ]
+
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch chapters: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch chapters")
+        
+
 @app.get("/classes")
 def get_classes(db: Session = Depends(get_db)):
     """
@@ -7937,6 +7961,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
