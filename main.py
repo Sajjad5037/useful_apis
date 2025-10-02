@@ -4772,16 +4772,15 @@ async def evaluate_ibne_sina(
             print(f"[DEBUG] Using provided full PDF URL: {pdf_full}", flush=True)
         
         # Query using full URL (since DB stores full URLs)
-        correct_answer_entry = (
-            db.query(PDFQuestion_ibne_sina)
+          correct_answer_entry = (
+            db.query(PDFQuestion_new)
             .filter(
-                PDFQuestion_ibne_sina.status == subject,
-                PDFQuestion_ibne_sina.pdf_name == pdf_full,
-                PDFQuestion_ibne_sina.question == question
+                PDFQuestion_new.subject == subject,
+                PDFQuestion_new.pdf_name == pdf_full,
+                PDFQuestion_new.question == question
             )
             .first()
-        )
-        
+        )      
         print(f"[DEBUG] DB Query Result: {correct_answer_entry}", flush=True)
         
         if not correct_answer_entry or not correct_answer_entry.answer:
@@ -5027,9 +5026,14 @@ async def start_session_ibne_sina(
         print(f"[WARNING] Question/Answer count mismatch: {len(questions)} questions vs {len(qa_pairs_raw)} answers")
 
     qa_pairs = [
-        {"q": qa.get("question", f"Missing Q{i+1}"), "a": qa.get("answer", "Answer not found"), "status": "unseen"}
+        {
+            "q": qa.get("question", f"Missing Q{i+1}"), 
+            "a": qa.get("answer", "Answer not found"), 
+            "status": body.subject  # using subject from the request body
+        }
         for i, qa in enumerate(qa_pairs_raw)
     ]
+
     print(f"[DEBUG] Finalized {len(qa_pairs)} question-answer pairs")
 
     # --- Step 4: Save in-memory ---
@@ -7927,6 +7931,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
