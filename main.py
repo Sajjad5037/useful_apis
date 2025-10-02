@@ -4772,7 +4772,7 @@ async def evaluate_ibne_sina(
             print(f"[DEBUG] Using provided full PDF URL: {pdf_full}", flush=True)
         
         # Query using full URL (since DB stores full URLs)
-          correct_answer_entry = (
+        correct_answer_entry = (
             db.query(PDFQuestion_new)
             .filter(
                 PDFQuestion_new.subject == subject,
@@ -4780,7 +4780,7 @@ async def evaluate_ibne_sina(
                 PDFQuestion_new.question == question
             )
             .first()
-        )      
+        )        
         print(f"[DEBUG] DB Query Result: {correct_answer_entry}", flush=True)
         
         if not correct_answer_entry or not correct_answer_entry.answer:
@@ -7931,6 +7931,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
