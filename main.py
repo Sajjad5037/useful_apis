@@ -4462,23 +4462,20 @@ def get_form_data(db: Session = Depends(get_db)):
 @app.post("/syllabus_chapters", response_model=List[SyllabusChapterResponse])
 def get_syllabus_chapters(request: SyllabusRequest, db: Session = Depends(get_db)):
     """
-    Returns all chapters, optionally filtered by subject.
+    Returns all chapters for the given subject, including subject and image URLs.
     """
     try:
-        query = db.query(
-            Syllabus_ibne_sina.subject,
-            Syllabus_ibne_sina.chapter,
-            Syllabus_ibne_sina.image_urls
-        ).distinct(
-            Syllabus_ibne_sina.subject,
-            Syllabus_ibne_sina.chapter
+        # Query distinct chapters for the given subject
+        chapters = (
+            db.query(
+                Syllabus_ibne_sina.subject,
+                Syllabus_ibne_sina.chapter,
+                Syllabus_ibne_sina.image_urls
+            )
+            .filter(Syllabus_ibne_sina.subject == request.subject)
+            .distinct(Syllabus_ibne_sina.subject, Syllabus_ibne_sina.chapter)
+            .all()
         )
-
-        # Optional subject filter
-        if request.subject:
-            query = query.filter(Syllabus_ibne_sina.subject == request.subject)
-
-        chapters = query.all()
 
         return [
             {"subject": c.subject, "chapter": c.chapter, "image_urls": c.image_urls}
@@ -4487,7 +4484,8 @@ def get_syllabus_chapters(request: SyllabusRequest, db: Session = Depends(get_db
 
     except Exception as e:
         print(f"[ERROR] Failed to fetch chapters: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch chapters")        
+        raise HTTPException(status_code=500, detail="Failed to fetch chapters")
+        
 
 @app.get("/classes")
 def get_classes(db: Session = Depends(get_db)):
@@ -7977,6 +7975,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
