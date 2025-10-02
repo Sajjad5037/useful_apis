@@ -5428,7 +5428,8 @@ async def chat_interactive_tutor(
                 db.rollback()
                 print(f"[ERROR] Failed to save StudentSession_ibne_sina: {db_error}", flush=True)
 
-            return ChatResponse(reply="All questions completed. Great job!")
+            return ChatResponse(reply="All questions completed. Great job! If you are not happy with the AI then please send the full conversation at proactive1.san@gmail.com with the issue faced. Your feedback is needed to improve the quality of this AI tutor.")
+
 
         # --- Retrieve current question and steps ---
         current_question_data = checklist["questions"][current_index]
@@ -7975,6 +7976,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
