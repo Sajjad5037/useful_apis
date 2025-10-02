@@ -4449,9 +4449,14 @@ def get_form_data(db: Session = Depends(get_db)):
         return {"error": "Failed to fetch form data"}
 
 
-@router.post("/syllabus_chapters", response_model=List[SyllabusChapterResponse])
+@app.post("/syllabus_chapters", response_model=List[SyllabusChapterResponse])
 def get_syllabus_chapters(request: SyllabusRequest, db: Session = Depends(get_db)):
+    """
+    Returns all chapters for a given class, including subject and image URLs.
+    Each chapter is unique per class.
+    """
     try:
+        # Query distinct chapters for the given class
         chapters = (
             db.query(
                 Syllabus_ibne_sina.subject,
@@ -4459,10 +4464,11 @@ def get_syllabus_chapters(request: SyllabusRequest, db: Session = Depends(get_db
                 Syllabus_ibne_sina.image_urls
             )
             .filter(Syllabus_ibne_sina.class_name == request.class_name)
-            .distinct()
+            .distinct(Syllabus_ibne_sina.subject, Syllabus_ibne_sina.chapter)
             .all()
         )
 
+        # Convert result tuples into list of dicts
         return [
             {"subject": c.subject, "chapter": c.chapter, "image_urls": c.image_urls}
             for c in chapters
@@ -7961,6 +7967,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
