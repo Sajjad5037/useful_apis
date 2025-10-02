@@ -4765,7 +4765,7 @@ async def evaluate_ibne_sina(
         
         # If only filename is passed, reconstruct full URL
         if not pdf.startswith("http"):
-            pdf_full = f"https://storage.googleapis.com/ibne_sina_app/{pdf}"
+            pdf_full = f"https://storage.googleapis.com/ibne_sina_app_new/{pdf}"
             print(f"[DEBUG] Reconstructed full PDF URL: {pdf_full}", flush=True)
         else:
             pdf_full = pdf
@@ -7927,6 +7927,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
