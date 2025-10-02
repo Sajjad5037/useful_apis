@@ -252,6 +252,16 @@ class StartSessionRequest(BaseModel):
     pages: List[str]
     name: str  # directly receive username
 
+class SyllabusRequest(BaseModel):
+    class_name: str
+    subject: str = None  # optional, can filter by subject if needed
+
+# Response schema
+class SyllabusChapterResponse(BaseModel):
+    subject: str
+    chapter: str
+    image_urls: List[str]  # list of image URLs
+
 class StartSessionRequest_ibne_sina(BaseModel):
     subject: str
     chapter: str
@@ -7967,6 +7977,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
