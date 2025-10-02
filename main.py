@@ -4649,7 +4649,7 @@ def questions_by_pdf_ibne_sina(
 @app.post("/student_report_ibne_sina", response_model=List[StudentReportItem_ibne_sina])
 def student_report(request: StudentReportRequest_ibne_Sina, db: Session = Depends(get_db)):
     try:
-        # --- Query the table with filters (without student_id) ---
+        # --- Query the table with filters (no student_id) ---
         results = (
             db.query(StudentSession_ibne_sina)
             .filter(
@@ -4662,15 +4662,20 @@ def student_report(request: StudentReportRequest_ibne_Sina, db: Session = Depend
         if not results:
             return []
 
-        # --- Prepare response ---
-        report = [
-            StudentReportItem_ibne_sina(
-                subject=r.subject,
-                pdf_name=r.pdf_name,
-                preparedness=r.preparedness
-            )
-            for r in results
-        ]
+        # --- Deduplicate based on (subject, pdf_name) ---
+        seen = set()
+        report = []
+        for r in results:
+            key = (r.subject, r.pdf_name)
+            if key not in seen:
+                seen.add(key)
+                report.append(
+                    StudentReportItem_ibne_sina(
+                        subject=r.subject,
+                        pdf_name=r.pdf_name,
+                        preparedness=r.preparedness
+                    )
+                )
 
         return report
 
@@ -7932,6 +7937,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
