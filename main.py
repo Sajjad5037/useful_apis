@@ -4645,15 +4645,14 @@ def questions_by_pdf_ibne_sina(
         print(f"[ERROR] Failed to fetch questions for PDF '{pdf_name}': {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch questions")
 
-        
+
 @app.post("/student_report_ibne_sina", response_model=List[StudentReportItem_ibne_sina])
 def student_report(request: StudentReportRequest_ibne_Sina, db: Session = Depends(get_db)):
     try:
-        # --- Query the table with filters ---
+        # --- Query the table with filters (without student_id) ---
         results = (
             db.query(StudentSession_ibne_sina)
             .filter(
-                StudentSession_ibne_sina.student_id == request.student_id,
                 StudentSession_ibne_sina.student_name == request.student_name,
                 StudentSession_ibne_sina.subject == request.subject
             )
@@ -4678,6 +4677,8 @@ def student_report(request: StudentReportRequest_ibne_Sina, db: Session = Depend
     except Exception as e:
         print(f"[ERROR] Failed to fetch student report: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch student report")
+
+
 
 
 @app.post("/api/finish_session_ibne_sina")
@@ -7931,6 +7932,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
