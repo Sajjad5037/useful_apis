@@ -5172,6 +5172,7 @@ async def start_session_ibne_sina(
 
     print("=" * 80)
     print("[DEBUG] /start-session-ibne-sina called")
+    username=body.name
 
     # --- doctorData (optional) ---
     doctor_data_str = request.headers.get("doctordata")
@@ -8254,6 +8255,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
