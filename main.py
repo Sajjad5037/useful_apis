@@ -1,3 +1,4 @@
+from fastapi.staticfiles import StaticFiles
 from pdf2image import convert_from_bytes
 from PIL import Image
 from enum import Enum
@@ -195,6 +196,7 @@ logging.basicConfig(level=logging.DEBUG)
 load_dotenv()
 # — FastAPI Init & CORS —
 app = FastAPI()
+
 session_texts = {}     # session_id -> full essay text
 session_histories = {} # session_id -> list of messages (chat history)
 username_for_interactive_session = None
@@ -228,6 +230,10 @@ app.add_middleware(
 
 Base = declarative_base()
 
+os.makedirs("static/audio", exist_ok=True)
+
+# Mount static folder
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # AWS S3 config (use Railway ENV variables in deployment)
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
@@ -5441,7 +5447,9 @@ async def start_session_ibne_sina(
     
         # --- Construct URL for frontend ---
         audio_url = f"/static/audio/{session_id}.mp3"
-    
+        print(f"[DEBUG] Saving file to {os.path.abspath(audio_path)}")
+
+
         # --- Return response ---
         print(f"[DEBUG] Step 7: Returning session {session_id} to frontend")
         return JSONResponse(
@@ -8288,6 +8296,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
