@@ -5452,14 +5452,14 @@ async def start_session_ibne_sina(
             headers=cors_headers,
         )
 
-except Exception as e:
-    print(f"[ERROR] Step 7: Failed to prepare response or generate audio for session {session_id}: {e}")
-    return JSONResponse(
-        content={"detail": "Failed to prepare response or generate audio"},
-        status_code=500,
-        headers=cors_headers,
-    )
-
+    except Exception as e:
+            print(f"[ERROR] Step 7: Failed to prepare response or generate audio for session {session_id}: {e}")
+            return JSONResponse(
+                content={"detail": "Failed to prepare response or generate audio"},
+                status_code=500,
+                headers=cors_headers,
+            )
+    
     
         
 
@@ -8285,6 +8285,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
