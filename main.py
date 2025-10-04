@@ -5393,44 +5393,52 @@ async def start_session_ibne_sina(
 
     # --- Step 7: Return response ---
         questions_text = "<br>".join(
-        f"{index + 1}. {qa['q']}" for index, qa in enumerate(qa_pairs)
-    )
-    
-    # Prepare the response message
-    prep_text = (
-        "I have created the following questions:<br><br>"
-        f"{questions_text}<br><br>"
-        "Let's start learning!"
-    )
-    
-    # --- Generate audio and save as file ---
-    audio_bytes = await generate_audio(session_id, prep_text, username, db)
-    
-    # Save audio file (e.g., in a /static/audio directory)
-    audio_dir = "static/audio"
-    os.makedirs(audio_dir, exist_ok=True)
-    audio_path = os.path.join(audio_dir, f"{session_id}.mp3")
-    
-    with open(audio_path, "wb") as f:
-        f.write(audio_bytes)
-    
-    # Construct URL for frontend
-    audio_url = f"/static/audio/{session_id}.mp3"
-    
-    # Debug logging
-    print(f"[DEBUG] Returning session {session_id} to frontend")
-    print("=" * 80)
-    
-    # Return response with audio URL
-    return JSONResponse(
-        content={
-            "sessionId": session_id,
-            "message": prep_text,
-            "total_text_length": len(combined_text.strip()),
-            "audioUrl": audio_url  # 👈 frontend can stream this
-        },
-        headers=cors_headers,
-    )
+            f"{idx + 1}. {qa['q']}" for idx, qa in enumerate(qa_pairs)
+        )
+        
+        # Prepare the response message
+        prep_text = (
+            "I have created the following questions:<br><br>"
+            f"{questions_text}<br><br>"
+            "Let's start learning!"
+        )
+        
+        # --- Generate audio (stored in audio_store as base64) ---
+        await generate_audio(session_id, prep_text, username, db)
+        
+        # Retrieve base64 audio from audio_store
+        audio_b64 = audio_store.get(session_id)
+        if not audio_b64:
+            raise HTTPException(status_code=500, detail="Audio generation failed")
+        
+        # Convert base64 to bytes
+        audio_bytes = base64.b64decode(audio_b64)
+        
+        # Save audio file (e.g., in /static/audio)
+        audio_dir = "static/audio"
+        os.makedirs(audio_dir, exist_ok=True)
+        audio_path = os.path.join(audio_dir, f"{session_id}.mp3")
+        
+        with open(audio_path, "wb") as f:
+            f.write(audio_bytes)
+        
+        # Construct URL for frontend
+        audio_url = f"/static/audio/{session_id}.mp3"
+        
+        # Debug logging
+        print(f"[DEBUG] Returning session {session_id} to frontend")
+        print("=" * 80)
+        
+        # Return response with audio URL
+        return JSONResponse(
+            content={
+                "sessionId": session_id,
+                "message": prep_text,
+                "total_text_length": len(combined_text.strip()),
+                "audioUrl": audio_url,  # 👈 frontend can stream this
+            },
+            headers=cors_headers,
+        )
 
 
 
@@ -8255,6 +8263,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
