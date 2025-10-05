@@ -4476,6 +4476,21 @@ def get_ids(db: Session = Depends(get_db)):
     # db.query(...).all() returns a list of tuples [(1,), (2,), (3,)]
     return [{"id": i[0]} for i in ids]
 
+
+@app.get("/api/syllabus_ibne_sina/all")
+def get_all_entries(db: Session = Depends(get_db)):
+    records = db.query(Syllabus_ibne_sina).all()
+    return [
+        {
+            "id": r.id,
+            "className": r.class_name,
+            "subject": r.subject,
+            "chapter": r.chapter
+        }
+        for r in records
+    ]
+
+
 @app.delete("/api/syllabus_ibne_sina/{item_id}")
 def delete_entry(item_id: int, db: Session = Depends(get_db)):
     record = db.query(Syllabus_ibne_sina).filter(Syllabus_ibne_sina.id == item_id).first()
@@ -8354,6 +8369,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
