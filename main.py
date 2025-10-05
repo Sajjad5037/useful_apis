@@ -5950,7 +5950,7 @@ async def chat_interactive_tutor(
         current_index = checklist["current_index"]
         current_step = checklist.get("current_step", 0)
 
-        # --- Single place to check if all questions completed ---
+        # --- Check if all questions completed ---
         if current_index >= len(checklist["questions"]):
             checklist["completed"] = True
             print(f"[DEBUG] Session {session_id} completed all questions.", flush=True)
@@ -5962,7 +5962,7 @@ async def chat_interactive_tutor(
             try:
                 new_log = StudentSession_ibne_sina(
                     subject=subject_to_save,
-                    student_id=session_id,  # using session_id as identifier
+                    student_id=session_id,
                     student_name=username or "Unknown Student",
                     pdf_name=pdf_name_to_save,
                     preparedness="well_prepared"
@@ -5982,8 +5982,14 @@ async def chat_interactive_tutor(
                 db.rollback()
                 print(f"[ERROR] Failed to save StudentSession_ibne_sina: {db_error}", flush=True)
 
-            return ChatResponse(reply="All questions completed. Great job! If you are not happy with the AI then please send the full conversation at proactive1.san@gmail.com with the issue faced. Your feedback is needed to improve the quality of this AI tutor.")
-
+            return ChatResponse(
+                reply=(
+                    "All questions completed. Great job! "
+                    "If you are not happy with the AI then please send the full conversation "
+                    "at proactive1.san@gmail.com with the issue faced. "
+                    "Your feedback is needed to improve the quality of this AI tutor."
+                )
+            )
 
         # --- Retrieve current question and steps ---
         current_question_data = checklist["questions"][current_index]
@@ -6016,13 +6022,12 @@ async def chat_interactive_tutor(
             checklist["current_step"] = current_step
             checklist["step_status"] = {}
 
-            # If new index now finishes all questions, loop will handle next call
             if current_index >= len(checklist["questions"]):
                 checklist["completed"] = True
                 print(f"[DEBUG] Session {session_id} reached end of questions.", flush=True)
-                return await chat_interactive_tutor(request, db)  # recursive call triggers the "all done" logic above
+                return await chat_interactive_tutor(request, db)
 
-            # update next question
+            # --- Update next question ---
             current_question_data = checklist["questions"][current_index]
             current_question = current_question_data["q"]
             steps = current_question_data.get("steps", ["Understand the concept"])
@@ -6058,10 +6063,8 @@ async def chat_interactive_tutor(
             }
         ]
 
-        # --- Call GPT ---
-         print(f"[DEBUG] Generating GPT reply for session {session_id}", flush=True)
-
         # --- Generate GPT reply ---
+        print(f"[DEBUG] Generating GPT reply for session {session_id}", flush=True)
         teach_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=teaching_messages,
@@ -6070,26 +6073,27 @@ async def chat_interactive_tutor(
         )
         gpt_reply = teach_response.choices[0].message.content.strip()
         print(f"[DEBUG] GPT Reply: {gpt_reply[:200]}... (truncated)", flush=True)
-    
+
         # --- Update session history ---
         session_histories.setdefault(session_id, [])
         if student_reply:
             session_histories[session_id].append({"role": "user", "content": student_reply})
         session_histories[session_id].append({"role": "assistant", "content": gpt_reply})
-    
-        print(f"[DEBUG] Updated session history for session {session_id}. "
-              f"Total messages: {len(session_histories[session_id])}", flush=True)
-    
+        print(
+            f"[DEBUG] Updated session history for session {session_id}. "
+            f"Total messages: {len(session_histories[session_id])}", flush=True
+        )
+
         # --- Generate TTS audio for GPT reply ---
         print(f"[DEBUG] Generating audio for session {session_id}")
         await generate_audio(session_id, gpt_reply, username, db)
-    
+
         # --- Retrieve base64 audio ---
         audio_b64 = audio_store.get(session_id)
         if not audio_b64:
             print(f"[ERROR] Audio generation returned None for session {session_id}")
             raise HTTPException(status_code=500, detail="Audio generation failed")
-    
+
         # --- Convert base64 to bytes and save ---
         audio_bytes = base64.b64decode(audio_b64)
         audio_dir = "static/audio"
@@ -6098,20 +6102,19 @@ async def chat_interactive_tutor(
         with open(audio_path, "wb") as f:
             f.write(audio_bytes)
         print(f"[DEBUG] Audio saved to {audio_path} ({len(audio_bytes)} bytes)", flush=True)
-    
+
         # --- Construct audio URL for frontend ---
         audio_url = f"/static/audio/{session_id}.mp3"
         print(f"[DEBUG] Audio URL prepared: {audio_url}", flush=True)
-    
+
         # --- Return JSON response with text + audio ---
         return JSONResponse(
             content={
-                "reply": gpt_reply,      # frontend expects 'reply'
-                "audio_url": audio_url   # frontend expects 'audio_url'
+                "reply": gpt_reply,
+                "audio_url": audio_url
             },
             headers=cors_headers,
         )
-
 
     except Exception as e:
         print(f"[ERROR] Internal server error in session {request.session_id}: {e}", flush=True)
@@ -8565,6 +8568,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
