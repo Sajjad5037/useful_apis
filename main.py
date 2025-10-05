@@ -6099,26 +6099,28 @@ async def chat_interactive_tutor(
         
         # --- Convert base64 to bytes and save locally ---
         audio_bytes = base64.b64decode(audio_b64)
+        # --- Ensure audio directory exists ---
         audio_dir = "static/audio"
         os.makedirs(audio_dir, exist_ok=True)
+        
+        # --- Decode base64 audio and save as MP3 file ---
         audio_path = os.path.join(audio_dir, f"{session_id}.mp3")
         with open(audio_path, "wb") as f:
-            f.write(audio_bytes)
-        print(f"[DEBUG] Audio saved to {audio_path} ({len(audio_bytes)} bytes)", flush=True)
+            f.write(base64.b64decode(audio_b64))
+        print(f"[DEBUG] Audio saved to {audio_path} ({os.path.getsize(audio_path)} bytes)", flush=True)
         
-        # --- Construct URL for frontend (JSON-safe) ---
+        # --- Construct URL for frontend (safe for JSON) ---
         audio_url = f"/static/audio/{session_id}.mp3"
         print(f"[DEBUG] Audio URL prepared: {audio_url}", flush=True)
         
-        # --- Return JSON response (no raw bytes included) ---
+        # --- Return JSON response (text + audio URL only) ---
         return JSONResponse(
             content={
-                "reply": gpt_reply,      # text reply
-                "audio_url": audio_url   # frontend fetches actual audio
+                "reply": gpt_reply,     # AI text reply
+                "audio_url": audio_url  # frontend will fetch/play this file
             },
             headers=cors_headers,
         )
-
     except Exception as e:
         print(f"[ERROR] Internal server error in session {request.session_id}: {e}", flush=True)
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
@@ -8571,6 +8573,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
