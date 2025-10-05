@@ -5922,11 +5922,14 @@ async def chat_interactive_tutor(
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
 
 
-@app.post("/chat_interactive_tutor_Ibne_Sina_audio", response_model=ChatResponse)
-async def chat_interactive_tutor(
-    request: ChatRequest_Ibne_Sina,
+@app.post("/chat_interactive_tutor_Ibne_Sina_audio")
+async def chat_interactive_tutor_audio(
+    session_id: str = Form(...),
+    username: str = Form(...),
+    audio: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
+    audio_bytes = await audio.read()
     """
     Interactive tutor endpoint with step-based adaptive guidance.
     Tracks mastery, provides hints, and moves to next question automatically.
@@ -8573,6 +8576,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
