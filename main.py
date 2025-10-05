@@ -4476,6 +4476,17 @@ def get_ids(db: Session = Depends(get_db)):
     # db.query(...).all() returns a list of tuples [(1,), (2,), (3,)]
     return [{"id": i[0]} for i in ids]
 
+@app.delete("/api/syllabus_ibne_sina/{item_id}")
+def delete_entry(item_id: int, db: Session = Depends(get_db)):
+    record = db.query(Syllabus_ibne_sina).filter(Syllabus_ibne_sina.id == item_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    db.delete(record)
+    db.commit()
+
+    return {"message": "Entry deleted successfully", "id": item_id}
+
 @app.get("/api/syllabus_ibne_sina/details/{item_id}")
 def get_details(item_id: int, db: Session = Depends(get_db)):
     record = db.query(Syllabus_ibne_sina).filter(Syllabus_ibne_sina.id == item_id).first()
@@ -8343,6 +8354,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
