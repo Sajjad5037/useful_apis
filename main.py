@@ -4483,7 +4483,7 @@ def get_all_entries(db: Session = Depends(get_db)):
     return [
         {
             "id": entry.id,
-            "className": entry.className,
+            "className": entry.class_name,
             "subject": entry.subject,
             "chapter": entry.chapter,
             "image_url": entry.image_url,   # include image url
@@ -8369,6 +8369,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
