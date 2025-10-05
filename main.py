@@ -5922,6 +5922,202 @@ async def chat_interactive_tutor(
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
 
 
+@app.post("/chat_interactive_tutor_Ibne_Sina_audio", response_model=ChatResponse)
+async def chat_interactive_tutor(
+    request: ChatRequest_Ibne_Sina,
+    db: Session = Depends(get_db)
+):
+    """
+    Interactive tutor endpoint with step-based adaptive guidance.
+    Tracks mastery, provides hints, and moves to next question automatically.
+    Logs student and AI messages for full traceability.
+    """
+    try:
+        session_id = request.session_id.strip()
+        student_reply = request.message.strip()
+        username = request.username.strip()
+
+        print(
+            f"[DEBUG] /chat_interactive_tutor_Ibne_Sina called | "
+            f"Session: {session_id} | Username: {username} | Student reply: '{student_reply}'",
+            flush=True
+        )
+
+        if session_id not in session_checklists:
+            raise HTTPException(status_code=404, detail="Session ID not found")
+
+        checklist = session_checklists[session_id]
+        current_index = checklist["current_index"]
+        current_step = checklist.get("current_step", 0)
+
+        # --- Single place to check if all questions completed ---
+        if current_index >= len(checklist["questions"]):
+            checklist["completed"] = True
+            print(f"[DEBUG] Session {session_id} completed all questions.", flush=True)
+
+            pdf_name_to_save = checklist.get("pdf_name") or "Unknown PDF"
+            subject_to_save = checklist.get("subject") or "Unknown Subject"
+
+            # --- Create StudentSession_ibne_sina entry ---
+            try:
+                new_log = StudentSession_ibne_sina(
+                    subject=subject_to_save,
+                    student_id=session_id,  # using session_id as identifier
+                    student_name=username or "Unknown Student",
+                    pdf_name=pdf_name_to_save,
+                    preparedness="well_prepared"
+                )
+                db.add(new_log)
+                db.commit()
+                db.refresh(new_log)
+
+                print(
+                    f"[DEBUG] StudentSession_ibne_sina created -> "
+                    f"id={new_log.id}, subject={new_log.subject}, "
+                    f"student_name={new_log.student_name}, pdf_name={new_log.pdf_name}, "
+                    f"preparedness={new_log.preparedness}",
+                    flush=True
+                )
+            except Exception as db_error:
+                db.rollback()
+                print(f"[ERROR] Failed to save StudentSession_ibne_sina: {db_error}", flush=True)
+
+            return ChatResponse(reply="All questions completed. Great job! If you are not happy with the AI then please send the full conversation at proactive1.san@gmail.com with the issue faced. Your feedback is needed to improve the quality of this AI tutor.")
+
+
+        # --- Retrieve current question and steps ---
+        current_question_data = checklist["questions"][current_index]
+        current_question = current_question_data["q"]
+        steps = current_question_data.get("steps", ["Understand the concept"])
+        total_steps = len(steps)
+        step_description = steps[current_step]
+
+        # --- Assess mastery ---
+        mastery = "not attempted"
+        if student_reply:
+            expected_answer = step_description
+            mastery = assess_mastery(student_reply, expected_answer)
+            checklist.setdefault("step_status", {})[current_step] = mastery
+            print(
+                f"[DEBUG] Student reply: '{student_reply}' | Expected: '{expected_answer}' | Mastery: {mastery}",
+                flush=True
+            )
+
+            if mastery in ["correct", "partial"]:
+                current_step += 1
+                checklist["current_step"] = current_step
+                print(f"[DEBUG] Moving to step {current_step}", flush=True)
+
+        # --- Move to next question if steps completed ---
+        if current_step >= total_steps:
+            current_index += 1
+            current_step = 0
+            checklist["current_index"] = current_index
+            checklist["current_step"] = current_step
+            checklist["step_status"] = {}
+
+            # If new index now finishes all questions, loop will handle next call
+            if current_index >= len(checklist["questions"]):
+                checklist["completed"] = True
+                print(f"[DEBUG] Session {session_id} reached end of questions.", flush=True)
+                return await chat_interactive_tutor(request, db)  # recursive call triggers the "all done" logic above
+
+            # update next question
+            current_question_data = checklist["questions"][current_index]
+            current_question = current_question_data["q"]
+            steps = current_question_data.get("steps", ["Understand the concept"])
+            total_steps = len(steps)
+            step_description = steps[current_step]
+
+        # --- Prepare AI teaching message ---
+        step_status = checklist.get("step_status", {}).get(current_step, "not attempted")
+        last_student_reply = student_reply or ""
+
+        teaching_messages = [
+            {
+                "role": "system",
+                "content": (
+                    f"You are a grade 7 tutor.\n"
+                    f"Question: {current_question}\n"
+                    f"Step {current_step + 1}: {step_description}\n"
+                    f"Step status: {step_status}\n"
+                    f"Student last reply: '{last_student_reply}'\n"
+                    "Instructions:\n"
+                    "- Explain in short, simple sentences suitable for a 12–13 year old.\n"
+                    "- Ask one short question after explanation to check understanding.\n"
+                    "- If mastery is 'partial', give a gentle hint or simpler rephrasing.\n"
+                    "- If mastery is 'incorrect', explain in an easier way.\n"
+                    "- Only move to the next step when the student demonstrates correct understanding.\n"
+                    "- Avoid repeating the same sentences word-for-word.\n"
+                    f"Start your response with '(helping the student with question {current_index + 1}, step {current_step + 1})'."
+                )
+            },
+            {
+                "role": "user",
+                "content": "The student is ready to learn. Teach interactively and check understanding step by step."
+            }
+        ]
+
+        # --- Call GPT ---
+         print(f"[DEBUG] Generating GPT reply for session {session_id}", flush=True)
+
+        # --- Generate GPT reply ---
+        teach_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=teaching_messages,
+            temperature=0.5,
+            max_tokens=300
+        )
+        gpt_reply = teach_response.choices[0].message.content.strip()
+        print(f"[DEBUG] GPT Reply: {gpt_reply[:200]}... (truncated)", flush=True)
+    
+        # --- Update session history ---
+        session_histories.setdefault(session_id, [])
+        if student_reply:
+            session_histories[session_id].append({"role": "user", "content": student_reply})
+        session_histories[session_id].append({"role": "assistant", "content": gpt_reply})
+    
+        print(f"[DEBUG] Updated session history for session {session_id}. "
+              f"Total messages: {len(session_histories[session_id])}", flush=True)
+    
+        # --- Generate TTS audio for GPT reply ---
+        print(f"[DEBUG] Generating audio for session {session_id}")
+        await generate_audio(session_id, gpt_reply, username, db)
+    
+        # --- Retrieve base64 audio ---
+        audio_b64 = audio_store.get(session_id)
+        if not audio_b64:
+            print(f"[ERROR] Audio generation returned None for session {session_id}")
+            raise HTTPException(status_code=500, detail="Audio generation failed")
+    
+        # --- Convert base64 to bytes and save ---
+        audio_bytes = base64.b64decode(audio_b64)
+        audio_dir = "static/audio"
+        os.makedirs(audio_dir, exist_ok=True)
+        audio_path = os.path.join(audio_dir, f"{session_id}.mp3")
+        with open(audio_path, "wb") as f:
+            f.write(audio_bytes)
+        print(f"[DEBUG] Audio saved to {audio_path} ({len(audio_bytes)} bytes)", flush=True)
+    
+        # --- Construct audio URL for frontend ---
+        audio_url = f"/static/audio/{session_id}.mp3"
+        print(f"[DEBUG] Audio URL prepared: {audio_url}", flush=True)
+    
+        # --- Return JSON response with text + audio ---
+        return JSONResponse(
+            content={
+                "reply": gpt_reply,      # frontend expects 'reply'
+                "audio_url": audio_url   # frontend expects 'audio_url'
+            },
+            headers=cors_headers,
+        )
+
+
+    except Exception as e:
+        print(f"[ERROR] Internal server error in session {request.session_id}: {e}", flush=True)
+        raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
+
+
 def generate_one_line_summary(conversation_text: str) -> tuple[str, dict]:
     """
     Generates a strict one-line summary of the student's understanding, engagement, 
@@ -8369,6 +8565,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
