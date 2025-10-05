@@ -6065,6 +6065,8 @@ async def chat_interactive_tutor(
 
         # --- Generate GPT reply ---
         print(f"[DEBUG] Generating GPT reply for session {session_id}", flush=True)
+
+        # --- Generate GPT reply ---
         teach_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=teaching_messages,
@@ -6073,7 +6075,7 @@ async def chat_interactive_tutor(
         )
         gpt_reply = teach_response.choices[0].message.content.strip()
         print(f"[DEBUG] GPT Reply: {gpt_reply[:200]}... (truncated)", flush=True)
-
+        
         # --- Update session history ---
         session_histories.setdefault(session_id, [])
         if student_reply:
@@ -6081,20 +6083,21 @@ async def chat_interactive_tutor(
         session_histories[session_id].append({"role": "assistant", "content": gpt_reply})
         print(
             f"[DEBUG] Updated session history for session {session_id}. "
-            f"Total messages: {len(session_histories[session_id])}", flush=True
+            f"Total messages: {len(session_histories[session_id])}",
+            flush=True
         )
-
+        
         # --- Generate TTS audio for GPT reply ---
         print(f"[DEBUG] Generating audio for session {session_id}")
         await generate_audio(session_id, gpt_reply, username, db)
-
-        # --- Retrieve base64 audio ---
+        
+        # --- Retrieve base64 audio safely ---
         audio_b64 = audio_store.get(session_id)
         if not audio_b64:
             print(f"[ERROR] Audio generation returned None for session {session_id}")
             raise HTTPException(status_code=500, detail="Audio generation failed")
-
-        # --- Convert base64 to bytes and save ---
+        
+        # --- Convert base64 to bytes and save locally ---
         audio_bytes = base64.b64decode(audio_b64)
         audio_dir = "static/audio"
         os.makedirs(audio_dir, exist_ok=True)
@@ -6102,16 +6105,16 @@ async def chat_interactive_tutor(
         with open(audio_path, "wb") as f:
             f.write(audio_bytes)
         print(f"[DEBUG] Audio saved to {audio_path} ({len(audio_bytes)} bytes)", flush=True)
-
-        # --- Construct audio URL for frontend ---
+        
+        # --- Construct URL for frontend (JSON-safe) ---
         audio_url = f"/static/audio/{session_id}.mp3"
         print(f"[DEBUG] Audio URL prepared: {audio_url}", flush=True)
-
-        # --- Return JSON response with text + audio ---
+        
+        # --- Return JSON response (no raw bytes included) ---
         return JSONResponse(
             content={
-                "reply": gpt_reply,
-                "audio_url": audio_url
+                "reply": gpt_reply,      # text reply
+                "audio_url": audio_url   # frontend fetches actual audio
             },
             headers=cors_headers,
         )
@@ -8568,6 +8571,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
