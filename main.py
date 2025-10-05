@@ -748,6 +748,11 @@ class OrderDataHajvery(BaseModel):
     totalAmount: float
     vendorName: str  # ✅ Added this to match the payload
 
+class EditSyllabusRequest(BaseModel):
+    className: str
+    subject: str
+    chapter: str
+
 class MenuItem(Base):
     __tablename__ = "menu_items"
 
@@ -4464,6 +4469,48 @@ def get_form_data(db: Session = Depends(get_db)):
         print(f"[ERROR] /api/form-data failed: {e}", flush=True)
         return {"error": "Failed to fetch form data"}
 
+
+@app.get("/api/syllabus_ibne_sina/ids")
+def get_ids(db: Session = Depends(get_db)):
+    ids = db.query(Syllabus_ibne_sina.id).all()
+    # db.query(...).all() returns a list of tuples [(1,), (2,), (3,)]
+    return [{"id": i[0]} for i in ids]
+
+@app.get("/api/syllabus_ibne_sina/details/{item_id}")
+def get_details(item_id: int, db: Session = Depends(get_db)):
+    record = db.query(Syllabus_ibne_sina).filter(Syllabus_ibne_sina.id == item_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    return {
+        "id": record.id,
+        "className": record.class_name,
+        "subject": record.subject,
+        "chapter": record.chapter
+    }
+
+@app.put("/api/edit/{item_id}")
+def edit_syllabus(item_id: int, payload: EditSyllabusRequest, db: Session = Depends(get_db)):
+    record = db.query(Syllabus_ibne_sina).filter(Syllabus_ibne_sina.id == item_id).first()
+
+    if not record:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    # ✅ Update fields
+    record.class_name = payload.className
+    record.subject = payload.subject
+    record.chapter = payload.chapter
+
+    db.commit()
+    db.refresh(record)
+
+    return {
+        "message": "Syllabus updated successfully",
+        "id": record.id,
+        "className": record.class_name,
+        "subject": record.subject,
+        "chapter": record.chapter
+    }
 
 @app.post("/syllabus_chapters", response_model=List[SyllabusChapterResponse])
 def get_syllabus_chapters(request: SyllabusRequest, db: Session = Depends(get_db)):
@@ -8296,6 +8343,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
