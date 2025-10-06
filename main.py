@@ -5935,10 +5935,13 @@ async def chat_interactive_tutor_audio(
     Logs student and AI messages for full traceability.
     """
     try:
-        # Read audio file
+        # --- Read audio file ---
         audio_bytes = await audio.read()
 
-        # Strip inputs for safety
+        # TODO: Add speech-to-text here if needed
+        student_reply = ""  # Placeholder until STT integrated
+
+        # --- Sanitize inputs ---
         session_id = session_id.strip()
         username = username.strip()
 
@@ -5955,9 +5958,6 @@ async def chat_interactive_tutor_audio(
         current_index = checklist["current_index"]
         current_step = checklist.get("current_step", 0)
 
-
-
-        
         # --- Check if all questions completed ---
         if current_index >= len(checklist["questions"]):
             checklist["completed"] = True
@@ -5966,7 +5966,6 @@ async def chat_interactive_tutor_audio(
             pdf_name_to_save = checklist.get("pdf_name") or "Unknown PDF"
             subject_to_save = checklist.get("subject") or "Unknown Subject"
 
-            # --- Create StudentSession_ibne_sina entry ---
             try:
                 new_log = StudentSession_ibne_sina(
                     subject=subject_to_save,
@@ -6033,7 +6032,7 @@ async def chat_interactive_tutor_audio(
             if current_index >= len(checklist["questions"]):
                 checklist["completed"] = True
                 print(f"[DEBUG] Session {session_id} reached end of questions.", flush=True)
-                return await chat_interactive_tutor(request, db)
+                return ChatResponse(reply="All questions completed.")
 
             # --- Update next question ---
             current_question_data = checklist["questions"][current_index]
@@ -6073,8 +6072,6 @@ async def chat_interactive_tutor_audio(
 
         # --- Generate GPT reply ---
         print(f"[DEBUG] Generating GPT reply for session {session_id}", flush=True)
-
-        # --- Generate GPT reply ---
         teach_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=teaching_messages,
@@ -6083,7 +6080,7 @@ async def chat_interactive_tutor_audio(
         )
         gpt_reply = teach_response.choices[0].message.content.strip()
         print(f"[DEBUG] GPT Reply: {gpt_reply[:200]}... (truncated)", flush=True)
-        
+
         # --- Update session history ---
         session_histories.setdefault(session_id, [])
         if student_reply:
@@ -6094,43 +6091,40 @@ async def chat_interactive_tutor_audio(
             f"Total messages: {len(session_histories[session_id])}",
             flush=True
         )
-        
-        # --- Generate TTS audio for GPT reply ---
+
+        # --- Generate TTS audio ---
         print(f"[DEBUG] Generating audio for session {session_id}")
         await generate_audio(session_id, gpt_reply, username, db)
-        
+
         # --- Retrieve base64 audio safely ---
         audio_b64 = audio_store.get(session_id)
         if not audio_b64:
             print(f"[ERROR] Audio generation returned None for session {session_id}")
             raise HTTPException(status_code=500, detail="Audio generation failed")
-        
-        # --- Convert base64 to bytes and save locally ---
-        audio_bytes = base64.b64decode(audio_b64)
-        # --- Ensure audio directory exists ---
+
+        # --- Save audio as MP3 ---
         audio_dir = "static/audio"
         os.makedirs(audio_dir, exist_ok=True)
-        
-        # --- Decode base64 audio and save as MP3 file ---
         audio_path = os.path.join(audio_dir, f"{session_id}.mp3")
         with open(audio_path, "wb") as f:
             f.write(base64.b64decode(audio_b64))
         print(f"[DEBUG] Audio saved to {audio_path} ({os.path.getsize(audio_path)} bytes)", flush=True)
-        
-        # --- Construct URL for frontend (safe for JSON) ---
+
+        # --- Construct URL for frontend ---
         audio_url = f"/static/audio/{session_id}.mp3"
         print(f"[DEBUG] Audio URL prepared: {audio_url}", flush=True)
-        
-        # --- Return JSON response (text + audio URL only) ---
+
+        # --- Return JSON response ---
         return JSONResponse(
             content={
-                "reply": gpt_reply,     # AI text reply
-                "audio_url": audio_url  # frontend will fetch/play this file
+                "reply": gpt_reply,
+                "audio_url": audio_url
             },
             headers=cors_headers,
         )
+
     except Exception as e:
-        print(f"[ERROR] Internal server error in session {request.session_id}: {e}", flush=True)
+        print(f"[ERROR] Internal server error in session {session_id}: {e}", flush=True)
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
 
 
@@ -8581,6 +8575,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
