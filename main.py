@@ -5927,22 +5927,24 @@ async def chat_interactive_tutor_audio(
     session_id: str = Form(...),
     username: str = Form(...),
     audio: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    audio_bytes = await audio.read()
     """
     Interactive tutor endpoint with step-based adaptive guidance.
     Tracks mastery, provides hints, and moves to next question automatically.
     Logs student and AI messages for full traceability.
     """
     try:
-        session_id = request.session_id.strip()
-        student_reply = request.message.strip()
-        username = request.username.strip()
+        # Read audio file
+        audio_bytes = await audio.read()
+
+        # Strip inputs for safety
+        session_id = session_id.strip()
+        username = username.strip()
 
         print(
-            f"[DEBUG] /chat_interactive_tutor_Ibne_Sina called | "
-            f"Session: {session_id} | Username: {username} | Student reply: '{student_reply}'",
+            f"[DEBUG] /chat_interactive_tutor_Ibne_Sina_audio called | "
+            f"Session: {session_id} | Username: {username}",
             flush=True
         )
 
@@ -5953,6 +5955,9 @@ async def chat_interactive_tutor_audio(
         current_index = checklist["current_index"]
         current_step = checklist.get("current_step", 0)
 
+
+
+        
         # --- Check if all questions completed ---
         if current_index >= len(checklist["questions"]):
             checklist["completed"] = True
@@ -8576,6 +8581,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
