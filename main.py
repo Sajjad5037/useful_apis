@@ -5924,7 +5924,7 @@ async def chat_interactive_tutor(
 
 @app.post("/chat_interactive_tutor_Ibne_Sina_audio")
 async def chat_interactive_tutor_audio(
-    session_id: str = Form(...),
+    session_id: str = Form(...)
     username: str = Form(...),
     audio: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -6119,9 +6119,9 @@ async def chat_interactive_tutor_audio(
             content={
                 "reply": gpt_reply,
                 "audio_url": audio_url
-            },
-            headers=cors_headers,
+            }
         )
+
 
     except Exception as e:
         print(f"[ERROR] Internal server error in session {session_id}: {e}", flush=True)
@@ -8575,6 +8575,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
