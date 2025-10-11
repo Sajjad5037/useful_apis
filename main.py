@@ -5,7 +5,8 @@ from enum import Enum
 import subprocess
 import docx2txt
 import os
-
+from twilio.request_validator import RequestValidator
+from twilio.twiml.messaging_response import MessagingResponse
 import vertexai
 import sys
 import fitz 
@@ -8632,6 +8633,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
