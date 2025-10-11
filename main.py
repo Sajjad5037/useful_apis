@@ -7194,7 +7194,8 @@ async def whatsapp_webhook(request: Request):
     twilio_signature = request.headers.get("X-Twilio-Signature", "")
     print("Twilio Signature:", twilio_signature)
 
-    url = str(request.url)
+    url = str(request.url.replace("http://", "https://"))
+
     params = dict(form)
     print("URL:", url)
     print("Params for validation:", params)
@@ -8641,6 +8642,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
