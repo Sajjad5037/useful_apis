@@ -27,7 +27,7 @@ from rapidfuzz import fuzz
 import joblib
 import sympy
 from decimal import Decimal
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse,Response
 from langchain.embeddings.base import Embeddings
 from langchain.schema import Document
 from urllib.parse import quote
@@ -8647,6 +8647,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
