@@ -7196,7 +7196,9 @@ async def whatsapp_webhook(request: Request):
     print("Twilio Signature:", twilio_signature)
     
     # Use the correct URL scheme for Twilio
-    url = str(request.url.replace("http://", "https://"))
+    url = str(request.url).replace("http://", "https://")
+    print("URL for validation:", url)
+
     
     # Safely convert FormData to dict, taking first value for duplicate keys
     params = {key: form.getlist(key)[0] for key in form.keys()}
