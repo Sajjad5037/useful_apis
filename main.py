@@ -198,7 +198,8 @@ load_dotenv()
 # — FastAPI Init & CORS —
 app = FastAPI()
 
-TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")  # from Twilio Console
+# TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")  # from Twilio Console
+TWILIO_AUTH_TOKEN = "US2f2a3701d602494ac147a91f5b1f7d5c"
 
 validator = RequestValidator(TWILIO_AUTH_TOKEN)
 
@@ -8633,6 +8634,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
