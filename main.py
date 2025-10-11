@@ -198,10 +198,6 @@ load_dotenv()
 # — FastAPI Init & CORS —
 app = FastAPI()
 
-# TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")  # from Twilio Console
-TWILIO_AUTH_TOKEN = "US2f2a3701d602494ac147a91f5b1f7d5c"
-
-validator = RequestValidator(TWILIO_AUTH_TOKEN)
 
 session_texts = {}     # session_id -> full essay text
 session_histories = {} # session_id -> list of messages (chat history)
@@ -7174,36 +7170,47 @@ async def get_ai_response_twilio(user_message: str) -> str:
     except Exception as e:
         return "Sorry, something went wrong. Please try again."
 
+
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
-    print("Webhook triggered")  # Debug: webhook received
-    
+    print("Webhook triggered")  # Debug
+
+    # Read Twilio auth token at runtime
+    TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+    print("TWILIO_AUTH_TOKEN:", TWILIO_AUTH_TOKEN)  # Debug
+    if not TWILIO_AUTH_TOKEN:
+        raise HTTPException(status_code=500, detail="Twilio auth token not set")
+
+    validator = RequestValidator(TWILIO_AUTH_TOKEN)
+
+    # Get incoming form data
     form = await request.form()
-    print("Form data received:", form)  # Debug: show incoming POST form data
-    
+    print("Form data received:", form)
+
     incoming_msg = form.get("Body", "").strip()
-    print("Incoming message:", incoming_msg)  # Debug: show the user message
-    
+    print("Incoming message:", incoming_msg)
+
     # Validate Twilio signature
     twilio_signature = request.headers.get("X-Twilio-Signature", "")
-    print("Twilio Signature:", twilio_signature)  # Debug: show header value
-    
+    print("Twilio Signature:", twilio_signature)
+
     url = str(request.url)
     params = dict(form)
-    print("URL:", url)  # Debug: show request URL
-    print("Params for validation:", params)  # Debug: show params sent for validation
-    
+    print("URL:", url)
+    print("Params for validation:", params)
+
     if not validator.validate(url, params, twilio_signature):
-        print("Twilio validation failed")  # Debug: validation failed
+        print("Twilio validation failed")
         raise HTTPException(status_code=403, detail="Request not from Twilio")
-    
-    print("Twilio validation passed")  # Debug: signature verified
-    
+
+    print("Twilio validation passed")
+
     # Prepare Twilio response
+    reply_msg = f"You said: {incoming_msg}"
     resp = MessagingResponse()
-    resp.message(f"You said: {incoming_msg}")
-    print("Reply being sent:", f"You said: {incoming_msg}")  # Debug: show reply
-    
+    resp.message(reply_msg)
+    print("Reply being sent:", reply_msg)
+
     return Response(content=str(resp), media_type="application/xml")
 
 @app.post("/generate-campaign", response_model=CampaignResponse)
@@ -8634,6 +8641,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
