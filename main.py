@@ -7182,28 +7182,36 @@ async def whatsapp_webhook(request: Request):
     if not TWILIO_AUTH_TOKEN:
         raise HTTPException(status_code=500, detail="Twilio auth token not set")
 
+    # Create Twilio validator instance
     validator = RequestValidator(TWILIO_AUTH_TOKEN)
-
-        # Get incoming form data
+    
+    # Get incoming form data
     form = await request.form()
     print("Form data received:", form)
     
+    # Extract the incoming message
     incoming_msg = form.get("Body", "").strip()
     print("Incoming message:", incoming_msg)
     
-    # Validate Twilio signature
+    # Extract Twilio signature from headers
     twilio_signature = request.headers.get("X-Twilio-Signature", "")
     print("Twilio Signature:", twilio_signature)
-
+    
+    # Construct the URL Twilio used to call the webhook
     scheme = request.headers.get("X-Forwarded-Proto", "https")
-    
-    # Use the correct URL scheme for Twilio
-    url = f"{scheme}://{request.headers['host']}{request.url.path}"
+    host = request.headers.get("host")
+    url = f"{scheme}://{host}{request.url.path}"
     print("URL for validation:", url)
-
     
-    # Safely convert FormData to dict, taking first value for duplicate keys
-    params = {key: form.getlist(key)[0] for key in form.keys()}
+    # Convert FormData to a dictionary with all values as lists
+    # This ensures signature validation works even if keys repeat
+    params = {key: form.getlist(key) for key in form.keys()}
+    print("Params for validation:", params)
+    
+    # Validate request signature
+    if not validator.validate(url, params, twilio_signature):
+        print("Twilio validation failed")
+        raise HTTPException(status_code=403, detail="Request not from Twilio")
     print("URL:", url)
     print("Params for validation:", params)
 
@@ -8649,6 +8657,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
