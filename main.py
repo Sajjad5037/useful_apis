@@ -7205,7 +7205,7 @@ async def whatsapp_webhook(request: Request):
     
     # Convert FormData to a dictionary with all values as lists
     # This ensures signature validation works even if keys repeat
-    params = {key: form.getlist(key) for key in form.keys()}
+    params = {key: form.getlist(key)[0] for key in form.keys()}
     print("Params for validation:", params)
     
     # Validate request signature
@@ -8657,6 +8657,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
