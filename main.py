@@ -5,6 +5,7 @@ from enum import Enum
 import subprocess
 import docx2txt
 import os
+from starlette.datastructures import FormData
 from twilio.request_validator import RequestValidator
 from twilio.twiml.messaging_response import MessagingResponse
 import vertexai
@@ -7183,20 +7184,22 @@ async def whatsapp_webhook(request: Request):
 
     validator = RequestValidator(TWILIO_AUTH_TOKEN)
 
-    # Get incoming form data
+        # Get incoming form data
     form = await request.form()
     print("Form data received:", form)
-
+    
     incoming_msg = form.get("Body", "").strip()
     print("Incoming message:", incoming_msg)
-
+    
     # Validate Twilio signature
     twilio_signature = request.headers.get("X-Twilio-Signature", "")
     print("Twilio Signature:", twilio_signature)
-
+    
+    # Use the correct URL scheme for Twilio
     url = str(request.url.replace("http://", "https://"))
-
-    params = dict(form)
+    
+    # Safely convert FormData to dict, taking first value for duplicate keys
+    params = {key: form.getlist(key)[0] for key in form.keys()}
     print("URL:", url)
     print("Params for validation:", params)
 
@@ -8642,6 +8645,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
