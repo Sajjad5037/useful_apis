@@ -4,3 +4,6 @@ service_account.json
 # Ignore Python cache files
 __pycache__/
 *.pyc
+
+# Ignore environment example file
+.env.example
