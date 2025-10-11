@@ -197,6 +197,10 @@ load_dotenv()
 # — FastAPI Init & CORS —
 app = FastAPI()
 
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")  # from Twilio Console
+
+validator = RequestValidator(TWILIO_AUTH_TOKEN)
+
 session_texts = {}     # session_id -> full essay text
 session_histories = {} # session_id -> list of messages (chat history)
 username_for_interactive_session = None
@@ -7148,6 +7152,58 @@ async def extract_text_essay_checker(
         print(f"[ERROR] Unhandled exception in /extract_text_essayChecker: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error.")
+
+
+async def get_ai_response_twilio(user_message: str) -> str:
+    """
+    Sends the user message to GPT-4 (or GPT-3.5) and returns the response.
+    Tailor the prompt for FAQ-style responses.
+    """
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an AI assistant that answers FAQs clearly and concisely."},
+                {"role": "user", "content": user_message}
+            ],
+            max_tokens=150
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return "Sorry, something went wrong. Please try again."
+
+@app.post("/webhook")
+async def whatsapp_webhook(request: Request):
+    print("Webhook triggered")  # Debug: webhook received
+    
+    form = await request.form()
+    print("Form data received:", form)  # Debug: show incoming POST form data
+    
+    incoming_msg = form.get("Body", "").strip()
+    print("Incoming message:", incoming_msg)  # Debug: show the user message
+    
+    # Validate Twilio signature
+    twilio_signature = request.headers.get("X-Twilio-Signature", "")
+    print("Twilio Signature:", twilio_signature)  # Debug: show header value
+    
+    url = str(request.url)
+    params = dict(form)
+    print("URL:", url)  # Debug: show request URL
+    print("Params for validation:", params)  # Debug: show params sent for validation
+    
+    if not validator.validate(url, params, twilio_signature):
+        print("Twilio validation failed")  # Debug: validation failed
+        raise HTTPException(status_code=403, detail="Request not from Twilio")
+    
+    print("Twilio validation passed")  # Debug: signature verified
+    
+    # Prepare Twilio response
+    resp = MessagingResponse()
+    resp.message(f"You said: {incoming_msg}")
+    print("Reply being sent:", f"You said: {incoming_msg}")  # Debug: show reply
+    
+    return Response(content=str(resp), media_type="application/xml")
+
 @app.post("/generate-campaign", response_model=CampaignResponse)
 def generate_campaign(request: CampaignRequest, db: Session = Depends(get_db)):
     if not request.campaignName or not request.goal:
@@ -8576,6 +8632,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
