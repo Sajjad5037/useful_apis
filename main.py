@@ -7171,66 +7171,60 @@ async def get_ai_response_twilio(user_message: str) -> str:
     except Exception as e:
         return "Sorry, something went wrong. Please try again."
 
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import Response
-from twilio.request_validator import RequestValidator
-from twilio.twiml.messaging_response import MessagingResponse
-import os
 
-app = FastAPI()
 
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
     print("Webhook triggered")
 
-    # Read Twilio auth token
+    # Read Twilio auth token at runtime
     TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
     print("TWILIO_AUTH_TOKEN:", TWILIO_AUTH_TOKEN)
     if not TWILIO_AUTH_TOKEN:
         raise HTTPException(status_code=500, detail="Twilio auth token not set")
 
+    # Create Twilio validator instance
     validator = RequestValidator(TWILIO_AUTH_TOKEN)
 
     # Get incoming form data
     form = await request.form()
     print("Form data received:", form)
 
-    # Extract incoming message
+    # Extract the incoming message
     incoming_msg = form.get("Body", "").strip()
     print("Incoming message:", incoming_msg)
 
-    # Extract Twilio signature
+    # Extract Twilio signature from headers
     twilio_signature = request.headers.get("X-Twilio-Signature", "")
     print("Twilio Signature sent:", twilio_signature)
 
-    # Build full URL Twilio called
-    scheme = request.headers.get("X-Forwarded-Proto", "http")
-    host = request.headers.get("host")
+    # Construct the exact URL Twilio called
+    scheme = request.headers.get("X-Forwarded-Proto", "https")
+    host = request.headers.get("X-Forwarded-Host") or request.headers.get("host")
     path = request.url.path
     full_url = f"{scheme}://{host}{path}"
+
     print("=== TWILIO REQUEST DEBUG ===")
     print("Full URL Twilio called:", full_url)
     print("All headers:", dict(request.headers))
     print("============================")
 
-    # Convert FormData to dict (single values)
-    params = {key: form.get(key) for key in form.keys()}
+    # Convert FormData to a dictionary of strings
+    # This ensures signature validation works correctly
+    params = {key: form[key] for key in form.keys()}
     print("Params for validation:", params)
 
-    # Compute server-side signature
-    computed_signature = validator.compute_signature(full_url, params)
-    print("Computed signature:", computed_signature)
-    print("Twilio signature:", twilio_signature)
-
-    # Validate request
+    # Validate request signature
     if not validator.validate(full_url, params, twilio_signature):
         print("Twilio validation failed")
+        print("Computed signature:", validator.compute_signature(full_url, params))
         raise HTTPException(status_code=403, detail="Request not from Twilio")
+
     print("Twilio validation passed")
 
-    # Respond to the message
-    resp = MessagingResponse()
+    # Prepare Twilio response
     reply_msg = f"You said: {incoming_msg}"
+    resp = MessagingResponse()
     resp.message(reply_msg)
     print("Reply being sent:", reply_msg)
 
@@ -8665,6 +8659,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
