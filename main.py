@@ -7173,63 +7173,65 @@ async def get_ai_response_twilio(user_message: str) -> str:
 
 
 
+TWILIO_WEBHOOK_URL = "https://usefulapis-production.up.railway.app/webhook"
+
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
-    print("Webhook triggered")
+    print("\n=== Webhook triggered ===\n")
 
-    # Read Twilio auth token at runtime
+    # Twilio Auth Token
     TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
     print("TWILIO_AUTH_TOKEN:", TWILIO_AUTH_TOKEN)
     if not TWILIO_AUTH_TOKEN:
         raise HTTPException(status_code=500, detail="Twilio auth token not set")
 
-    # Create Twilio validator instance
     validator = RequestValidator(TWILIO_AUTH_TOKEN)
 
-    # Get incoming form data
-    form = await request.form()
-    print("Form data received:", form)
+    # Log raw request body bytes
+    raw_body = await request.body()
+    print("Raw request body bytes:", raw_body)
+    print("Raw request body decoded:", raw_body.decode("utf-8"))
 
-    # Extract the incoming message
-    incoming_msg = form.get("Body", "").strip()
+    # Read form data
+    form = await request.form()
+    print("\nForm data received:")
+    for key, value in form.items():
+        print(f"  {key}: {value}")
+
+    # Convert FormData to a dict of strings
+    params = {key: str(form[key]) for key in form.keys()}
+    print("\nParams prepared for validation:", params)
+
+    # Twilio signature sent
+    twilio_signature = request.headers.get("X-Twilio-Signature", "")
+    print("\nTwilio Signature sent:", twilio_signature)
+
+    # Compute signature manually to compare
+    computed_signature = validator.compute_signature(TWILIO_WEBHOOK_URL, params)
+    print("Computed signature:", computed_signature)
+
+    # Log all headers for debugging
+    headers_dict = dict(request.headers)
+    print("\nAll request headers:")
+    for key, value in headers_dict.items():
+        print(f"  {key}: {value}")
+
+    # Validate signature
+    if not validator.validate(TWILIO_WEBHOOK_URL, params, twilio_signature):
+        print("\nTwilio validation FAILED")
+        raise HTTPException(status_code=403, detail="Request not from Twilio")
+    print("\nTwilio validation PASSED")
+
+    # Extract message body
+    incoming_msg = params.get("Body", "")
     print("Incoming message:", incoming_msg)
 
-    # Extract Twilio signature from headers
-    twilio_signature = request.headers.get("X-Twilio-Signature", "")
-    print("Twilio Signature sent:", twilio_signature)
-
-    # Construct the exact URL Twilio called
-    scheme = request.headers.get("X-Forwarded-Proto", "https")
-    host = request.headers.get("X-Forwarded-Host") or request.headers.get("host")
-    path = request.url.path
-    full_url = f"{scheme}://{host}{path}"
-
-    print("=== TWILIO REQUEST DEBUG ===")
-    print("Full URL Twilio called:", full_url)
-    print("All headers:", dict(request.headers))
-    print("============================")
-
-    # Convert FormData to a dictionary of strings
-    # This ensures signature validation works correctly
-    params = {key: form[key] for key in form.keys()}
-    print("Params for validation:", params)
-
-    # Validate request signature
-    if not validator.validate(full_url, params, twilio_signature):
-        print("Twilio validation failed")
-        print("Computed signature:", validator.compute_signature(full_url, params))
-        raise HTTPException(status_code=403, detail="Request not from Twilio")
-
-    print("Twilio validation passed")
-
-    # Prepare Twilio response
-    reply_msg = f"You said: {incoming_msg}"
+    # Prepare response
     resp = MessagingResponse()
-    resp.message(reply_msg)
-    print("Reply being sent:", reply_msg)
+    resp.message(f"You said: {incoming_msg}")
+    print("Reply being sent:", str(resp))
 
     return Response(content=str(resp), media_type="application/xml")
-
 
 @app.post("/generate-campaign", response_model=CampaignResponse)
 def generate_campaign(request: CampaignRequest, db: Session = Depends(get_db)):
@@ -8659,6 +8661,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
