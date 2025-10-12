@@ -1,5 +1,6 @@
 from fastapi.staticfiles import StaticFiles
 from pdf2image import convert_from_bytes
+from urllib.parse import parse_qs
 from PIL import Image
 from enum import Enum
 import subprocess
@@ -8662,6 +8663,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
