@@ -7184,37 +7184,23 @@ async def whatsapp_webhook(request: Request):
     validator = RequestValidator(TWILIO_AUTH_TOKEN)
     print("TWILIO_AUTH_TOKEN:", TWILIO_AUTH_TOKEN)
 
-    # --- 2. Read raw body and decode ---
+    # --- 2. Read raw body as bytes ---
     raw_body = await request.body()
-    raw_body_decoded = raw_body.decode("utf-8")
-    print("Raw request body:", raw_body_decoded)
+    print("Raw request body bytes:", raw_body)
 
-    # --- 3. Parse raw form data preserving '+' ---
-    params = parse_qs(raw_body_decoded, keep_blank_values=True)
-    # Flatten lists to single values
-    params = {k: v[0] for k, v in params.items()}
-    print("Parsed params for validation:")
-    for k, v in params.items():
-        print(f"  {k}: {v}")
-
-    # --- 4. Get Twilio Signature from headers ---
+    # --- 3. Get Twilio Signature from headers ---
     twilio_signature = request.headers.get("X-Twilio-Signature", "")
     print("Twilio Signature sent by Twilio:", twilio_signature)
 
-    # --- 5. Construct full URL Twilio called ---
-    # Make sure this matches exactly what Twilio used, including https
+    # --- 4. Construct full URL Twilio called ---
     scheme = request.headers.get("X-Forwarded-Proto", request.url.scheme)
     host = request.headers.get("X-Forwarded-Host", request.headers.get("host"))
     path = request.url.path
     full_url = f"{scheme}://{host}{path}"
     print("Full URL used for validation:", full_url)
 
-    # --- 6. Compute signature for debug ---
-    computed_signature = validator.compute_signature(full_url, params)
-    print("Computed signature:", computed_signature)
-
-    # --- 7. Validate Twilio signature ---
-    if not validator.validate(full_url, params, twilio_signature):
+    # --- 5. Validate Twilio signature using raw body ---
+    if not validator.validate(full_url, raw_body, twilio_signature):
         print("Twilio validation FAILED")
         print("Possible causes:")
         print("  1. URL mismatch (scheme, host, path, query string)")
@@ -7223,17 +7209,26 @@ async def whatsapp_webhook(request: Request):
         raise HTTPException(status_code=403, detail="Request not from Twilio")
     print("Twilio validation PASSED")
 
-    # --- 8. Extract incoming message ---
+    # --- 6. Parse params for internal use ---
+    params = parse_qs(raw_body.decode(), keep_blank_values=True)
+    params = {k: v[0] for k, v in params.items()}
+    print("Parsed params for internal use:")
+    for k, v in params.items():
+        print(f"  {k}: {v}")
+
+    # --- 7. Extract incoming message ---
     incoming_msg = params.get("Body", "")
     print("Incoming message:", incoming_msg)
 
-    # --- 9. Prepare Twilio reply ---
+    # --- 8. Prepare Twilio reply ---
     resp = MessagingResponse()
     reply_text = f"You said: {incoming_msg}"
     resp.message(reply_text)
     print("Reply being sent:", reply_text)
 
     return Response(content=str(resp), media_type="application/xml")
+
+
 
 @app.post("/generate-campaign", response_model=CampaignResponse)
 def generate_campaign(request: CampaignRequest, db: Session = Depends(get_db)):
@@ -8663,6 +8658,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
