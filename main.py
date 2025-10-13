@@ -1327,6 +1327,123 @@ def extract_relevant_context(relevant_text, query, num_sentences=2):
     return final_context
 
 
+
+def create_qa_chain_full_pdf_read(
+    vectorstore,
+    question: str,
+    db: Session,
+    username: str,
+    openai_api_key: str,
+    top_k_chunks: int = 5,
+    use_sentence_filter: bool = True
+):
+    """
+    Creates a QA chain using FAISS vectorstore and OpenAI LLM.
+    Retrieves top-k chunks from multi-page PDFs and ensures context-grounded answers.
+    Adds optional sentence-level filtering to reduce noise.
+    """
+    try:
+        # 1️⃣ Define the prompt
+        prompt = PromptTemplate(
+            template="""
+You are a helpful assistant. Use ONLY the following retrieved context to answer the user's query.
+Cite the exact sentence(s) from the context that support your answer.
+If the answer is not contained in the provided context, respond honestly: "I don't know."
+Additionally, suggest that the user try asking a more general-purpose language model like ChatGPT for questions beyond this context.
+
+Context:
+{context}
+
+Question:
+{question}
+
+Answer:
+""",
+            input_variables=["context", "question"]
+        )
+
+        # 2️⃣ Setup retriever
+        retriever = vectorstore.as_retriever(
+            search_type="mmr",
+            search_kwargs={"k": top_k_chunks, "fetch_k": top_k_chunks * 2}  # fetch extra to allow MMR to pick best
+        )
+
+        # 3️⃣ Retrieve documents
+        retrieved_docs = retriever.get_relevant_documents(question)
+        if not retrieved_docs:
+            print("[INFO] No relevant documents found.")
+            return None, None, None
+
+        # 4️⃣ Merge and optionally filter context
+        merged_context_list = []
+        merged_metadata = []
+
+        for doc in retrieved_docs[:top_k_chunks]:
+            text = doc.page_content
+            metadata = doc.metadata
+            pdf_name = metadata.get("pdf_name", "Unknown PDF")
+            page_number = metadata.get("page_number", "Unknown Page")
+
+            if use_sentence_filter:
+                # Split text into sentences and keep only those that contain keywords from the question
+                import re
+                sentences = re.split(r'(?<=[.!?])\s+', text)
+                filtered_sentences = [
+                    s for s in sentences
+                    if any(word.lower() in s.lower() for word in question.split())
+                ]
+                if filtered_sentences:
+                    merged_context_list.append(
+                        f"[{pdf_name} - Page {page_number}]: " + " ".join(filtered_sentences)
+                    )
+            else:
+                merged_context_list.append(f"[{pdf_name} - Page {page_number}]: " + text)
+
+            merged_metadata.append((pdf_name, page_number))
+
+        merged_context = "\n\n".join(merged_context_list)
+
+        # 5️⃣ Track approximate token usage for embeddings (optional)
+        total_tokens = sum(len(doc.page_content.split()) for doc in retrieved_docs[:top_k_chunks])
+        cost = calculate_cost("text-embedding-ada-002", total_tokens, 0)  # adjust if needed
+
+        # 6️⃣ Store cost record
+        try:
+            cost_record = CostPerInteraction(
+                username=username,
+                model="text-embedding-ada-002",
+                prompt_tokens=total_tokens,
+                completion_tokens=0,
+                total_tokens=total_tokens,
+                cost_usd=cost,
+                created_at=datetime.utcnow()
+            )
+            db.add(cost_record)
+            db.commit()
+            print("[INFO] Cost record stored.")
+        except SQLAlchemyError as e:
+            db.rollback()
+            print(f"[ERROR] Failed to store cost record: {e}")
+
+        # 7️⃣ Create the QA chain
+        llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            retriever=retriever,
+            chain_type="stuff",
+            chain_type_kwargs={"prompt": prompt},
+        )
+
+        return qa_chain, merged_context, merged_metadata
+
+    except Exception as e:
+        print(f"[ERROR] Unexpected error in create_qa_chain_full_pdf_read: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, None, None
+
+
+
 def create_qa_chain(vectorstore, question, db: Session, username, openai_api_key: str, top_n=5, fetch_k=10):
     client = openai.OpenAI(api_key=openai_api_key)
 
@@ -6363,6 +6480,9 @@ async def chat(
 ):
     user_message = request.message
     username_for_interactive_session = request.user_name
+    print(f"[DEBUG] Incoming request JSON: {await request.json()}")
+    print(f"[DEBUG] Current USER_VECTORSTORES keys: {list(USER_VECTORSTORES.keys())}")
+
     vectorstore = USER_VECTORSTORES.get(username_for_interactive_session)
     if vectorstore is None:
         return JSONResponse(
@@ -6372,6 +6492,69 @@ async def chat(
     # Assuming vectorStore is always initialized elsewhere
     #qa_chain, relevant_texts, document_metadata = create_qa_chain(vectorstore, user_message)  
     qa_chain, relevant_texts, document_metadata = create_qa_chain(vectorstore, user_message, db=db, username=username_for_interactive_session, openai_api_key=openai_api_key)
+    # Merge relevant texts into a single string for the prompt
+   
+
+    # Run the QA chain with all required inputs
+    answer = qa_chain.run(user_message)  
+
+    S3_BASE_URL = "https://pdfquerybucket.s3.amazonaws.com"
+    UPLOADS_FOLDER = "upload"
+
+    context_data = []
+    for metadata in document_metadata:
+        pdf_s3_key = metadata[0]  # e.g., "folder/subfolder/file.pdf"
+        pdf_page = metadata[1]
+
+        safe_pdf_key = quote(pdf_s3_key)  # URL encode to handle spaces/special chars
+
+        pdf_url = f"{S3_BASE_URL}/{UPLOADS_FOLDER}/{safe_pdf_key}"
+
+        context_data.append({
+            "page_number": pdf_page,
+            "pdf_url": pdf_url,
+        })
+        context_data.append({
+            "page_number": pdf_page,
+            "pdf_url": pdf_url,
+        })
+
+    # Process relevant texts for search strings
+    search_strings = separate_sentences(relevant_texts)
+    bot_reply = f"ChatBot: {answer}"
+    relevant_texts=clean(relevant_texts)
+    response = {
+        "reply": bot_reply,
+        "context": context_data,
+        "search_strings": search_strings,
+        "relevant_texts": relevant_texts  # Add this line
+    }
+
+    print(response)
+    
+
+    return JSONResponse(content=response)
+
+
+@app.post("/api/full_pdf_chatbot")
+async def chat(
+    request: ChatRequest_interactive_pdf,
+    db: Session = Depends(get_db)  # Replace with your auth dependency
+):
+    user_message = request.message
+    username_for_interactive_session = request.user_name
+    print(f"[DEBUG] Incoming request JSON: {await request.json()}")
+    print(f"[DEBUG] Current USER_VECTORSTORES keys: {list(USER_VECTORSTORES.keys())}")
+
+    vectorstore = USER_VECTORSTORES.get(username_for_interactive_session)
+    if vectorstore is None:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "No trained vectorstore found. Please train the model first."}
+        )
+    # Assuming vectorStore is always initialized elsewhere
+    #qa_chain, relevant_texts, document_metadata = create_qa_chain(vectorstore, user_message)  
+    qa_chain, relevant_texts, document_metadata = create_qa_chain_full_pdf_read(vectorstore, user_message, db=db, username=username_for_interactive_session, openai_api_key=openai_api_key)
     # Merge relevant texts into a single string for the prompt
    
 
@@ -8889,6 +9072,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
