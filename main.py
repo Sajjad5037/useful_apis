@@ -1665,7 +1665,105 @@ def create_or_load_vectorstore_website_pdf(
         traceback.print_exc()
         raise
 
+def create_or_load_vectorstore_full_pdf_read(
+    pdf_text,
+    username,
+    openai_api_key,
+    s3_client=None,          
+    bucket_name=None,        
+    vectorstore_key=None,    
+    embeddings_key=None,     
+    embedding_model="text-embedding-3-large"
+):
+    """
+    Creates an in-memory FAISS vectorstore with precomputed embeddings.
+    Improved chunking for longer PDFs.
+    """
+    try:
+        print("[INFO] Starting in-memory vector store creation...")
 
+        
+        # Step 1: Improved text splitting
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+            separators=["\n\n", "\n", ".", " "]
+        )
+
+        documents_with_page_info = []
+        print("[INFO] Splitting PDF text into chunks...")
+        for pdf_name, pages in pdf_text.items():
+            for page_number, text in pages.items():
+                if text.strip():
+                    chunks = text_splitter.split_text(text)
+                    
+                    # Merge tiny chunks
+                    merged_chunks = []
+                    temp_chunk = ""
+                    for chunk in chunks:
+                        if len(chunk.strip()) < 200:
+                            temp_chunk += " " + chunk
+                        else:
+                            if temp_chunk:
+                                merged_chunks.append(temp_chunk.strip())
+                                temp_chunk = ""
+                            merged_chunks.append(chunk.strip())
+                    if temp_chunk:
+                        merged_chunks.append(temp_chunk.strip())
+
+                    print(f"[DEBUG] PDF '{pdf_name}', Page {page_number}: {len(merged_chunks)} chunks after merging")
+                    
+                    for chunk in merged_chunks:
+                        documents_with_page_info.append(
+                            Document(
+                                page_content=chunk,
+                                metadata={"pdf_name": pdf_name, "page_number": page_number}
+                            )
+                        )
+
+        print(f"[INFO] Total chunks created: {len(documents_with_page_info)}")
+
+        # Step 2: Compute embeddings using OpenAI
+        client = OpenAI(api_key=openai_api_key)
+        texts = [doc.page_content for doc in documents_with_page_info]
+
+        print(f"[INFO] Requesting embeddings from OpenAI API using model '{embedding_model}'...")
+        embeddings_list = []
+        batch_size = 50
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i+batch_size]
+            response = client.embeddings.create(model=embedding_model, input=batch)
+            batch_embeddings = [d.embedding for d in response.data]
+            embeddings_list.extend(batch_embeddings)
+            print(f"[INFO] Processed batch {i//batch_size + 1} of {((len(texts)-1)//batch_size)+1}")
+
+        # Step 3: PrecomputedEmbeddings wrapper
+        class PrecomputedEmbeddings(Embeddings):
+            def __init__(self, precomputed):
+                self.precomputed = precomputed
+
+            def embed_documents(self, texts):
+                return self.precomputed[:len(texts)]
+
+            def embed_query(self, text):
+                resp = client.embeddings.create(model=embedding_model, input=text)
+                return resp.data[0].embedding
+
+        embeddings = PrecomputedEmbeddings(precomputed=embeddings_list)
+        print("[INFO] Precomputed embeddings ready.")
+
+        # Step 4: Create in-memory FAISS vectorstore
+        print("[INFO] Creating FAISS vectorstore from documents and embeddings...")
+        vectorstore = FAISS.from_documents(documents_with_page_info, embeddings)
+        print("[SUCCESS] In-memory FAISS vectorstore ready for immediate user interaction.")
+
+        return vectorstore, embeddings
+
+    except Exception as e:
+        print(f"[ERROR] Exception occurred: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 def create_or_load_vectorstore(
     pdf_text,
@@ -6405,7 +6503,7 @@ async def train_model(pages: PageRange):
             )
 
         print("[INFO] Creating/loading vector store")
-        vectorstore, embeddings = create_or_load_vectorstore_website_pdf(
+        vectorstore, embeddings = create_or_load_vectorstore_full_pdf_read(
             pdf_text=combined_text,
             username=username_for_interactive_session,
             openai_api_key=openai_api_key,
@@ -8783,6 +8881,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
