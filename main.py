@@ -6362,7 +6362,7 @@ async def chat(
     db: Session = Depends(get_db)  # Replace with your auth dependency
 ):
     user_message = request.message
-    username_for_interactive_session = request.
+    username_for_interactive_session = request.user_name
     vectorstore = USER_VECTORSTORES.get(username_for_interactive_session)
     if vectorstore is None:
         return JSONResponse(
@@ -8889,6 +8889,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
