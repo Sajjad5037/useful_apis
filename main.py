@@ -1364,8 +1364,8 @@ Answer:
 
         # 2️⃣ Setup retriever
         retriever = vectorstore.as_retriever(
-            search_type="mmr",
-            search_kwargs={"k": top_k_chunks, "fetch_k": top_k_chunks * 2}
+            search_type="similarity",
+            search_kwargs={"k": top_k_chunks}
         )
 
         # 3️⃣ Retrieve documents
@@ -1808,7 +1808,7 @@ def create_or_load_vectorstore_full_pdf_read(
         # Step 1: Improved text splitting
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
-            chunk_overlap=200,
+            chunk_overlap=250,
             separators=["\n\n", "\n", ".", " "]
         )
 
@@ -9077,6 +9077,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
