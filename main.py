@@ -6543,7 +6543,8 @@ async def chat(
 ):
     user_message = request.message
     username_for_interactive_session = request.user_name
-    print(f"[DEBUG] Incoming request JSON: {await request.json()}")
+    print(f"[DEBUG] Incoming request model: {request}")
+
     print(f"[DEBUG] Current USER_VECTORSTORES keys: {list(USER_VECTORSTORES.keys())}")
 
     vectorstore = USER_VECTORSTORES.get(username_for_interactive_session)
@@ -9072,6 +9073,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
