@@ -1335,12 +1335,11 @@ def create_qa_chain_full_pdf_read(
     username: str,
     openai_api_key: str,
     top_k_chunks: int = 5,
-    use_sentence_filter: bool = True
+    num_chunks_to_use: int = 2  # <-- only send top 2 chunks to LLM
 ):
     """
     Creates a QA chain using FAISS vectorstore and OpenAI LLM.
-    Retrieves top-k chunks from multi-page PDFs and ensures context-grounded answers.
-    Adds optional sentence-level filtering to reduce noise.
+    Retrieves top-k chunks for similarity but sends only the top N chunks to the model.
     """
     try:
         # 1️⃣ Define the prompt
@@ -1365,7 +1364,7 @@ Answer:
         # 2️⃣ Setup retriever
         retriever = vectorstore.as_retriever(
             search_type="mmr",
-            search_kwargs={"k": top_k_chunks, "fetch_k": top_k_chunks * 2}  # fetch extra to allow MMR to pick best
+            search_kwargs={"k": top_k_chunks, "fetch_k": top_k_chunks * 2}
         )
 
         # 3️⃣ Retrieve documents
@@ -1374,40 +1373,29 @@ Answer:
             print("[INFO] No relevant documents found.")
             return None, None, None
 
-        # 4️⃣ Merge and optionally filter context
-        merged_context_list = []
-        merged_metadata = []
+        # 4️⃣ Compute similarity scores and pick top N
+        texts = [doc.page_content for doc in retrieved_docs]
+        embeddings = vectorstore._embedding.embed_documents(texts)
+        query_embedding = vectorstore._embedding.embed_query(question)
 
-        for doc in retrieved_docs[:top_k_chunks]:
-            text = doc.page_content
-            metadata = doc.metadata
-            pdf_name = metadata.get("pdf_name", "Unknown PDF")
-            page_number = metadata.get("page_number", "Unknown Page")
+        from sklearn.metrics.pairwise import cosine_similarity
+        import numpy as np
 
-            if use_sentence_filter:
-                # Split text into sentences and keep only those that contain keywords from the question
-                import re
-                sentences = re.split(r'(?<=[.!?])\s+', text)
-                filtered_sentences = [
-                    s for s in sentences
-                    if any(word.lower() in s.lower() for word in question.split())
-                ]
-                if filtered_sentences:
-                    merged_context_list.append(
-                        f"[{pdf_name} - Page {page_number}]: " + " ".join(filtered_sentences)
-                    )
-            else:
-                merged_context_list.append(f"[{pdf_name} - Page {page_number}]: " + text)
+        similarities = cosine_similarity([query_embedding], embeddings)[0]
+        sorted_indices = np.argsort(similarities)[::-1][:num_chunks_to_use]
 
-            merged_metadata.append((pdf_name, page_number))
+        top_texts = [texts[i] for i in sorted_indices]
+        top_metadata = [(retrieved_docs[i].metadata.get("pdf_name", "Unknown PDF"),
+                         retrieved_docs[i].metadata.get("page_number", "Unknown Page"))
+                        for i in sorted_indices]
 
-        merged_context = "\n\n".join(merged_context_list)
+        merged_context = "\n\n".join(top_texts)
 
-        # 5️⃣ Track approximate token usage for embeddings (optional)
-        total_tokens = sum(len(doc.page_content.split()) for doc in retrieved_docs[:top_k_chunks])
-        cost = calculate_cost("text-embedding-ada-002", total_tokens, 0)  # adjust if needed
+        # 5️⃣ Track approximate token usage
+        total_tokens = sum(len(text.split()) for text in top_texts)
+        cost = calculate_cost("text-embedding-ada-002", total_tokens, 0)
 
-        # 6️⃣ Store cost record
+        # Store cost record
         try:
             cost_record = CostPerInteraction(
                 username=username,
@@ -1425,7 +1413,7 @@ Answer:
             db.rollback()
             print(f"[ERROR] Failed to store cost record: {e}")
 
-        # 7️⃣ Create the QA chain
+        # 6️⃣ Create the QA chain
         llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
         qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
@@ -1434,7 +1422,7 @@ Answer:
             chain_type_kwargs={"prompt": prompt},
         )
 
-        return qa_chain, merged_context, merged_metadata
+        return qa_chain, merged_context, top_metadata
 
     except Exception as e:
         print(f"[ERROR] Unexpected error in create_qa_chain_full_pdf_read: {e}")
@@ -9073,6 +9061,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
