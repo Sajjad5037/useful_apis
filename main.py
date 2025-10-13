@@ -121,6 +121,7 @@ print(f"✅ GCS client initialized, bucket '{GCS_BUCKET_IBNE_SINA}' ready.")
 
 session_checklists={} #to be used to keep track of questions extract from the given pdf and their corresponding answer
 session_histories = {}
+USER_VECTORSTORES = {}  # global dict
 session_texts = {}
 MAX_USER_COST = 0.4 #dollars
 MODEL_COSTS = {
@@ -6361,7 +6362,13 @@ async def chat(
     db: Session = Depends(get_db)  # Replace with your auth dependency
 ):
     user_message = request.message
-    username_for_interactive_session = request.user_name
+    username_for_interactive_session = request.
+    vectorstore = USER_VECTORSTORES.get(username_for_interactive_session)
+    if vectorstore is None:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "No trained vectorstore found. Please train the model first."}
+        )
     # Assuming vectorStore is always initialized elsewhere
     #qa_chain, relevant_texts, document_metadata = create_qa_chain(vectorstore, user_message)  
     qa_chain, relevant_texts, document_metadata = create_qa_chain(vectorstore, user_message, db=db, username=username_for_interactive_session, openai_api_key=openai_api_key)
@@ -6510,6 +6517,7 @@ async def train_model(pages: PageRange):
             s3_client=s3,
             bucket_name=BUCKET_NAME
         )
+        USER_VECTORSTORES[username_for_interactive_session] = vectorstore
 
         print(f"[SUCCESS] Vectorstore trained using {total_pdf} PDFs.")
         return JSONResponse(
@@ -8881,6 +8889,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
