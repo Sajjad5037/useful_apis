@@ -2262,14 +2262,14 @@ def generate_mcqs(retrieved_chunks):
 # -----------------------------
 # ENDPOINT: /generate-quiz
 # -----------------------------
-@app.route("/generate-quiz", methods=["POST"])
-def generate_quiz(file: UploadFile = File(...)):
-    file = request.files.get("file")
+@app.post("/generate-quiz")
+async def generate_quiz(file: UploadFile = File(...)):
     if not file:
-        return jsonify({"error": "No PDF uploaded"}), 400
+        return {"error": "No PDF uploaded"}
 
+    # Save the uploaded file temporarily
     with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
-        file.save(temp_pdf.name)
+        temp_pdf.write(await file.read())
         pdf_path = temp_pdf.name
 
     try:
@@ -2287,16 +2287,15 @@ def generate_quiz(file: UploadFile = File(...)):
         print("[INFO] Generating MCQs...")
         mcqs = generate_mcqs(retrieved)
 
-        return jsonify(mcqs)
+        return mcqs  # FastAPI automatically returns JSON
 
     except Exception as e:
         print("[ERROR]", e)
-        return jsonify({"error": str(e)}), 500
+        return {"error": str(e)}
 
     finally:
         if os.path.exists(pdf_path):
             os.remove(pdf_path)
-
 
 @app.get("/css-common-mistakes", response_model=List[CommonMistakeSchema])
 def get_common_mistakes(
@@ -9211,6 +9210,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
