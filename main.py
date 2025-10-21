@@ -1,5 +1,6 @@
 import json
 import PyPDF2
+import faiss
 from tempfile import NamedTemporaryFile
 from fastapi.staticfiles import StaticFiles
 from pdf2image import convert_from_bytes
@@ -9211,6 +9212,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
