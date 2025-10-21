@@ -2263,7 +2263,7 @@ def generate_mcqs(retrieved_chunks):
 # ENDPOINT: /generate-quiz
 # -----------------------------
 @app.route("/generate-quiz", methods=["POST"])
-def generate_quiz():
+def generate_quiz(file: UploadFile = File(...)):
     file = request.files.get("file")
     if not file:
         return jsonify({"error": "No PDF uploaded"}), 400
@@ -9211,6 +9211,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
