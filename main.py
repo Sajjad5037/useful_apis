@@ -1,3 +1,5 @@
+import json
+import PyPDF2
 from fastapi.staticfiles import StaticFiles
 from pdf2image import convert_from_bytes
 from urllib.parse import parse_qs
@@ -2163,6 +2165,138 @@ def get_token(request: Request, authorization: Optional[str] = Header(None)):
     token = authorization.split(" ")[1]
     print("Extracted token:", token)
     return token
+
+
+
+CHUNK_SIZE = 1000  # characters per chunk
+
+
+# -----------------------------
+# PDF TEXT EXTRACTION
+# -----------------------------
+def extract_pdf_text(pdf_path, start_page=4, max_pages=14):
+    text = ""
+    with open(pdf_path, "rb") as f:
+        reader = PyPDF2.PdfReader(f)
+        total_pages = len(reader.pages)
+        end_page = total_pages if max_pages is None else min(start_page + max_pages, total_pages)
+        for i in range(start_page, end_page):
+            page_text = reader.pages[i].extract_text()
+            if page_text:
+                text += page_text + "\n"
+    return text
+
+
+# -----------------------------
+# TEXT CHUNKING
+# -----------------------------
+def chunk_text(text, chunk_size=CHUNK_SIZE):
+    return [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+
+
+# -----------------------------
+# VECTOR STORE CREATION
+# -----------------------------
+def create_vector_store(chunks):
+    embeddings = []
+    for chunk in chunks:
+        resp = client.embeddings.create(model="text-embedding-3-small", input=chunk)
+        embeddings.append(resp.data[0].embedding)
+
+    dim = len(embeddings[0])
+    index = faiss.IndexFlatL2(dim)
+    index.add(np.array(embeddings).astype("float32"))
+    return index, embeddings
+
+
+# -----------------------------
+# CHUNK RETRIEVAL
+# -----------------------------
+def retrieve_chunks(query, chunks, index, embeddings, top_k=3):
+    q_emb = client.embeddings.create(model="text-embedding-3-small", input=query).data[0].embedding
+    q_vec = np.array([q_emb]).astype("float32")
+    _, indices = index.search(q_vec, top_k)
+    return [chunks[i] for i in indices[0]]
+
+
+# -----------------------------
+# MCQ GENERATION
+# -----------------------------
+def generate_mcqs(retrieved_chunks):
+    content = "\n".join(retrieved_chunks)
+    prompt = f"""
+    You are a JSON generator.
+    Generate exactly 3 multiple-choice questions (MCQs) from the content below.
+    Each question must have 4 options and one correct answer.
+    Return ONLY a valid JSON array — no explanations, no markdown, no text outside the JSON.
+
+    Format:
+    [
+      {{
+        "question": "string",
+        "options": ["string", "string", "string", "string"],
+        "answer": "string"
+      }}
+    ]
+
+    Content:
+    {content}
+    """
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+    )
+
+    text = response.choices[0].message.content.strip()
+    try:
+        mcqs = json.loads(text)
+    except Exception as e:
+        print("Failed to parse MCQs as JSON:", e)
+        mcqs = [{"error": "Invalid JSON response", "raw_output": text}]
+
+    return mcqs
+
+
+# -----------------------------
+# ENDPOINT: /generate-quiz
+# -----------------------------
+@app.route("/generate-quiz", methods=["POST"])
+def generate_quiz():
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"error": "No PDF uploaded"}), 400
+
+    with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
+        file.save(temp_pdf.name)
+        pdf_path = temp_pdf.name
+
+    try:
+        print("[INFO] Extracting text...")
+        text = extract_pdf_text(pdf_path)
+        chunks = chunk_text(text)
+        print(f"[INFO] {len(chunks)} chunks created.")
+
+        print("[INFO] Creating vector store...")
+        index, embeddings = create_vector_store(chunks)
+
+        print("[INFO] Retrieving relevant chunks...")
+        retrieved = retrieve_chunks("important concepts for quiz", chunks, index, embeddings)
+
+        print("[INFO] Generating MCQs...")
+        mcqs = generate_mcqs(retrieved)
+
+        return jsonify(mcqs)
+
+    except Exception as e:
+        print("[ERROR]", e)
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        if os.path.exists(pdf_path):
+            os.remove(pdf_path)
+
 
 @app.get("/css-common-mistakes", response_model=List[CommonMistakeSchema])
 def get_common_mistakes(
@@ -9077,6 +9211,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
