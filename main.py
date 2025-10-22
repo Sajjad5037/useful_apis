@@ -1,4 +1,5 @@
 import json
+from qdrant_client import QdrantClient
 import PyPDF2
 import faiss
 from tempfile import NamedTemporaryFile
@@ -942,6 +943,22 @@ if not openai_api_key:
     sys.exit(1)
 
 openai.api_key = openai_api_key
+# checking qdrant database exisit
+qdrant = QdrantClient(
+    url="https://qdrant-production-2202.up.railway.app",
+    prefer_grpc=False  # Use HTTP instead of gRPC
+)
+
+COLLECTION_NAME = "pdf_embeddings"
+
+# Make sure collection exists
+collections = [c.name for c in qdrant.get_collections().collections]
+if COLLECTION_NAME not in collections:
+    print(f"[DEBUG] Creating collection: {COLLECTION_NAME}")
+    qdrant.recreate_collection(collection_name=COLLECTION_NAME, vector_size=1536)  # match your embedding size
+else:
+    print(f"[DEBUG] Collection {COLLECTION_NAME} already exists")
+
 def get_db():
     db = SessionLocal()
     try:
@@ -2260,10 +2277,151 @@ def generate_mcqs(retrieved_chunks):
 
     return mcqs
 
+#helper functions for upload pdf from website to talk to the chatbot
+CHUNK_SIZE = 1000  # characters per chunk
+
+# -----------------------------
+# PDF Text Extraction
+# -----------------------------
+def extract_pdf_text(pdf_path, start_page=0, max_pages=None):
+    print(f"[DEBUG] Starting text extraction from PDF: {pdf_path}")
+    text = ""
+    try:
+        with open(pdf_path, "rb") as f:
+            reader = PyPDF2.PdfReader(f)
+            total_pages = len(reader.pages)
+            end_page = total_pages if max_pages is None else min(start_page + max_pages, total_pages)
+            print(f"[DEBUG] Total pages in PDF: {total_pages}, Reading pages {start_page} to {end_page-1}")
+
+            for i in range(start_page, end_page):
+                page = reader.pages[i]
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+                    print(f"[DEBUG] Page {i} extracted successfully, length={len(page_text)} characters")
+                else:
+                    print(f"[DEBUG] Page {i} has no text")
+    except Exception as e:
+        print(f"[ERROR] Failed to extract PDF text: {e}")
+        raise e
+    print(f"[DEBUG] Finished extracting text, total length={len(text)} characters")
+    return text
+
+# -----------------------------
+# Chunk Text
+# -----------------------------
+def chunk_text(text, chunk_size=CHUNK_SIZE):
+    print(f"[DEBUG] Starting text chunking with chunk_size={chunk_size}")
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunk = text[start:end]
+        chunks.append(chunk)
+        print(f"[DEBUG] Created chunk {len(chunks)} with length={len(chunk)}")
+        start = end
+    print(f"[DEBUG] Finished chunking text, total chunks={len(chunks)}")
+    return chunks
+
+# -----------------------------
+# Optional: Create FAISS Vector Store (for local testing)
+# -----------------------------
+def create_vector_store(chunks):
+    print(f"[DEBUG] Creating embeddings for {len(chunks)} chunks")
+    embeddings = []
+    for i, chunk in enumerate(chunks):
+        try:
+            response = client.embeddings.create(
+                model="text-embedding-3-small",
+                input=chunk
+            )
+            embedding = response.data[0].embedding
+            embeddings.append(embedding)
+            print(f"[DEBUG] Chunk {i} embedding created, length={len(embedding)}")
+        except Exception as e:
+            print(f"[ERROR] Failed to create embedding for chunk {i}: {e}")
+
+    if not embeddings:
+        raise ValueError("No embeddings were created, cannot build FAISS index")
+
+    dimension = len(embeddings[0])
+    print(f"[DEBUG] Embedding dimension={dimension}")
+    index = faiss.IndexFlatL2(dimension)
+    index.add(np.array(embeddings).astype("float32"))
+    print(f"[DEBUG] FAISS index created and {len(embeddings)} embeddings added")
+    return index, embeddings
+
+# -----------------------------
+# Optional: Retrieve Chunks by Query (for local testing)
+# -----------------------------
+def retrieve_chunks(query, chunks, index, embeddings, top_k=3):
+    print(f"[DEBUG] Retrieving top {top_k} chunks for query: {query}")
+    try:
+        query_embedding = client.embeddings.create(
+            model="text-embedding-3-small",
+            input=query
+        ).data[0].embedding
+        query_vector = np.array([query_embedding]).astype("float32")
+        distances, indices = index.search(query_vector, top_k)
+        retrieved = [chunks[i] for i in indices[0]]
+        print(f"[DEBUG] Retrieved chunk indices: {indices[0]}, distances: {distances[0]}")
+        return retrieved
+    except Exception as e:
+        print(f"[ERROR] Failed to retrieve chunks: {e}")
+        return []
+
+# -----------------------------
+# ENDPOINT: /up load pdf from website to talk to the chatbot
+# -----------------------------
+
+@app.post("/upload-pdf-website")
+async def upload_pdf_website(file: UploadFile = File(...), class_name: str = "default_class"):
+    if not file:
+        return JSONResponse({"success": False, "error": "No PDF uploaded"}, status_code=400)
+
+    try:
+        with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
+            temp_path = temp_pdf.name
+            contents = await file.read()
+            temp_pdf.write(contents)
+
+        # Step 1: Extract text
+        text = extract_pdf_text(temp_path)
+
+        # Step 2: Chunk text
+        chunks = chunk_text(text)
+
+        # Step 3: Create embeddings and prepare points for Qdrant
+        points = []
+        for i, chunk in enumerate(chunks):
+            response = client.embeddings.create(
+                model="text-embedding-3-small",
+                input=chunk
+            )
+            embedding = response.data[0].embedding
+            points.append(
+                PointStruct(
+                    id=i,
+                    vector=embedding,
+                    payload={"class_name": class_name, "chunk": chunk}
+                )
+            )
+
+        # Step 4: Upload to Qdrant
+        qdrant.upsert(collection_name=COLLECTION_NAME, points=points)
+
+        return JSONResponse({"success": True, "message": "AI is trained on your PDF to answer your queries."})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
 
 # -----------------------------
 # ENDPOINT: /generate-quiz
 # -----------------------------
+            
 @app.post("/generate-quiz")
 async def generate_quiz(file: UploadFile = File(...)):
     if not file:
@@ -9212,6 +9370,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
