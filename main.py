@@ -951,14 +951,45 @@ qdrant = QdrantClient(
 
 COLLECTION_NAME = "pdf_embeddings"
 
-# Make sure collection exists
-collections = [c.name for c in qdrant.get_collections().collections]
+# Initialize client with debug info
+try:
+    print("[DEBUG] Initializing Qdrant client...")
+    qdrant = QdrantClient(
+        url="https://qdrant-production-2202.up.railway.app",
+        prefer_grpc=False  # Use HTTP instead of gRPC
+    )
+    print("[DEBUG] Qdrant client initialized successfully")
+except Exception as e:
+    print("[ERROR] Failed to initialize Qdrant client:", e)
+    raise
+
+# Check connection and get collections
+try:
+    print("[DEBUG] Fetching existing collections...")
+    collections_response = qdrant.get_collections()
+    collections = [c.name for c in collections_response.collections]
+    print(f"[DEBUG] Existing collections: {collections}")
+except ResponseHandlingException as e:
+    print("[ERROR] Qdrant response handling exception:", e)
+    collections = []
+except UnexpectedResponse as e:
+    print("[ERROR] Unexpected Qdrant response:", e)
+    collections = []
+except Exception as e:
+    print("[ERROR] Failed to fetch collections:", e)
+    collections = []
+
+# Create collection if it does not exist
 if COLLECTION_NAME not in collections:
-    print(f"[DEBUG] Creating collection: {COLLECTION_NAME}")
-    qdrant.recreate_collection(collection_name=COLLECTION_NAME, vector_size=1536)  # match your embedding size
+    try:
+        print(f"[DEBUG] Creating collection: {COLLECTION_NAME}")
+        qdrant.recreate_collection(collection_name=COLLECTION_NAME, vector_size=1536)  # match your embedding size
+        print(f"[DEBUG] Collection {COLLECTION_NAME} created successfully")
+    except Exception as e:
+        print(f"[ERROR] Failed to create collection {COLLECTION_NAME}:", e)
 else:
     print(f"[DEBUG] Collection {COLLECTION_NAME} already exists")
-
+    
 def get_db():
     db = SessionLocal()
     try:
@@ -9370,6 +9401,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
