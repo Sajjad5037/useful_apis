@@ -6,6 +6,8 @@ google-cloud-aiplatform==1.71.1
 #PDF
 PyPDF2==3.0.1
 
+#Qdrant db
+qdrant-client==1.12.1
 
 # cache-bust-2025-09-02
 # FastAPI and web
@@ -77,6 +79,7 @@ pydantic==2.9.2
 
 
 #
+
 
 
 
