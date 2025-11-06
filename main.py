@@ -2457,38 +2457,64 @@ async def upload_pdf_website(file: UploadFile = File(...), class_name: str = "de
 @app.post("/generate-quiz")
 async def generate_quiz(file: UploadFile = File(...)):
     if not file:
+        print("[WARN] No PDF uploaded")
         return {"error": "No PDF uploaded"}
+
+    print(f"[INFO] Received file: {file.filename}, content_type: {file.content_type}")
 
     # Save the uploaded file temporarily
     with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
-        temp_pdf.write(await file.read())
+        pdf_bytes = await file.read()
+        temp_pdf.write(pdf_bytes)
         pdf_path = temp_pdf.name
+        print(f"[INFO] Saved uploaded PDF to temporary path: {pdf_path}, size: {len(pdf_bytes)} bytes")
 
     try:
-        print("[INFO] Extracting text...")
+        # Step 1: Extract text from PDF
+        print("[INFO] Starting PDF text extraction...")
         text = extract_pdf_text(pdf_path)
+        if not text:
+            print("[WARN] No text extracted from PDF")
+        else:
+            print(f"[INFO] Extracted {len(text)} characters from PDF")
+
+        # Step 2: Chunk the text
+        print("[INFO] Chunking extracted text...")
         chunks = chunk_text(text)
-        print(f"[INFO] {len(chunks)} chunks created.")
+        print(f"[INFO] Created {len(chunks)} text chunks")
+        for i, chunk in enumerate(chunks[:3]):  # preview first 3 chunks
+            print(f"[DEBUG] Chunk {i+1} preview: {chunk[:100]}...")
 
-        print("[INFO] Creating vector store...")
+        # Step 3: Create vector store
+        print("[INFO] Creating vector store from chunks...")
         index, embeddings = create_vector_store(chunks)
+        print(f"[INFO] Vector store created: index type={type(index)}, embeddings length={len(embeddings)}")
 
-        print("[INFO] Retrieving relevant chunks...")
-        retrieved = retrieve_chunks("important concepts for quiz", chunks, index, embeddings)
+        # Step 4: Retrieve relevant chunks
+        query = "important concepts for quiz"
+        print(f"[INFO] Retrieving relevant chunks for query: '{query}'")
+        retrieved = retrieve_chunks(query, chunks, index, embeddings)
+        print(f"[INFO] Retrieved {len(retrieved)} chunks for quiz generation")
+        for i, chunk in enumerate(retrieved[:3]):  # preview first 3 retrieved chunks
+            print(f"[DEBUG] Retrieved chunk {i+1} preview: {chunk[:100]}...")
 
-        print("[INFO] Generating MCQs...")
+        # Step 5: Generate MCQs
+        print("[INFO] Generating MCQs from retrieved chunks...")
         mcqs = generate_mcqs(retrieved)
+        print(f"[INFO] Generated {len(mcqs)} MCQs")
 
-        return mcqs  # FastAPI automatically returns JSON
+        return mcqs  # FastAPI automatically converts to JSON
 
     except Exception as e:
-        print("[ERROR]", e)
+        print("[ERROR] Exception during quiz generation:", e)
         return {"error": str(e)}
 
     finally:
+        # Clean up temporary PDF file
         if os.path.exists(pdf_path):
             os.remove(pdf_path)
-
+            print(f"[INFO] Temporary PDF removed: {pdf_path}")
+            
 @app.get("/css-common-mistakes", response_model=List[CommonMistakeSchema])
 def get_common_mistakes(
     username: str = Query(..., description="Doctor username to filter results"),  # frontend sends doctor name here
@@ -9402,6 +9428,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
