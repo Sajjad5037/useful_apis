@@ -215,19 +215,22 @@ username_for_interactive_session = None
 
 allowed_origins = [
     "http://127.0.0.1:3000",
+    "http://127.0.0.1:3000/",
     "http://localhost:3000",
+    "http://localhost:3000/",
     "https://rafis-kitchen.vercel.app",
     "https://sajjadalinoor.vercel.app",
     "https://clinic-management-system-27d11.web.app",
     "https://shah-rukk-website.vercel.app",
     "https://class-management-system-new.web.app",
     "https://ai-social-campaign.vercel.app",
-    "https://anz-way.vercel.app",  # only the domain
+    "https://anz-way.vercel.app",
     "https://royal-dry-fruit-ashy.vercel.app",
     "https://ibne-sina.vercel.app",
     "https://hajvery-milk-shop.vercel.app",
     "https://a-level-exam-preparation.vercel.app",
 ]
+
 
 
 app.add_middleware(
@@ -260,6 +263,22 @@ s3 = boto3.client(
     aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
     region_name=AWS_REGION
 )
+class TopicRequest(BaseModel):
+    title: str
+    raw_text: str
+
+
+class RecallQuestion(BaseModel):
+    question: str
+    answer: str
+
+
+class TopicResponse(BaseModel):
+    core_idea: str
+    mechanism: str
+    clinical_connection: str
+    exam_traps: str
+    recall_questions: list[RecallQuestion]
 
 class StartSessionRequest(BaseModel):
     subject: str
@@ -2405,6 +2424,164 @@ def retrieve_chunks(query, chunks, index, embeddings, top_k=3):
 # -----------------------------
 # ENDPOINT: /up load pdf from website to talk to the chatbot
 # -----------------------------
+# --------------------------------------------------
+# PROMPT BUILDER
+# --------------------------------------------------
+
+def build_prompt(title: str, raw_text: str) -> str:
+    print("\n[DEBUG] Building prompt")
+    print(f"[DEBUG] Topic title: {title}")
+    print(f"[DEBUG] Raw text length: {len(raw_text)} characters")
+
+    return f"""
+You are helping a medical student organize their OWN study notes.
+
+You must NOT introduce new concepts.
+You must reorganize and clarify what is already present.
+
+Topic: {title}
+
+Student notes:
+\"\"\"
+{raw_text}
+\"\"\"
+
+Return the result in EXACTLY this structure:
+
+Core Idea:
+- 2 to 3 sentences
+- Plain language
+- The single most important takeaway
+
+Mechanism:
+- Cause → effect explanation
+- Clear and concise
+
+Clinical Connection:
+- How this appears in a real patient
+- Symptoms, signs, or labs
+
+Exam Traps:
+- Common confusions
+- Misleading options students fall for
+
+Recall Questions:
+- Exactly 3 questions
+- Each followed by a short answer
+- Use "Q:" and "A:" format
+
+Rules:
+- Do NOT add extra sections
+- Do NOT use markdown
+- Do NOT sound like a textbook
+- Be calm, precise, and clinically accurate
+"""
+
+# --------------------------------------------------
+# ENDPOINT
+# --------------------------------------------------
+
+@app.post("/topic/generate", response_model=TopicResponse)
+def generate_topic(payload: TopicRequest):
+    print("\n================ NEW REQUEST =================")
+    print("[DEBUG] /topic/generate called")
+    print(f"[DEBUG] Payload title: {payload.title}")
+    print(f"[DEBUG] Payload raw_text length: {len(payload.raw_text)}")
+
+    try:
+        print("[DEBUG] Sending prompt to OpenAI")
+
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.2,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You organize medical understanding clearly and conservatively."
+                },
+                {
+                    "role": "user",
+                    "content": build_prompt(payload.title, payload.raw_text)
+                }
+            ]
+        )
+
+        print("[DEBUG] OpenAI response received")
+
+        output = completion.choices[0].message.content.strip()
+
+        print("[DEBUG] Raw model output (first 500 chars):")
+        print(output[:500])
+        print("------------------------------------------------")
+
+        sections = {
+            "Core Idea": "",
+            "Mechanism": "",
+            "Clinical Connection": "",
+            "Exam Traps": "",
+            "Recall Questions": ""
+        }
+
+        current = None
+
+        print("[DEBUG] Parsing sections from model output")
+
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+
+            matched_section = False
+            for key in sections:
+                if line.startswith(key):
+                    current = key
+                    matched_section = True
+                    print(f"[DEBUG] Entering section: {key}")
+                    break
+
+            if not matched_section and current:
+                sections[current] += line + " "
+
+        print("[DEBUG] Finished parsing sections")
+        for key, value in sections.items():
+            print(f"[DEBUG] Section '{key}' length: {len(value.strip())}")
+
+        print("[DEBUG] Parsing recall questions")
+
+        recall_questions = []
+        for part in sections["Recall Questions"].split("Q:"):
+            part = part.strip()
+            if not part:
+                continue
+
+            if "A:" in part:
+                q, a = part.split("A:", 1)
+                recall_questions.append({
+                    "question": q.strip(),
+                    "answer": a.strip()
+                })
+                print(f"[DEBUG] Parsed recall Q: {q.strip()[:80]}")
+
+        print(f"[DEBUG] Total recall questions parsed: {len(recall_questions)}")
+
+        response = {
+            "core_idea": sections["Core Idea"].strip(),
+            "mechanism": sections["Mechanism"].strip(),
+            "clinical_connection": sections["Clinical Connection"].strip(),
+            "exam_traps": sections["Exam Traps"].strip(),
+            "recall_questions": recall_questions[:3]
+        }
+
+        print("[DEBUG] Final response payload prepared")
+        print("================================================\n")
+
+        return response
+
+    except Exception as e:
+        print("[ERROR] Exception occurred in /topic/generate")
+        print(str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/upload-pdf-website")
 async def upload_pdf_website(file: UploadFile = File(...), class_name: str = "default_class"):
@@ -9428,6 +9605,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
