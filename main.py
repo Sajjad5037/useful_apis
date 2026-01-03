@@ -53,7 +53,7 @@ from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS, VectorStore
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import logging
-from typing import Optional,List,Union
+from typing import Optional,List,Union, Literal
 from fastapi import FastAPI, HTTPException, Depends, Form, File, UploadFile, Request, Header,Body
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -9735,6 +9735,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
