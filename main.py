@@ -225,7 +225,7 @@ allowed_origins = [
     "https://class-management-system-new.web.app",
     "https://ai-social-campaign.vercel.app",
     "https://anz-way.vercel.app",
-    "https://royal-dry-fruit-ashy.vercel.app",
+    "https://things-every-body-should-know.vercel.app",
     "https://ibne-sina.vercel.app",
     "https://hajvery-milk-shop.vercel.app",
     "https://a-level-exam-preparation.vercel.app",
@@ -263,6 +263,16 @@ s3 = boto3.client(
     aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
     region_name=AWS_REGION
 )
+class Message(BaseModel):
+    role: Literal["user", "assistant"]
+    text: str
+
+class ReflectionRequest(BaseModel):
+    messages: List[Message]
+    timeLeft: int  # seconds
+
+class ReflectionResponse(BaseModel):
+    reply: str
 class TopicRequest(BaseModel):
     title: str
     raw_text: str
@@ -8433,6 +8443,126 @@ from fastapi.responses import JSONResponse
 from typing import Union, List
 from io import BytesIO
 
+def ai_synthesis_reply(messages: List[Message]) -> str:
+    print("\n[DEBUG] Calling OpenAI for synthesis")
+
+    system_prompt = """
+You are generating a therapist-style reflection summary.
+
+Rules:
+- Do not moralize.
+- Do not tell the user what to do.
+- Do not diagnose.
+- Describe recurring patterns neutrally.
+- Name tensions.
+- Suggest direction, not instruction.
+
+Structure your response as:
+1. Observed Pattern
+2. Impact
+3. Underlying Tension
+4. Direction for Growth
+"""
+
+    conversation = [
+        {"role": "system", "content": system_prompt}
+    ]
+
+    for m in messages:
+        conversation.append({
+            "role": "user" if m.role == "user" else "assistant",
+            "content": m.text
+        })
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=conversation,
+        temperature=0.3
+    )
+
+    summary = response.choices[0].message.content.strip()
+
+    print("[DEBUG] Synthesis generated")
+    return summary
+
+def get_session_phase(time_left: int) -> str:
+    print("\n[DEBUG] Determining session phase")
+    print(f"[DEBUG] time_left received: {time_left}")
+
+    if time_left > 600:
+        phase = "opening"
+    elif time_left > 180:
+        phase = "deepening"
+    else:
+        phase = "synthesis"
+
+    print(f"[DEBUG] Session phase determined: {phase}")
+    return phase
+
+
+# --------------------------------------------------
+# Reflection Logic (NO AI YET — HUMAN STRUCTURE)
+# --------------------------------------------------
+
+def ai_reflective_reply(messages: List[Message], phase: str) -> str:
+    print("\n[DEBUG] Calling OpenAI for reflective reply")
+    print(f"[DEBUG] Phase: {phase}")
+
+    system_prompt = f"""
+You are acting as a reflective therapist.
+
+Rules:
+- Do NOT give advice.
+- Do NOT reassure.
+- Do NOT diagnose.
+- Ask at most ONE thoughtful question.
+- Reflect emotional content back to the user.
+- Use calm, professional language.
+
+Session phase: {phase}
+"""
+
+    conversation = [
+        {"role": "system", "content": system_prompt}
+    ]
+
+    for m in messages:
+        conversation.append({
+            "role": "user" if m.role == "user" else "assistant",
+            "content": m.text
+        })
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=conversation,
+        temperature=0.4
+    )
+
+    reply = response.choices[0].message.content.strip()
+
+    print("[DEBUG] OpenAI reply received")
+    return reply
+
+# --------------------------------------------------
+# API Endpoint (with full request tracing)
+# --------------------------------------------------
+
+@app.post("/api/reflection-chat", response_model=ReflectionResponse)
+def reflection_chat(payload: ReflectionRequest):
+    print("\n================ NEW REFLECTION REQUEST ================")
+
+    phase = get_session_phase(payload.timeLeft)
+
+    if phase == "synthesis":
+        reply = ai_synthesis_reply(payload.messages)
+    else:
+        reply = ai_reflective_reply(payload.messages, phase)
+
+    print("[DEBUG] Response sent to frontend")
+    print("========================================================\n")
+
+    return {"reply": reply}
+
 @app.post("/api/upload_to_gcs")
 async def upload_pdfs_to_gcs(pdfs: Union[UploadFile, List[UploadFile]] = File(...)):
     print("🔹 [START] Upload endpoint called")
@@ -9605,6 +9735,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
