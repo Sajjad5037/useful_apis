@@ -8533,9 +8533,14 @@ def get_session_phase(time_left: int) -> str:
     print("\n[DEBUG][PHASE] Determining session phase")
     print(f"[DEBUG][PHASE] time_left received: {time_left}")
 
-    if time_left > 600:
+    # Testing mode: total session = 5 minutes (300 seconds)
+    # Opening   : first ~40%  → >180s
+    # Deepening : middle ~40% → 60–180s
+    # Synthesis : final ~20%  → <=60s
+
+    if time_left > 180:
         phase = "opening"
-    elif time_left > 180:
+    elif time_left > 60:
         phase = "deepening"
     else:
         phase = "synthesis"
@@ -9830,6 +9835,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
