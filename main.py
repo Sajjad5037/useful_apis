@@ -8457,35 +8457,52 @@ def ai_synthesis_reply(
 ) -> str:
     print("\n[DEBUG][SYNTHESIS] ===== Entering ai_synthesis_reply =====")
 
-    print(f"[DEBUG][SYNTHESIS] Total messages received: {len(messages)}")
-    print(f"[DEBUG][SYNTHESIS] Session state snapshot:")
-    print(f"    emotions: {session_state.get('emotions')}")
-    print(f"    conflicts count: {len(session_state.get('conflicts', []))}")
-    print(f"    full session_state: {session_state}")
+    emotions = list(set(session_state.get("emotions", [])))
+    conflicts = session_state.get("conflicts", [])
 
+    print(f"[DEBUG][SYNTHESIS] emotions: {emotions}")
+    print(f"[DEBUG][SYNTHESIS] conflicts count: {len(conflicts)}")
+    print(f"[DEBUG][SYNTHESIS] full session_state: {session_state}")
+
+    # ---------- HARD GATE: insufficient evidence ----------
+    if len(emotions) == 0 and len(conflicts) == 0:
+        print("[DEBUG][SYNTHESIS] Insufficient data — returning safe reflection")
+        return (
+            "During this session, no clear recurring psychological pattern emerged. "
+            "The conversation focused more on describing current experiences than on "
+            "repeated internal dynamics. This is a valid outcome, and further reflection "
+            "over time may reveal patterns more clearly."
+        )
+
+    # ---------- STRICT, GROUNDED PROMPT ----------
     system_prompt = f"""
 You are generating a therapist-style reflection summary.
 
-Session understanding (derived from conversation):
-- Emotions detected: {list(set(session_state.get("emotions", [])))}
-- Number of conflicts mentioned: {len(session_state.get("conflicts", []))}
+CRITICAL CONSTRAINTS (must follow):
+- You may ONLY describe patterns that are clearly supported by the session data below.
+- You MUST NOT introduce new traits, habits, or themes not present in the conversation.
+- If evidence is weak or mixed, you MUST state uncertainty.
+- If no strong recurring pattern exists, you MUST say so.
+- Do NOT default to generic themes like confidence, decision-making, or independence
+  unless they were explicitly discussed.
 
-Rules:
-- Do not moralize.
-- Do not tell the user what to do.
-- Do not diagnose.
-- Describe recurring patterns neutrally.
-- Name tensions.
-- Suggest direction, not instruction.
+Session evidence (this is the ONLY source of truth):
+- Emotions detected: {emotions}
+- Number of conflict signals detected: {len(conflicts)}
 
-Structure your response as:
-1. Core Conflict
+Your task:
+- Reflect what was ACTUALLY present in this session.
+- Use careful, tentative language.
+- Offer perspective, not advice or instruction.
+
+Required structure:
+1. Core Observed Theme (or state "no clear recurring pattern")
 2. Emotional Impact
-3. Reframing Insight
-4. Gentle Perspective Forward
+3. Underlying Tension (only if supported)
+4. Gentle Perspective Forward (non-prescriptive)
 """
 
-    print("[DEBUG][SYNTHESIS] System prompt constructed:")
+    print("[DEBUG][SYNTHESIS] System prompt:")
     print(system_prompt)
 
     conversation = [{"role": "system", "content": system_prompt}]
@@ -8494,26 +8511,22 @@ Structure your response as:
         role = "user" if m.role == "user" else "assistant"
         conversation.append({"role": role, "content": m.text})
 
-        print(f"[DEBUG][SYNTHESIS] Message[{idx}] role={role}")
-        print(f"    content: {m.text}")
-
     print("[DEBUG][SYNTHESIS] Sending request to OpenAI...")
-    print(f"[DEBUG][SYNTHESIS] Model: gpt-4o-mini | Temperature: 0.3")
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=conversation,
-        temperature=0.3
+        temperature=0.2  # lower = less invention
     )
 
     summary = response.choices[0].message.content.strip()
 
-    print("[DEBUG][SYNTHESIS] OpenAI response received")
     print("[DEBUG][SYNTHESIS] Final synthesized summary:")
     print(summary)
     print("[DEBUG][SYNTHESIS] ===== Exiting ai_synthesis_reply =====\n")
 
     return summary
+
 
 
 def get_session_phase(time_left: int) -> str:
@@ -9817,6 +9830,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
