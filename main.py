@@ -254,7 +254,7 @@ AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_REGION = os.getenv("AWS_REGION")
 BUCKET_NAME = os.getenv("BUCKET_NAME")
 
-
+REFLECTIVE_SESSION_STORE: Dict[str, dict] = {}
 
 
 s3 = boto3.client(
@@ -2486,6 +2486,14 @@ Rules:
 - Do NOT sound like a textbook
 - Be calm, precise, and clinically accurate
 """
+def cleanup_expired_sessions():
+    now = time.time()
+    expired = [
+        sid for sid, state in REFLECTIVE_SESSION_STORE.items()
+        if now - state["created_at"] > SESSION_TTL_SECONDS
+    ]
+    for sid in expired:
+        del REFLECTIVE_SESSION_STORE[sid]
 
 # --------------------------------------------------
 # ENDPOINT
@@ -8443,11 +8451,24 @@ from fastapi.responses import JSONResponse
 from typing import Union, List
 from io import BytesIO
 
-def ai_synthesis_reply(messages: List[Message]) -> str:
-    print("\n[DEBUG] Calling OpenAI for synthesis")
+def ai_synthesis_reply(
+    messages: List[Message],
+    session_state: dict
+) -> str:
+    print("\n[DEBUG][SYNTHESIS] ===== Entering ai_synthesis_reply =====")
 
-    system_prompt = """
+    print(f"[DEBUG][SYNTHESIS] Total messages received: {len(messages)}")
+    print(f"[DEBUG][SYNTHESIS] Session state snapshot:")
+    print(f"    emotions: {session_state.get('emotions')}")
+    print(f"    conflicts count: {len(session_state.get('conflicts', []))}")
+    print(f"    full session_state: {session_state}")
+
+    system_prompt = f"""
 You are generating a therapist-style reflection summary.
+
+Session understanding (derived from conversation):
+- Emotions detected: {list(set(session_state.get("emotions", [])))}
+- Number of conflicts mentioned: {len(session_state.get("conflicts", []))}
 
 Rules:
 - Do not moralize.
@@ -8458,21 +8479,26 @@ Rules:
 - Suggest direction, not instruction.
 
 Structure your response as:
-1. Observed Pattern
-2. Impact
-3. Underlying Tension
-4. Direction for Growth
+1. Core Conflict
+2. Emotional Impact
+3. Reframing Insight
+4. Gentle Perspective Forward
 """
 
-    conversation = [
-        {"role": "system", "content": system_prompt}
-    ]
+    print("[DEBUG][SYNTHESIS] System prompt constructed:")
+    print(system_prompt)
 
-    for m in messages:
-        conversation.append({
-            "role": "user" if m.role == "user" else "assistant",
-            "content": m.text
-        })
+    conversation = [{"role": "system", "content": system_prompt}]
+
+    for idx, m in enumerate(messages):
+        role = "user" if m.role == "user" else "assistant"
+        conversation.append({"role": role, "content": m.text})
+
+        print(f"[DEBUG][SYNTHESIS] Message[{idx}] role={role}")
+        print(f"    content: {m.text}")
+
+    print("[DEBUG][SYNTHESIS] Sending request to OpenAI...")
+    print(f"[DEBUG][SYNTHESIS] Model: gpt-4o-mini | Temperature: 0.3")
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -8482,12 +8508,17 @@ Structure your response as:
 
     summary = response.choices[0].message.content.strip()
 
-    print("[DEBUG] Synthesis generated")
+    print("[DEBUG][SYNTHESIS] OpenAI response received")
+    print("[DEBUG][SYNTHESIS] Final synthesized summary:")
+    print(summary)
+    print("[DEBUG][SYNTHESIS] ===== Exiting ai_synthesis_reply =====\n")
+
     return summary
 
+
 def get_session_phase(time_left: int) -> str:
-    print("\n[DEBUG] Determining session phase")
-    print(f"[DEBUG] time_left received: {time_left}")
+    print("\n[DEBUG][PHASE] Determining session phase")
+    print(f"[DEBUG][PHASE] time_left received: {time_left}")
 
     if time_left > 600:
         phase = "opening"
@@ -8496,7 +8527,7 @@ def get_session_phase(time_left: int) -> str:
     else:
         phase = "synthesis"
 
-    print(f"[DEBUG] Session phase determined: {phase}")
+    print(f"[DEBUG][PHASE] Phase selected: {phase}")
     return phase
 
 
@@ -8505,8 +8536,9 @@ def get_session_phase(time_left: int) -> str:
 # --------------------------------------------------
 
 def ai_reflective_reply(messages: List[Message], phase: str) -> str:
-    print("\n[DEBUG] Calling OpenAI for reflective reply")
-    print(f"[DEBUG] Phase: {phase}")
+    print("\n[DEBUG][REFLECT] ===== Entering ai_reflective_reply =====")
+    print(f"[DEBUG][REFLECT] Phase: {phase}")
+    print(f"[DEBUG][REFLECT] Total messages: {len(messages)}")
 
     system_prompt = f"""
 You are acting as a reflective therapist.
@@ -8522,15 +8554,20 @@ Rules:
 Session phase: {phase}
 """
 
-    conversation = [
-        {"role": "system", "content": system_prompt}
-    ]
+    print("[DEBUG][REFLECT] System prompt:")
+    print(system_prompt)
 
-    for m in messages:
-        conversation.append({
-            "role": "user" if m.role == "user" else "assistant",
-            "content": m.text
-        })
+    conversation = [{"role": "system", "content": system_prompt}]
+
+    for idx, m in enumerate(messages):
+        role = "user" if m.role == "user" else "assistant"
+        conversation.append({"role": role, "content": m.text})
+
+        print(f"[DEBUG][REFLECT] Message[{idx}] role={role}")
+        print(f"    content: {m.text}")
+
+    print("[DEBUG][REFLECT] Sending request to OpenAI...")
+    print(f"[DEBUG][REFLECT] Model: gpt-4o-mini | Temperature: 0.4")
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -8540,7 +8577,11 @@ Session phase: {phase}
 
     reply = response.choices[0].message.content.strip()
 
-    print("[DEBUG] OpenAI reply received")
+    print("[DEBUG][REFLECT] OpenAI reply received")
+    print("[DEBUG][REFLECT] Reply content:")
+    print(reply)
+    print("[DEBUG][REFLECT] ===== Exiting ai_reflective_reply =====\n")
+
     return reply
 
 # --------------------------------------------------
@@ -8550,15 +8591,56 @@ Session phase: {phase}
 @app.post("/api/reflection-chat", response_model=ReflectionResponse)
 def reflection_chat(payload: ReflectionRequest):
     print("\n================ NEW REFLECTION REQUEST ================")
+    print("[DEBUG][API] Payload received")
+    print(f"[DEBUG][API] sessionId: {payload.sessionId}")
+    print(f"[DEBUG][API] timeLeft: {payload.timeLeft}")
+    print(f"[DEBUG][API] messages count: {len(payload.messages)}")
+
+    cleanup_expired_sessions()
+    print(f"[DEBUG][API] Active sessions after cleanup: {list(REFLECTIVE_SESSION_STORE.keys())}")
+
+    session_id = payload.sessionId
+
+    if session_id not in REFLECTIVE_SESSION_STORE:
+        print(f"[DEBUG][API] Initializing new session_state for session_id={session_id}")
+        REFLECTIVE_SESSION_STORE[session_id] = initialize_session_state()
+    else:
+        print(f"[DEBUG][API] Reusing existing session_state for session_id={session_id}")
+
+    session_state = REFLECTIVE_SESSION_STORE[session_id]
+    print("[DEBUG][API] Current session_state:")
+    print(session_state)
+
+    # ---- Update understanding ----
+    last_message = payload.messages[-1]
+    print("[DEBUG][API] Last message received:")
+    print(f"    role: {last_message.role}")
+    print(f"    text: {last_message.text}")
+
+    if last_message.role == "user":
+        print("[DEBUG][API] Updating session_state from user message")
+        update_session_state_from_user_message(
+            session_state,
+            last_message.text
+        )
+        print("[DEBUG][API] session_state AFTER update:")
+        print(session_state)
+    else:
+        print("[DEBUG][API] Last message not from user — session_state not updated")
 
     phase = get_session_phase(payload.timeLeft)
 
     if phase == "synthesis":
-        reply = ai_synthesis_reply(payload.messages)
+        print("[DEBUG][API] Entering SYNTHESIS phase")
+        reply = ai_synthesis_reply(payload.messages, session_state)
+
+        print(f"[DEBUG][API] Deleting session_state for session_id={session_id}")
+        del REFLECTIVE_SESSION_STORE[session_id]
     else:
+        print("[DEBUG][API] Entering REFLECTIVE phase")
         reply = ai_reflective_reply(payload.messages, phase)
 
-    print("[DEBUG] Response sent to frontend")
+    print("[DEBUG][API] Reply sent to frontend")
     print("========================================================\n")
 
     return {"reply": reply}
@@ -9735,6 +9817,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
