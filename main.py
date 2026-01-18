@@ -2563,15 +2563,12 @@ def create_payment(payload: dict, db: Session = Depends(get_db)):
     # ---------------------------------------------------
     print("DEBUG: Fetching doctor from DB")
 
-    doctor = db.query(Doctor).filter(Doctor.id == doctor_id).first()
+    print("DEBUG: Using doctor data from frontend (stateless service)")
+    print("DEBUG: doctor_id =", doctor_id)
 
-    print("DEBUG: Doctor query result:", doctor)
+    print("DEBUG: Doctor loaded (from frontend)")
+    print("DEBUG: doctor_id =", doctor_id)
 
-    if not doctor:
-        print("CRITICAL: Doctor not found for doctor_id =", doctor_id)
-        raise HTTPException(status_code=404, detail="Doctor not found")
-
-    print("DEBUG: Doctor loaded | id =", doctor.id, "| name =", doctor.name)
 
     # ---------------------------------------------------
     # 4️⃣ Resolve plan
@@ -2617,7 +2614,7 @@ def create_payment(payload: dict, db: Session = Depends(get_db)):
             "attributes": {
                 "checkout_data": {
                     "custom": {
-                        "doctor_id": str(doctor.id),
+                        "doctor_id": str(doctor_id),
                         "plan_id": plan_id,
                         "tokens": str(plan["tokens"]),
                     }
@@ -9999,6 +9996,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
