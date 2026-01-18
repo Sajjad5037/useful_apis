@@ -1,6 +1,6 @@
 import json
 from typing import Dict
-import stripe
+
 from qdrant_client import QdrantClient
 import PyPDF2
 import faiss
@@ -10000,6 +10000,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
