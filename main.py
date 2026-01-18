@@ -114,16 +114,16 @@ import tempfile
 #for receiving payments for chatbot website
 TOKEN_PLANS = {
     "basic": {
-        "variant_id": "654321",
         "tokens": 500_000,
+        "variant_id": "1228953",
     },
     "pro": {
-        "variant_id": "654322",
         "tokens": 1_200_000,
+        "variant_id": "654322",
     },
     "business": {
-        "variant_id": "654323",
         "tokens": 3_500_000,
+        "variant_id": "654323",
     },
 }
 
@@ -2617,9 +2617,9 @@ def create_payment(payload: dict, db: Session = Depends(get_db)):
                         "doctor_id": str(doctor_id),
                         "plan_id": plan_id,
                         "tokens": str(plan["tokens"]),
-                    }
-                },
-                "redirect_url": f"{frontend_url}/dashboard?payment=success",
+                    },
+                    "redirect_url": f"{frontend_url}/dashboard?payment=success",
+                }
             },
             "relationships": {
                 "store": {
@@ -9996,6 +9996,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
