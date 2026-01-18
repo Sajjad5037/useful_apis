@@ -2643,7 +2643,24 @@ def create_payment(payload: dict, db: Session = Depends(get_db)):
 
     print("DEBUG: LemonSqueezy request payload:", data)
 
-    response = requests.post(url, headers=headers, json=data)
+    try:
+        print("DEBUG: Sending request to LemonSqueezy...")
+        response = requests.post(
+            url,
+            headers=headers,
+            json=data,
+            timeout=10,  # 🔥 critical
+        )
+        print("DEBUG: LemonSqueezy request completed")
+    
+    except requests.exceptions.Timeout:
+        print("ERROR: LemonSqueezy request timed out")
+        raise HTTPException(status_code=504, detail="Payment provider timeout")
+    
+    except requests.exceptions.RequestException as e:
+        print("ERROR: LemonSqueezy request failed:", str(e))
+        raise HTTPException(status_code=502, detail="Payment provider error")
+
 
     print("DEBUG: LemonSqueezy response status =", response.status_code)
     print("DEBUG: LemonSqueezy response body =", response.text)
@@ -9999,6 +10016,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
