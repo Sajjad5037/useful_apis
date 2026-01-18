@@ -2583,35 +2583,21 @@ def create_payment(payload: dict):
     data = {
         "data": {
             "type": "checkouts",
-            "attributes": {
-                "checkout_data": [
-                    {
-                        "custom": {
-                            "doctor_id": str(doctor_id),
-                            "plan_id": plan_id,
-                            "tokens": str(plan["tokens"]),
-                        }
-                    }
-                ]
-            },
             "relationships": {
-                "store": {
-                    "data": {
-                        "type": "stores",
-                        "id": str(store_id),
-                    }
-                },
                 "variant": {
                     "data": {
                         "type": "variants",
                         "id": str(variant_id),
                     }
-                },
-            },
+                }
+            }
         }
     }
 
-    print("DEBUG: checkout_data type =", type(data["data"]["attributes"]["checkout_data"]))
+
+    print("DEBUG: LemonSqueezy payload keys =", data["data"].keys())
+    print("DEBUG: relationships keys =", data["data"]["relationships"].keys())
+
     print("DEBUG: LemonSqueezy request payload:", data)
 
     try:
@@ -9975,6 +9961,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
