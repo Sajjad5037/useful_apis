@@ -1,6 +1,6 @@
 import json
 from typing import Dict
-
+import stripe
 from qdrant_client import QdrantClient
 import PyPDF2
 import faiss
@@ -109,7 +109,23 @@ from fastapi.responses import JSONResponse
 vectorstore = None
 total_pdf = 0
 import tempfile
-
+#strip api key
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+#for receiving payments for chatbot website
+TOKEN_PLANS = {
+    "basic": {
+        "variant_id": "654321",
+        "tokens": 500_000,
+    },
+    "pro": {
+        "variant_id": "654322",
+        "tokens": 1_200_000,
+    },
+    "business": {
+        "variant_id": "654323",
+        "tokens": 3_500_000,
+    },
+}
 
 # 1️⃣ Set the path to your service account JSON file
 SERVICE_ACCOUNT_FILE = "./service_account.json"  # adjust if needed
@@ -2500,7 +2516,154 @@ def cleanup_expired_sessions():
 # --------------------------------------------------
 # ENDPOINT
 # --------------------------------------------------
+@app.post("/create-payment")
+def create_payment(payload: dict, db: Session = Depends(get_db)):
+    print("========== /billing/create-payment (LEMONSQUEEZY) START ==========")
 
+    # ---------------------------------------------------
+    # 1️⃣ Raw payload
+    # ---------------------------------------------------
+    print("DEBUG: Raw payload received:", payload)
+
+    session_token = payload.get("session_token")
+    plan_id = payload.get("plan_id")
+
+    print("DEBUG: session_token =", session_token)
+    print("DEBUG: plan_id =", plan_id)
+
+    if not session_token:
+        print("ERROR: session_token missing")
+        raise HTTPException(status_code=400, detail="Missing session_token")
+
+    if not plan_id:
+        print("ERROR: plan_id missing")
+        raise HTTPException(status_code=400, detail="Missing plan_id")
+
+    if plan_id not in TOKEN_PLANS:
+        print("ERROR: Invalid plan_id:", plan_id)
+        raise HTTPException(status_code=400, detail="Invalid plan_id")
+
+    print("DEBUG: Payload validation passed")
+
+    # ---------------------------------------------------
+    # 2️⃣ Validate session
+    # ---------------------------------------------------
+    print("DEBUG: Validating session_token")
+
+    session = (
+        db.query(SessionModel)
+        .filter(SessionModel.session_token == session_token)
+        .first()
+    )
+
+    print("DEBUG: Session query result:", session)
+
+    if not session:
+        print("ERROR: Invalid session_token")
+        raise HTTPException(status_code=401, detail="Invalid session")
+
+    # ---------------------------------------------------
+    # 3️⃣ Fetch doctor
+    # ---------------------------------------------------
+    print("DEBUG: Fetching doctor")
+
+    doctor = db.query(Doctor).filter(Doctor.id == session.doctor_id).first()
+
+    print("DEBUG: Doctor query result:", doctor)
+
+    if not doctor:
+        print("CRITICAL: Doctor not found")
+        raise HTTPException(status_code=404, detail="Doctor not found")
+
+    print("DEBUG: Doctor loaded | id =", doctor.id)
+
+    # ---------------------------------------------------
+    # 4️⃣ Resolve plan
+    # ---------------------------------------------------
+    plan = TOKEN_PLANS[plan_id]
+    variant_id = plan["variant_id"]
+
+    print("DEBUG: Plan resolved")
+    print("DEBUG: variant_id =", variant_id)
+    print("DEBUG: tokens =", plan["tokens"])
+
+    # ---------------------------------------------------
+    # 5️⃣ LemonSqueezy config
+    # ---------------------------------------------------
+    lemon_api_key = os.getenv("lemon_squeezy_api_key")
+    store_id = os.getenv("LEMON_SQUEEZY_STORE_ID")
+    frontend_url = os.getenv("FRONTEND_URL")
+
+    print("DEBUG: lemon_squeezy_api_key present =", bool(lemon_api_key))
+    print("DEBUG: store_id =", store_id)
+    print("DEBUG: frontend_url =", frontend_url)
+
+    if not lemon_api_key or not store_id or not frontend_url:
+        print("CRITICAL: Missing LemonSqueezy environment variables")
+        raise HTTPException(status_code=500, detail="Payment configuration error")
+
+    # ---------------------------------------------------
+    # 6️⃣ Create LemonSqueezy checkout
+    # ---------------------------------------------------
+    print("DEBUG: Creating LemonSqueezy checkout")
+
+    url = "https://api.lemonsqueezy.com/v1/checkouts"
+
+    headers = {
+        "Authorization": f"Bearer {lemon_api_key}",
+        "Accept": "application/vnd.api+json",
+        "Content-Type": "application/vnd.api+json",
+    }
+
+    data = {
+        "data": {
+            "type": "checkouts",
+            "attributes": {
+                "checkout_data": {
+                    "custom": {
+                        "doctor_id": str(doctor.id),
+                        "plan_id": plan_id,
+                        "tokens": str(plan["tokens"]),
+                    }
+                },
+                "redirect_url": f"{frontend_url}/dashboard?payment=success",
+            },
+            "relationships": {
+                "store": {
+                    "data": {
+                        "type": "stores",
+                        "id": str(store_id),
+                    }
+                },
+                "variant": {
+                    "data": {
+                        "type": "variants",
+                        "id": str(variant_id),
+                    }
+                },
+            },
+        }
+    }
+
+    print("DEBUG: LemonSqueezy request payload:", data)
+
+    response = requests.post(url, headers=headers, json=data)
+
+    print("DEBUG: LemonSqueezy response status =", response.status_code)
+    print("DEBUG: LemonSqueezy response body =", response.text)
+
+    if response.status_code not in (200, 201):
+        print("ERROR: LemonSqueezy checkout creation failed")
+        raise HTTPException(status_code=502, detail="Payment provider error")
+
+    checkout_url = response.json()["data"]["attributes"]["url"]
+
+    print("SUCCESS: Checkout URL created =", checkout_url)
+    print("========== /billing/create-payment END ==========")
+
+    return {
+        "checkout_url": checkout_url
+    }    
 @app.post("/topic/generate", response_model=TopicResponse)
 def generate_topic(payload: TopicRequest):
     print("\n================ NEW REQUEST =================")
@@ -9837,6 +10000,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
