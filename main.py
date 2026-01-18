@@ -11,7 +11,7 @@ from urllib.parse import parse_qs
 from PIL import Image
 from enum import Enum
 import subprocess
-im docx2txt
+import docx2txt
 import os
 from starlette.datastructures import FormData
 from twilio.request_validator import RequestValidator
@@ -9999,6 +9999,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
