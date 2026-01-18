@@ -2517,12 +2517,13 @@ def cleanup_expired_sessions():
 # --------------------------------------------------
 # ENDPOINT
 # --------------------------------------------------
+
 @app.post("/create-payment")
-def create_payment(payload: dict, db: Session = Depends(get_db)):
+def create_payment(payload: dict):
     print("========== /create-payment (LEMONSQUEEZY) START ==========")
 
     # ---------------------------------------------------
-    # 1️⃣ Raw payload
+    # 1️⃣ Read payload
     # ---------------------------------------------------
     print("DEBUG: Raw payload received:", payload)
 
@@ -2535,43 +2536,18 @@ def create_payment(payload: dict, db: Session = Depends(get_db)):
     print("DEBUG: doctor_id =", doctor_id)
 
     if not session_token:
-        print("ERROR: session_token missing")
         raise HTTPException(status_code=400, detail="Missing session_token")
-
     if not plan_id:
-        print("ERROR: plan_id missing")
         raise HTTPException(status_code=400, detail="Missing plan_id")
-
     if not doctor_id:
-        print("ERROR: doctor_id missing")
         raise HTTPException(status_code=400, detail="Missing doctor_id")
-
     if plan_id not in TOKEN_PLANS:
-        print("ERROR: Invalid plan_id:", plan_id)
         raise HTTPException(status_code=400, detail="Invalid plan_id")
 
     print("DEBUG: Payload validation passed")
 
     # ---------------------------------------------------
-    # 2️⃣ Session validation (Option A: lightweight)
-    # ---------------------------------------------------
-    print("DEBUG: Skipping DB session validation (Option A)")
-    print("DEBUG: Assuming session_token is valid for logged-in user")
-
-    # ---------------------------------------------------
-    # 3️⃣ Fetch doctor
-    # ---------------------------------------------------
-    print("DEBUG: Fetching doctor from DB")
-
-    print("DEBUG: Using doctor data from frontend (stateless service)")
-    print("DEBUG: doctor_id =", doctor_id)
-
-    print("DEBUG: Doctor loaded (from frontend)")
-    print("DEBUG: doctor_id =", doctor_id)
-
-
-    # ---------------------------------------------------
-    # 4️⃣ Resolve plan
+    # 2️⃣ Resolve plan
     # ---------------------------------------------------
     plan = TOKEN_PLANS[plan_id]
     variant_id = plan["variant_id"]
@@ -2581,25 +2557,20 @@ def create_payment(payload: dict, db: Session = Depends(get_db)):
     print("DEBUG: tokens =", plan["tokens"])
 
     # ---------------------------------------------------
-    # 5️⃣ LemonSqueezy config
+    # 3️⃣ LemonSqueezy config
     # ---------------------------------------------------
     lemon_api_key = os.getenv("lemon_squeezy_api_key")
     store_id = os.getenv("LEMON_SQUEEZY_STORE_ID")
-    frontend_url = os.getenv("FRONTEND_URL")
 
     print("DEBUG: lemon_squeezy_api_key present =", bool(lemon_api_key))
     print("DEBUG: store_id =", store_id)
-    print("DEBUG: frontend_url =", frontend_url)
 
-    if not lemon_api_key or not store_id or not frontend_url:
-        print("CRITICAL: Missing LemonSqueezy environment variables")
+    if not lemon_api_key or not store_id:
         raise HTTPException(status_code=500, detail="Payment configuration error")
 
     # ---------------------------------------------------
-    # 6️⃣ Create LemonSqueezy checkout
+    # 4️⃣ Create LemonSqueezy checkout
     # ---------------------------------------------------
-    print("DEBUG: Creating LemonSqueezy checkout")
-
     url = "https://api.lemonsqueezy.com/v1/checkouts"
 
     headers = {
@@ -2608,6 +2579,7 @@ def create_payment(payload: dict, db: Session = Depends(get_db)):
         "Content-Type": "application/vnd.api+json",
     }
 
+    # ✅ THIS STRUCTURE IS CRITICAL
     data = {
         "data": {
             "type": "checkouts",
@@ -2639,43 +2611,31 @@ def create_payment(payload: dict, db: Session = Depends(get_db)):
         }
     }
 
-
+    print("DEBUG: checkout_data type =", type(data["data"]["attributes"]["checkout_data"]))
     print("DEBUG: LemonSqueezy request payload:", data)
 
     try:
         print("DEBUG: Sending request to LemonSqueezy...")
-        response = requests.post(
-            url,
-            headers=headers,
-            json=data,
-            timeout=10,  # 🔥 critical
-        )
+        response = requests.post(url, headers=headers, json=data, timeout=10)
         print("DEBUG: LemonSqueezy request completed")
-    
     except requests.exceptions.Timeout:
-        print("ERROR: LemonSqueezy request timed out")
         raise HTTPException(status_code=504, detail="Payment provider timeout")
-    
     except requests.exceptions.RequestException as e:
-        print("ERROR: LemonSqueezy request failed:", str(e))
+        print("ERROR:", str(e))
         raise HTTPException(status_code=502, detail="Payment provider error")
-
 
     print("DEBUG: LemonSqueezy response status =", response.status_code)
     print("DEBUG: LemonSqueezy response body =", response.text)
 
     if response.status_code not in (200, 201):
-        print("ERROR: LemonSqueezy checkout creation failed")
         raise HTTPException(status_code=502, detail="Payment provider error")
 
     checkout_url = response.json()["data"]["attributes"]["url"]
 
-    print("SUCCESS: Checkout URL created =", checkout_url)
+    print("SUCCESS: Checkout URL =", checkout_url)
     print("========== /create-payment END ==========")
 
-    return {
-        "checkout_url": checkout_url
-    }
+    return {"checkout_url": checkout_url}
 
 
 
@@ -10015,6 +9975,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
