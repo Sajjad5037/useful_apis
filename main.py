@@ -2612,14 +2612,16 @@ def create_payment(payload: dict, db: Session = Depends(get_db)):
         "data": {
             "type": "checkouts",
             "attributes": {
-                "checkout_data": {
-                    "custom": {
-                        "doctor_id": str(doctor_id),
-                        "plan_id": plan_id,
-                        "tokens": str(plan["tokens"]),
-                    },
-                    "redirect_url": f"{frontend_url}/dashboard?payment=success",
-                }
+                "checkout_data": [
+                    {
+                        "custom": {
+                            "doctor_id": str(doctor_id),
+                            "plan_id": plan_id,
+                            "tokens": str(plan["tokens"]),
+                        }
+                    }
+                ],
+                "redirect_url": f"{frontend_url}/dashboard?payment=success",
             },
             "relationships": {
                 "store": {
@@ -9996,6 +9998,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
