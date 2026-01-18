@@ -2584,15 +2584,22 @@ def create_payment(payload: dict):
         "data": {
             "type": "checkouts",
             "relationships": {
+                "store": {
+                    "data": {
+                        "type": "stores",
+                        "id": str(store_id),
+                    }
+                },
                 "variant": {
                     "data": {
                         "type": "variants",
                         "id": str(variant_id),
                     }
-                }
-            }
+                },
+            },
         }
     }
+
 
 
     print("DEBUG: LemonSqueezy payload keys =", data["data"].keys())
@@ -9961,6 +9968,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
