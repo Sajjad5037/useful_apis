@@ -2519,7 +2519,7 @@ def cleanup_expired_sessions():
 # --------------------------------------------------
 @app.post("/create-payment")
 def create_payment(payload: dict, db: Session = Depends(get_db)):
-    print("========== /billing/create-payment (LEMONSQUEEZY) START ==========")
+    print("========== /create-payment (LEMONSQUEEZY) START ==========")
 
     # ---------------------------------------------------
     # 1️⃣ Raw payload
@@ -2528,9 +2528,11 @@ def create_payment(payload: dict, db: Session = Depends(get_db)):
 
     session_token = payload.get("session_token")
     plan_id = payload.get("plan_id")
+    doctor_id = payload.get("doctor_id")
 
     print("DEBUG: session_token =", session_token)
     print("DEBUG: plan_id =", plan_id)
+    print("DEBUG: doctor_id =", doctor_id)
 
     if not session_token:
         print("ERROR: session_token missing")
@@ -2540,6 +2542,10 @@ def create_payment(payload: dict, db: Session = Depends(get_db)):
         print("ERROR: plan_id missing")
         raise HTTPException(status_code=400, detail="Missing plan_id")
 
+    if not doctor_id:
+        print("ERROR: doctor_id missing")
+        raise HTTPException(status_code=400, detail="Missing doctor_id")
+
     if plan_id not in TOKEN_PLANS:
         print("ERROR: Invalid plan_id:", plan_id)
         raise HTTPException(status_code=400, detail="Invalid plan_id")
@@ -2547,36 +2553,25 @@ def create_payment(payload: dict, db: Session = Depends(get_db)):
     print("DEBUG: Payload validation passed")
 
     # ---------------------------------------------------
-    # 2️⃣ Validate session
+    # 2️⃣ Session validation (Option A: lightweight)
     # ---------------------------------------------------
-    print("DEBUG: Validating session_token")
-
-    session = (
-        db.query(SessionModel)
-        .filter(SessionModel.session_token == session_token)
-        .first()
-    )
-
-    print("DEBUG: Session query result:", session)
-
-    if not session:
-        print("ERROR: Invalid session_token")
-        raise HTTPException(status_code=401, detail="Invalid session")
+    print("DEBUG: Skipping DB session validation (Option A)")
+    print("DEBUG: Assuming session_token is valid for logged-in user")
 
     # ---------------------------------------------------
     # 3️⃣ Fetch doctor
     # ---------------------------------------------------
-    print("DEBUG: Fetching doctor")
+    print("DEBUG: Fetching doctor from DB")
 
-    doctor = db.query(Doctor).filter(Doctor.id == session.doctor_id).first()
+    doctor = db.query(Doctor).filter(Doctor.id == doctor_id).first()
 
     print("DEBUG: Doctor query result:", doctor)
 
     if not doctor:
-        print("CRITICAL: Doctor not found")
+        print("CRITICAL: Doctor not found for doctor_id =", doctor_id)
         raise HTTPException(status_code=404, detail="Doctor not found")
 
-    print("DEBUG: Doctor loaded | id =", doctor.id)
+    print("DEBUG: Doctor loaded | id =", doctor.id, "| name =", doctor.name)
 
     # ---------------------------------------------------
     # 4️⃣ Resolve plan
@@ -2660,11 +2655,14 @@ def create_payment(payload: dict, db: Session = Depends(get_db)):
     checkout_url = response.json()["data"]["attributes"]["url"]
 
     print("SUCCESS: Checkout URL created =", checkout_url)
-    print("========== /billing/create-payment END ==========")
+    print("========== /create-payment END ==========")
 
     return {
         "checkout_url": checkout_url
-    }    
+    }
+
+
+
 @app.post("/topic/generate", response_model=TopicResponse)
 def generate_topic(payload: TopicRequest):
     print("\n================ NEW REQUEST =================")
@@ -10001,6 +9999,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
