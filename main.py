@@ -237,6 +237,7 @@ allowed_origins = [
     "http://localhost:3000",
     "http://localhost:3000/",
     "https://rafis-kitchen.vercel.app",
+    "https://chat-for-me-ai-login.vercel.app",
     "https://sajjadalinoor.vercel.app",
     "https://clinic-management-system-27d11.web.app",
     "https://shah-rukk-website.vercel.app",
@@ -10000,6 +10001,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
