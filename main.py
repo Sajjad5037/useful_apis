@@ -110,7 +110,7 @@ vectorstore = None
 total_pdf = 0
 import tempfile
 #strip api key
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+
 #for receiving payments for chatbot website
 TOKEN_PLANS = {
     "basic": {
@@ -10000,6 +10000,7 @@ async def chat_quran(msg: Message):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     
+
 
 
 
